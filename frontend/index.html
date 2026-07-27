@@ -1,12 +1,23 @@
 <!doctype html>
-<html lang="en">
+<html lang="tr" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>FinSight</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("finsight-theme");
+          if (t === "light") document.documentElement.classList.remove("dark");
+          else document.documentElement.classList.add("dark");
+          var l = localStorage.getItem("finsight-lang");
+          if (l === "en" || l === "tr") document.documentElement.lang = l;
+        } catch (e) {}
+      })();
+    </script>
   </head>
-  <body>
+  <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

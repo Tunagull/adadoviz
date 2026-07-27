@@ -1,0 +1,358 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Building2, Lock, Mail, Moon, Sun, User, X } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/ThemeContext";
+import { useLanguage } from "../context/LanguageContext";
+import { apiUrl } from "../lib/api";
+
+export function BusinessLoginModal({ isOpen, onClose }) {
+  const navigate = useNavigate();
+  const { login } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const { lang, toggleLang, t } = useLanguage();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState("");
+  const [forgotSuccess, setForgotSuccess] = useState("");
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setError("");
+    setUsername("");
+    setPassword("");
+    setShowForgotModal(false);
+    setForgotEmail("");
+    setForgotError("");
+    setForgotSuccess("");
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        if (showForgotModal) {
+          setShowForgotModal(false);
+          return;
+        }
+        onClose();
+      }
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose, showForgotModal]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setSuccessMessage("");
+    setLoading(true);
+
+    try {
+      const result = await login(username.trim(), password);
+
+      if (!result?.token) {
+        throw new Error("Token alınamadı");
+      }
+
+      setIsLoggingIn(true);
+      setLoading(false);
+
+      setTimeout(() => {
+        const role = result?.role || "business";
+        navigate(role === "superadmin" ? "/super-admin" : "/admin");
+      }, 1000);
+    } catch (err) {
+      setError(err.message || "Giriş başarısız.");
+      setIsLoggingIn(false);
+      setLoading(false);
+    }
+  };
+
+  const handleForgotSubmit = async (event) => {
+    event.preventDefault();
+    setForgotError("");
+    setForgotSuccess("");
+    setForgotLoading(true);
+
+    try {
+      const res = await fetch(apiUrl("/api/forgot-password"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || "İstek gönderilemedi.");
+      }
+      setForgotSuccess(
+        data.message ||
+          "Eğer bu hesap sistemde kayıtlıysa, şifre sıfırlama bağlantısı e-posta adresinize gönderildi."
+      );
+    } catch (err) {
+      setForgotError(err.message || "İstek gönderilemedi.");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="business-login-title"
+    >
+      <button
+        type="button"
+        className="absolute inset-0 bg-slate-500/30 backdrop-blur-sm dark:bg-[#020617]/80"
+        onClick={onClose}
+        aria-label="Modalı kapat"
+      />
+
+      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-indigo-950/20 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95 dark:shadow-indigo-950/50">
+        {/* Theme + Lang toggles */}
+        <div className="absolute top-3.5 right-12 z-20 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="inline-flex size-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-amber-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-amber-300"
+            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            aria-label="Toggle theme"
+          >
+            {theme === "dark" ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={toggleLang}
+            className="inline-flex h-7 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tracking-wide text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            title="TR / EN"
+            aria-label="Language"
+          >
+            <span className={lang === "tr" ? "text-teal-600 dark:text-teal-300" : "text-slate-400"}>TR</span>
+            <span className="mx-0.5 text-slate-400">|</span>
+            <span className={lang === "en" ? "text-teal-600 dark:text-teal-300" : "text-slate-400"}>EN</span>
+          </button>
+        </div>
+        <X
+          size={24}
+          onClick={onClose}
+          className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
+          aria-label="Kapat"
+        />
+        {isLoggingIn ? (
+          <div className="p-12 flex flex-col items-center justify-center min-h-[300px]">
+            <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
+              <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <h3 className="text-slate-900 dark:text-white text-xl font-bold">Giriş Yapılıyor...</h3>
+            <p className="text-slate-500 dark:text-slate-300 text-sm mt-3">Admin paneline yönlendiriliyorsunuz</p>
+          </div>
+        ) : (
+          <>
+            <div className="border-b border-slate-200 bg-gradient-to-r from-white via-slate-50 to-indigo-50 px-6 py-5 pr-12 dark:border-white/10 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-gradient-to-tr from-indigo-500 to-teal-400 p-2.5 text-white shadow-lg shadow-indigo-900/40">
+                  <Building2 className="size-5" />
+                </div>
+                <div>
+                  <h2 id="business-login-title" className="text-lg font-bold text-slate-900 dark:text-white">
+                    İşletme Girişi
+                  </h2>
+                  <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Kurum hesabınızla oranlarınızı yönetin</p>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-5 px-6 py-6">
+              <div className="space-y-2">
+                <label
+                  htmlFor="business-username"
+                  className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                >
+                  Kullanıcı Adı
+                </label>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <input
+                    id="business-username"
+                    type="text"
+                    autoComplete="username"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    placeholder="örn: akbank"
+                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="business-password"
+                  className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                >
+                  Şifre
+                </label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <input
+                    id="business-password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="••••••••"
+                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    required
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotError("");
+                      setForgotSuccess("");
+                      setForgotEmail("");
+                      setShowForgotModal(true);
+                    }}
+                    className="text-xs text-teal-400 hover:text-teal-300 transition-colors"
+                  >
+                    Şifremi Unuttum
+                  </button>
+                </div>
+              </div>
+
+              {error ? (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                  {error}
+                </div>
+              ) : successMessage ? (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 font-semibold dark:text-emerald-200">
+                  ✓ {successMessage}
+                </div>
+              ) : null}
+
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={loading}
+                  className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-900 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-60"
+                >
+                  {loading ? "Giriş yapılıyor..." : "Giriş Yap"}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+      </div>
+
+      {showForgotModal ? (
+        <div
+          className="absolute inset-0 z-20 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="forgot-password-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-slate-950/70"
+            onClick={() => setShowForgotModal(false)}
+            aria-label="Şifremi unuttum modalını kapat"
+          />
+          <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
+            <X
+              size={20}
+              onClick={() => setShowForgotModal(false)}
+              className="absolute top-3 right-3 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors"
+              aria-label="Kapat"
+            />
+            <h3 id="forgot-password-title" className="pr-8 text-base font-bold text-slate-100">
+              Şifremi Unuttum
+            </h3>
+            <p className="mt-1 text-xs text-slate-400">
+              Kayıtlı e-posta veya kullanıcı adınızı girin. Sıfırlama bağlantısı gönderilecektir.
+            </p>
+
+            <form onSubmit={handleForgotSubmit} className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <label
+                  htmlFor="forgot-email"
+                  className="text-xs font-medium uppercase tracking-wide text-slate-400"
+                >
+                  E-posta / Kullanıcı Adı
+                </label>
+                <div className="relative">
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+                  <input
+                    id="forgot-email"
+                    type="text"
+                    autoComplete="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="ornek@firma.com"
+                    className="h-11 w-full rounded-lg border border-slate-700 bg-slate-950 pl-10 pr-3 text-sm text-slate-100 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20"
+                    required
+                    disabled={forgotLoading}
+                  />
+                </div>
+              </div>
+
+              {forgotError ? (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  {forgotError}
+                </div>
+              ) : null}
+              {forgotSuccess ? (
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                  {forgotSuccess}
+                </div>
+              ) : null}
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotModal(false)}
+                  className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 hover:text-white"
+                >
+                  Vazgeç
+                </button>
+                <button
+                  type="submit"
+                  disabled={forgotLoading}
+                  className="flex-1 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {forgotLoading ? "Gönderiliyor..." : "Gönder"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}

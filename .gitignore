@@ -1,0 +1,23 @@
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/data/
+backend/.git/
+.env
+.env.local
+frontend/.env
+frontend/.env.local
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+# Debug / scratch
+backend/diagnose-*.js
+backend/clean-rates.js
+backend/debug-rates.js
+backend/check-db.js
+backend/clean-mock-anomaly.js
+backend/clean-mock-anomaly2.js
+MARKET_SUMMARY_COMPLETE_CODE.txt

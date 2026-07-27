@@ -1,5 +1,6 @@
+import { useState, useEffect, useRef } from "react";
+
 function getCurrencyDisplay(currency) {
-  if (currency === "ALTIN") return "ALTIN (gr)";
   return currency;
 }
 
@@ -19,6 +20,7 @@ const bankDomains = {
   odeabank: "odeabank.com.tr",
   fibabanka: "fibabanka.com.tr",
   "albaraka türk": "albaraka.com.tr",
+  "sun döviz": "sundoviz.com.tr",
 };
 
 function formatRate(rate, currency) {
@@ -29,13 +31,14 @@ function formatRate(rate, currency) {
   if (!Number.isFinite(n)) {
     return "—";
   }
-  if (currency === "ALTIN") {
-    return n.toLocaleString("tr-TR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-  }
   return n.toFixed(2);
 }
 
-export function V0BankCard({ bank, mode }) {
+export function V0BankCard({ bank, mode, liveRates, onSelect }) {
+  // ✅ ADIM 2: Flash effect durumları
+  const [flashColor, setFlashColor] = useState(null); // 'green' | 'red' | null
+  const prevRatesRef = useRef({});
+
   const interestRates = Array.isArray(bank.interestRates) ? bank.interestRates : [];
   const loans = bank?.loans ?? {};
   const baseDepositRateRaw =
@@ -51,7 +54,7 @@ export function V0BankCard({ bank, mode }) {
           { label: "Yıllık (365 Gün)", rate: Math.max(baseDepositRate - 1.5, 0) },
         ]
       : [];
-  const ratesByPriority = ["EUR", "USD", "GBP", "ALTIN"];
+  const ratesByPriority = ["EUR", "USD", "GBP"];
   const exchangeRates = ratesByPriority.map((code) => {
     const found = (bank.exchangeRates || []).find((rate) => rate.currency === code);
     return {
@@ -61,47 +64,159 @@ export function V0BankCard({ bank, mode }) {
     };
   });
 
+  // ✅ FIX: Artık her kart kendi SSE bağlantısını AÇMIYOR (16+ kart x kendi bağlantısı,
+  // tarayıcının host başına bağlantı limitini tüketip Market Summary fetch'lerini
+  // sonsuza kadar bloke ediyordu). Tek bir SSE bağlantısı Dashboard seviyesinde açılır,
+  // gelen mesaj `liveRates` prop'u olarak buraya akar. Biz sadece değişimi tespit edip
+  // flash effect tetikliyoruz.
+  useEffect(() => {
+    if (mode !== "exchange" || !liveRates || !bank.institutionId) return;
+
+    // İlk başta önceki değerleri başlat
+    if (Object.keys(prevRatesRef.current).length === 0) {
+      for (const rate of exchangeRates) {
+        if (rate.buy) {
+          prevRatesRef.current[rate.currency] = rate.buy;
+        }
+      }
+      return;
+    }
+
+    // Kur değişikliklerini kontrol et
+    let hasChanged = false;
+    let isPositive = true;
+
+    for (const rate of exchangeRates) {
+      if (rate.buy && prevRatesRef.current[rate.currency]) {
+        const oldRate = prevRatesRef.current[rate.currency];
+        const newRate = rate.buy;
+
+        if (newRate !== oldRate) {
+          hasChanged = true;
+          isPositive = newRate > oldRate;
+          prevRatesRef.current[rate.currency] = newRate;
+          break;
+        }
+      }
+    }
+
+    if (hasChanged) {
+      setFlashColor(isPositive ? "green" : "red");
+      const timer = setTimeout(() => setFlashColor(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [liveRates, mode, bank.institutionId]);
+
+  // ✅ ADIM 3: Tailwind Flash Effect - Dinamik sınıflar + Smooth Fade
+  const getCardClasses = () => {
+    const baseClasses =
+      "overflow-hidden rounded-2xl backdrop-blur-lg transition-all duration-700 ease-out hover:-translate-y-1 cursor-pointer";
+
+    if (flashColor === "green") {
+      return `${baseClasses} border-emerald-500/80 bg-emerald-500/20 shadow-lg shadow-emerald-500/30 border`;
+    } else if (flashColor === "red") {
+      return `${baseClasses} border-rose-500/80 bg-rose-500/20 shadow-lg shadow-rose-500/30 border`;
+    } else {
+      return `${baseClasses} border border-slate-200 bg-white/90 shadow-xl hover:border-teal-500/40 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-teal-500/30`;
+    }
+  };
+
+  const rawName = bank.name || "";
+  const isTestAccount = bank.subscription_type === "Test";
+  const displayName = rawName.replace(/\s*\([Tt]est\)\s*/g, "").trim();
+
+  const handleCardClick = () => {
+    if (typeof onSelect === "function") onSelect(bank);
+  };
+
+  const handleCardKeyDown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleCardClick();
+    }
+  };
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-900/60 p-6 shadow-xl backdrop-blur-lg transition-all duration-300 hover:-translate-y-1 hover:border-teal-500/30">
-      <a
-        href={bank.websiteUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group flex items-center gap-3 px-1 pb-4"
-      >
+    <div
+      className={getCardClasses() + " p-6"}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      role="button"
+      tabIndex={0}
+      aria-label={`${displayName || bank.name} analizini aç`}
+    >
+      <div className="group flex items-center gap-3 px-1 pb-4">
         <img
-          src={`https://www.google.com/s2/favicons?domain=${bankDomains[String(bank.name || "").toLowerCase()] || "bank.com"}&sz=128`}
-          alt={bank.name}
-          className="h-8 w-8 shrink-0 rounded-full bg-white p-0.5 object-contain shadow-sm"
+          src={
+            bank.logo_url ||
+            `https://www.google.com/s2/favicons?domain=${bankDomains[String(bank.name || "").toLowerCase()] || "bank.com"}&sz=128`
+          }
+          alt={displayName || bank.name}
+          className="h-8 w-8 shrink-0 rounded-full bg-white p-0.5 object-cover shadow-sm"
         />
-        <h3 className="text-base font-semibold leading-tight text-slate-100 transition group-hover:text-blue-300 group-hover:underline">
-          {bank.name}
-        </h3>
-      </a>
+        <div className="flex items-center gap-2 min-w-0">
+          <h3
+            className={`text-base font-semibold leading-tight transition-colors duration-700 ease-out truncate ${
+              flashColor === "green"
+                ? "text-emerald-700 group-hover:text-emerald-600 dark:text-emerald-200 dark:group-hover:text-emerald-300"
+                : flashColor === "red"
+                  ? "text-rose-700 group-hover:text-rose-600 dark:text-rose-200 dark:group-hover:text-rose-300"
+                  : "text-slate-800 group-hover:text-teal-700 dark:text-slate-100 dark:group-hover:text-teal-300"
+            }`}
+          >
+            {displayName || bank.name}
+          </h3>
+          {isTestAccount && (
+            <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider text-rose-500 bg-rose-500/10 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.5)]">
+              TEST
+            </span>
+          )}
+        </div>
+      </div>
 
       {mode === "exchange" ? (
         <div className="px-1 pb-1">
-          <div className="divide-y divide-slate-700/60">
+          <div className="divide-y divide-slate-200 dark:divide-slate-700/60">
             {exchangeRates.map((rate) => (
               <div key={rate.currency} className="flex items-center justify-between py-3">
-                <span className="inline-flex items-center justify-center rounded-lg bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                <span className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors duration-700 ease-out ${
+                  flashColor === "green" ? "bg-emerald-500/30 text-emerald-700 dark:text-emerald-200" :
+                  flashColor === "red" ? "bg-rose-500/30 text-rose-700 dark:text-rose-200" :
+                  "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                }`}>
                   {getCurrencyDisplay(rate.currency)}
                 </span>
 
                 <div className="flex items-center gap-5">
                   <div className="text-right">
-                    <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                    <span className={`mb-0.5 block text-[10px] font-medium uppercase tracking-wider transition-colors duration-700 ease-out ${
+                      flashColor === "green" ? "text-emerald-300" :
+                      flashColor === "red" ? "text-rose-300" :
+                      "text-slate-500"
+                    }`}>
                       ALIS
                     </span>
-                    <span className="font-mono text-xl font-bold text-emerald-400">
+                    <span className={`font-mono text-xl font-bold transition-colors duration-700 ease-out ${
+                      flashColor === "green" ? "text-emerald-300" :
+                      flashColor === "red" ? "text-rose-300" :
+                      "text-emerald-400"
+                    }`}>
                       {formatRate(rate.buy, rate.currency)}
                     </span>
                   </div>
                   <div className="text-right">
-                    <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                    <span className={`mb-0.5 block text-[10px] font-medium uppercase tracking-wider transition-colors duration-700 ease-out ${
+                      flashColor === "green" ? "text-emerald-300" :
+                      flashColor === "red" ? "text-rose-300" :
+                      "text-slate-500"
+                    }`}>
                       SATIS
                     </span>
-                    <span className="font-mono text-xl font-bold text-rose-400">
+                    <span className={`font-mono text-xl font-bold transition-colors duration-700 ease-out ${
+                      flashColor === "green" ? "text-emerald-300" :
+                      flashColor === "red" ? "text-rose-300" :
+                      "text-rose-400"
+                    }`}>
                       {formatRate(rate.sell, rate.currency)}
                     </span>
                   </div>
