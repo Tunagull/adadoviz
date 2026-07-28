@@ -118,11 +118,35 @@ export function InstitutionAdminPage() {
   
   // ✅ İşletme Bilgileri Modal
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [businessPhone, setBusinessPhone] = useState("");
-  const [businessHours, setBusinessHours] = useState("");
+  const [currentBusinessPhone, setCurrentBusinessPhone] = useState("+90 (505) 123 - 4567"); // Mock: mevcut telefon
+  const [infoStep, setInfoStep] = useState(0); // 0: kapalı, 1: telefon, 2: onay, 3: kod
+  const [newBusinessPhone, setNewBusinessPhone] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState("");
   const [infoSuccess, setInfoSuccess] = useState("");
+  
+  // Çalışma Saatleri: Her gün için [başlangıç (dakika), bitiş (dakika)]
+  const [businessHours, setBusinessHours] = useState({
+    pazartesi: [480, 1020], // 08:00 - 17:00
+    sali: [480, 1020],
+    carsamba: [480, 1020],
+    persembe: [480, 1020],
+    cuma: [480, 1020],
+    cumartesi: [540, 900], // 09:00 - 15:00
+    pazar: [null, null], // Kapalı
+  });
+  
+  const dayLabels = ["pazartesi", "sali", "carsamba", "persembe", "cuma", "cumartesi", "pazar"];
+  const dayDisplayNames = {
+    pazartesi: "Pazartesi",
+    sali: "Salı",
+    carsamba: "Çarşamba",
+    persembe: "Perşembe",
+    cuma: "Cuma",
+    cumartesi: "Cumartesi",
+    pazar: "Pazar",
+  };
 
   useEffect(() => {
     if (bootstrapping) return;
@@ -409,29 +433,110 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ İşletme Bilgileri Handler
-  const handleInfoUpdate = async () => {
-    if (!auth?.token) return;
-    setInfoLoading(true);
+  // ✅ Telefon Formatı Yardımcı
+  const formatPhoneNumber = (value) => {
+    const digits = value.replace(/\D/g, "");
+    if (digits.length === 0) return "";
+    if (digits.length <= 3) return `+90 (${digits}`;
+    if (digits.length <= 6) return `+90 (${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    if (digits.length <= 10) return `+90 (${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6)}`;
+    return `+90 (${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6, 10)}`;
+  };
+
+  // ✅ Saat formatı yardımcı
+  const minutesToTime = (minutes) => {
+    if (minutes === null || minutes === undefined) return "Kapalı";
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
+  };
+
+  // ✅ Telefon step 1: Yeni numara girilip onaya hazırlanma
+  const handlePhoneSubmit = async () => {
+    if (newBusinessPhone.replace(/\D/g, "").length !== 10) {
+      setInfoError("Lütfen geçerli bir telefon numarası girin (10 rakam).");
+      return;
+    }
     setInfoError("");
-    setInfoSuccess("");
+    setInfoLoading(true);
     try {
-      // Mock API call
-      console.log("[INFO] İşletme bilgileri güncelleniyor:", { businessPhone, businessHours });
-      await new Promise((resolve) => setTimeout(resolve, 1200));
-      console.log("[INFO] İşletme bilgileri başarıyla güncellendi!");
-      setInfoSuccess("İşletme bilgileri başarıyla güncellendi!");
-      setTimeout(() => {
-        setShowInfoModal(false);
-        setBusinessPhone("");
-        setBusinessHours("");
-        setInfoSuccess("");
-      }, 1500);
+      // Mock: OTP gönderme API çağrısı
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      setInfoStep(3); // Doğrudan kod giriş aşamasına git (mock olarak)
+      setVerificationCode("");
     } catch (err) {
-      setInfoError(err.message || "Güncelleme başarısız.");
+      setInfoError("OTP gönderilemedi.");
     } finally {
       setInfoLoading(false);
     }
+  };
+
+  // ✅ Kod doğrulama ve telefon güncelleme
+  const handleVerifyCode = async () => {
+    if (verificationCode.length !== 6 || !/^\d+$/.test(verificationCode)) {
+      setInfoError("Lütfen 6 haneli doğrulama kodunu girin.");
+      return;
+    }
+    setInfoError("");
+    setInfoLoading(true);
+    try {
+      // Mock: Kod doğrulama API çağrısı
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Mock başarı
+      if (verificationCode === "000000" || verificationCode !== "") {
+        setCurrentBusinessPhone(newBusinessPhone);
+        setInfoSuccess("Telefon numarası başarıyla güncellendi!");
+        setTimeout(() => {
+          closeInfoModal();
+          setInfoSuccess("");
+        }, 1500);
+      }
+    } catch (err) {
+      setInfoError("Kod doğrulanamadı.");
+    } finally {
+      setInfoLoading(false);
+    }
+  };
+
+  // ✅ İşletme Bilgileri Modal Kapatma
+  const closeInfoModal = () => {
+    setShowInfoModal(false);
+    setInfoStep(0);
+    setNewBusinessPhone("");
+    setVerificationCode("");
+    setInfoError("");
+    setInfoSuccess("");
+  };
+
+  // ✅ Range Slider Handler
+  const handleHourChange = (day, index, value) => {
+    const newValue = Math.min(Math.max(parseInt(value) || 0, 0), 1440);
+    const current = [...businessHours[day]];
+    current[index] = newValue;
+    
+    // Mantık: başlangıç > bitiş ise swap et
+    if (index === 0 && newValue > current[1]) {
+      current[1] = newValue;
+    } else if (index === 1 && newValue < current[0]) {
+      current[0] = newValue;
+    }
+    
+    setBusinessHours((prev) => ({
+      ...prev,
+      [day]: current,
+    }));
+  };
+
+  // ✅ Günü Kapalı/Açık yap
+  const toggleDayOpen = (day) => {
+    setBusinessHours((prev) => {
+      const current = prev[day];
+      if (current[0] === null && current[1] === null) {
+        return { ...prev, [day]: [480, 1020] };
+      } else {
+        return { ...prev, [day]: [null, null] };
+      }
+    });
   };
 
   if (bootstrapping) {
@@ -943,100 +1048,243 @@ export function InstitutionAdminPage() {
           </div>
         )}
 
-        {/* ✅ İşletme Bilgileri Modal */}
+        {/* ✅ İşletme Bilgileri Modal — Yeni Versiyon */}
         {showInfoModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => !infoLoading && setShowInfoModal(false)}
+            onClick={() => !infoLoading && closeInfoModal()}
           >
             <div
-              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <X
                 size={24}
-                onClick={() => !infoLoading && setShowInfoModal(false)}
+                onClick={() => !infoLoading && closeInfoModal()}
                 className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
                 aria-label="Kapat"
               />
 
-              <div className="mb-5 flex items-center gap-3 pr-8">
-                <div className="rounded-lg bg-purple-500/10 p-2 text-purple-600 dark:text-purple-400">
+              <div className="mb-6 flex items-center gap-3 pr-8">
+                <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
                   <Edit2 className="size-5" />
                 </div>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  İşletme Bilgilerini Güncelle
-                </h3>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                    İşletme Bilgilerini Güncelle
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Telefon ve çalışma saatleri
+                  </p>
+                </div>
               </div>
 
-              <form className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <Phone className="size-4" />
-                    Telefon Numarası
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="+90 (XXX) XXX-XXXX"
-                    value={businessPhone}
-                    onChange={(e) => setBusinessPhone(e.target.value)}
-                    disabled={infoLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-purple-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <Clock className="size-4" />
-                    Çalışma Saatleri
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="09:00 - 18:00"
-                    value={businessHours}
-                    onChange={(e) => setBusinessHours(e.target.value)}
-                    disabled={infoLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-purple-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </div>
-
-                {infoError ? (
-                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
-                    {infoError}
+              {/* ADIM 1: Telefon Girişi */}
+              {infoStep === 0 && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-4 space-y-2">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                      Mevcut Telefon Numarası:
+                    </p>
+                    <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400">
+                      {currentBusinessPhone}
+                    </p>
                   </div>
-                ) : null}
 
-                {infoSuccess ? (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
-                    {infoSuccess}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                      <Phone className="size-4" />
+                      Yeni Telefon Numarası
+                    </label>
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder="+90 (XXX) XXX - XXXX"
+                      value={formatPhoneNumber(newBusinessPhone)}
+                      onChange={(e) => setNewBusinessPhone(formatPhoneNumber(e.target.value))}
+                      disabled={infoLoading}
+                      maxLength={19}
+                      className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-mono text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Sadece rakamları yazın, format otomatik uygulanır.
+                    </p>
                   </div>
-                ) : null}
 
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowInfoModal(false);
-                      setBusinessPhone("");
-                      setBusinessHours("");
-                      setInfoError("");
-                      setInfoSuccess("");
-                    }}
-                    disabled={infoLoading}
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
-                  >
-                    {t("cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleInfoUpdate}
-                    disabled={infoLoading || (!businessPhone && !businessHours)}
-                    className="flex-1 rounded-lg bg-gradient-to-r from-purple-400 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition hover:brightness-110 disabled:opacity-50"
-                  >
-                    {infoLoading ? "Kaydediliyor..." : "Kaydet"}
-                  </button>
+                  {/* Çalışma Saatleri — Haftanın 7 Günü */}
+                  <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                      <Clock className="size-4" />
+                      Çalışma Saatleri
+                    </h4>
+
+                    <div className="space-y-4">
+                      {dayLabels.map((day) => {
+                        const [start, end] = businessHours[day];
+                        const isClosed = start === null || end === null;
+                        const displayStart = minutesToTime(start);
+                        const displayEnd = minutesToTime(end);
+                        return (
+                          <div key={day} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950/50">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                {dayDisplayNames[day]}
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => toggleDayOpen(day)}
+                                className={`text-xs px-2 py-1 rounded transition ${
+                                  isClosed
+                                    ? "bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-200"
+                                    : "bg-cyan-500/20 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300"
+                                }`}
+                              >
+                                {isClosed ? "Kapalı" : "Açık"}
+                              </button>
+                            </div>
+
+                            {!isClosed ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="1440"
+                                    step="30"
+                                    value={start}
+                                    onChange={(e) => handleHourChange(day, 0, e.target.value)}
+                                    disabled={infoLoading}
+                                    className="flex-1 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-cyan-500"
+                                  />
+                                  <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 min-w-[60px] text-center">
+                                    {displayStart}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-3">
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="1440"
+                                    step="30"
+                                    value={end}
+                                    onChange={(e) => handleHourChange(day, 1, e.target.value)}
+                                    disabled={infoLoading}
+                                    className="flex-1 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-cyan-500"
+                                  />
+                                  <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 min-w-[60px] text-center">
+                                    {displayEnd}
+                                  </span>
+                                </div>
+
+                                <p className="text-xs text-slate-600 dark:text-slate-400 text-center mt-2 font-semibold">
+                                  {displayStart} — {displayEnd}
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">
+                                Bu gün kapalıdır.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {infoError ? (
+                    <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                      {infoError}
+                    </div>
+                  ) : null}
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={closeInfoModal}
+                      disabled={infoLoading}
+                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                    >
+                      {t("cancel")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePhoneSubmit}
+                      disabled={infoLoading || newBusinessPhone.replace(/\D/g, "").length !== 10}
+                      className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                    >
+                      {infoLoading ? "Gönderiliyor..." : "Telefon Güncelle"}
+                    </button>
+                  </div>
                 </div>
-              </form>
+              )}
+
+              {/* ADIM 3: Kod Girişi (Onay aşaması atlanıp doğrudan koda geçildi) */}
+              {infoStep === 3 && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-4">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
+                      Yeni Numaranız:
+                    </p>
+                    <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400 mb-3">
+                      {newBusinessPhone}
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      Kaydedilen e-posta adresinize 6 haneli bir doğrulama kodu gönderildi. Kodu aşağıya giriniz.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Doğrulama Kodu
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="000000"
+                      maxLength="6"
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      disabled={infoLoading}
+                      className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-center text-lg font-mono font-bold text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 tracking-[0.5em]"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+                      {verificationCode.length} / 6
+                    </p>
+                  </div>
+
+                  {infoError ? (
+                    <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                      {infoError}
+                    </div>
+                  ) : null}
+
+                  {infoSuccess ? (
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
+                      {infoSuccess}
+                    </div>
+                  ) : null}
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setInfoStep(0)}
+                      disabled={infoLoading}
+                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                    >
+                      Vazgeç
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleVerifyCode}
+                      disabled={infoLoading || verificationCode.length !== 6}
+                      className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                    >
+                      {infoLoading ? "Doğrulanıyor..." : "Kodu Doğrula"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
