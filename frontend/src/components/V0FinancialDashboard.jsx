@@ -997,7 +997,7 @@ export function V0FinancialDashboard() {
     let isMounted = true;
 
     const connect = () => {
-      eventSource = new EventSource("https://adadoviz-api.onrender.com/api/rates-stream");
+      eventSource = new EventSource("https://adadoviz-backend.onrender.com/api/rates-stream");
 
       eventSource.onmessage = (event) => {
         try {

@@ -6,7 +6,7 @@
  * 2) Local dev → http://localhost:5000
  * 3) Production fallback → Render backend (so SSE/charts never hit Vercel /api)
  */
-const PRODUCTION_API_FALLBACK = "https://adadoviz-api.onrender.com";
+const PRODUCTION_API_FALLBACK = "https://adadoviz-backend.onrender.com";
 
 const envBase = String(import.meta.env.VITE_API_BASE_URL || "")
   .trim()
