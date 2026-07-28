@@ -1244,10 +1244,10 @@ async function startServer() {
    * ✅ SADELEŞTIRILMIŞ: Merkez Bankası XML Kurlarına Odaklanılmış
    * - Sadece Merkez Bankası XML kurları dinleniyor
    * - Faiz, kredi ve mevduat API'leri tamamen kaldırıldı
-   * - 30 saniyeli güncelleme döngüsü
+   * - 60 saniyeli güncelleme döngüsü
    * - Cache fallback mekanizması aktif
    */
-  const REFRESH_INTERVAL_MS = 30000; // 30 saniye - Merkez Bankası güncellemeleri
+  const REFRESH_INTERVAL_MS = 60000; // 60 saniye - Merkez Bankası güncellemeleri
   
   setInterval(async () => {
     await refreshRatesCacheWithChangeDetection();
