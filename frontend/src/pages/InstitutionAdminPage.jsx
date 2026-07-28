@@ -714,7 +714,7 @@ export function InstitutionAdminPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 transition hover:bg-rose-500/20 dark:text-rose-200"
+              className="inline-flex items-center gap-2 rounded-lg border border-red-500 bg-transparent px-3 py-2 text-sm text-red-600 transition-all duration-300 hover:bg-red-500/10 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:text-red-400 dark:hover:border-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
             >
               <LogOut className="size-4" />
               {t("logoutShort")}
@@ -861,17 +861,17 @@ export function InstitutionAdminPage() {
                       onChange={(e) =>
                         handleMarginChange(item.currency, item.type, "value", e.target.value)
                       }
-                      className="h-10 w-full rounded-lg border border-teal-500/40 bg-white px-2 text-xs text-teal-800 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-teal-200"
+                      className="h-10 w-full rounded-lg border border-cyan-500/40 bg-white px-2 text-xs text-cyan-800 outline-none transition-all focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-cyan-200"
                     />
                   </div>
 
                   {/* Final Kur & Kâr */}
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-2 text-center">
-                    <p className="text-xs text-emerald-800 dark:text-emerald-200">
-                      <span className="font-semibold">{t("finalRate")}:</span> {formatNum(final)}
+                  <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-2 text-center">
+                    <p className="text-xs font-semibold text-cyan-700 dark:text-cyan-300">
+                      {t("finalRate")}: <span className="font-bold text-cyan-800 dark:text-cyan-200">{formatNum(final)}</span>
                       {(() => {
                         const kar = final && kur ? final - kur : 0;
-                        return kar > 0 ? ` / ${formatNum(kar)} ${t("profitTl")}` : '';
+                        return kar > 0 ? ` / +${formatNum(kar)} ${t("profitTl")}` : '';
                       })()}
                     </p>
                   </div>
@@ -883,7 +883,7 @@ export function InstitutionAdminPage() {
 
           {/* SATIŞ KURLAR */}
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-rose-600 dark:text-rose-400">{t("sellRates")}</h3>
+            <h3 className="mb-3 text-sm font-semibold text-red-600 dark:text-red-400">{t("sellRates")}</h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
                 const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
@@ -941,17 +941,17 @@ export function InstitutionAdminPage() {
                         onChange={(e) =>
                           handleMarginChange(item.currency, item.type, "value", e.target.value)
                         }
-                        className="h-10 w-full rounded-lg border border-teal-500/40 bg-white px-2 text-xs text-teal-800 outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-teal-200"
+                        className="h-10 w-full rounded-lg border border-cyan-500/40 bg-white px-2 text-xs text-cyan-800 outline-none transition-all focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-cyan-200"
                       />
                     </div>
 
                     {/* Final Kur & Kâr */}
-                    <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-2 text-center">
-                      <p className="text-xs text-rose-800 dark:text-rose-200">
-                        <span className="font-semibold">{t("finalRate")}:</span> {formatNum(final)}
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-2 text-center">
+                      <p className="text-xs font-semibold text-red-700 dark:text-red-300">
+                        {t("finalRate")}: <span className="font-bold text-red-800 dark:text-red-200">{formatNum(final)}</span>
                         {(() => {
                           const kar = final && kur ? final - kur : 0;
-                          return kar > 0 ? ` / ${formatNum(kar)} ${t("profitTl")}` : '';
+                          return kar > 0 ? ` / +${formatNum(kar)} ${t("profitTl")}` : '';
                         })()}
                       </p>
                     </div>

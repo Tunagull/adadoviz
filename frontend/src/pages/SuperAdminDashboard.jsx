@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
+  ArrowLeft,
   ArrowRight,
   Activity,
   Building2,
@@ -582,12 +583,14 @@ export function SuperAdminDashboard() {
   return (
     <div className="mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-8 text-slate-800 dark:text-slate-100">
       <div className="mb-4">
-        <Link
-          to="/dashboard"
-          className="inline-flex items-center text-sm text-slate-500 transition hover:text-teal-600 dark:text-slate-400 dark:hover:text-teal-300"
+        <button
+          type="button"
+          onClick={() => navigate("/")}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
         >
-          ← {t("backToDashboardLink")}
-        </Link>
+          <ArrowLeft className="size-4" />
+          {t("backToDashboardLink")}
+        </button>
       </div>
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8 sm:gap-4">
@@ -607,7 +610,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={() => setShowLogModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-teal-500/40 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-teal-300"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
             <Activity size={18} />
             {t("logsButton")}
@@ -615,7 +618,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-500 dark:hover:text-white"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-red-500 hover:text-red-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-red-500 dark:hover:text-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
           >
             <LogOut size={16} />
             {t("logoutShort")}
@@ -762,7 +765,7 @@ export function SuperAdminDashboard() {
                             <button
                               type="button"
                               onClick={() => setBusinessToDelete(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-transparent px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-500/10 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500 bg-transparent px-3 py-1.5 text-xs font-medium text-red-600 transition-all duration-300 hover:bg-red-500/10 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:text-red-400 dark:hover:border-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
                             >
                               <Trash2 size={14} />
                               {t("deleteBtn")}
