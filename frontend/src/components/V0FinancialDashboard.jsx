@@ -958,14 +958,23 @@ export function V0FinancialDashboard() {
   const [selectedBusiness, setSelectedBusiness] = useState(null);
   const [headerCompact, setHeaderCompact] = useState(false);
 
+  // ✅ Histerezis (iki farklı eşik + aradaki "ölü bölge"): scroll pozisyonu tek bir
+  // sınırın (örn. 20px) etrafında gidip gelince header'ın sürekli küçülüp büyüyerek
+  // "titremesini" (jitter) önler. Küçülme ve büyüme için farklı eşikler kullanılır.
   useEffect(() => {
+    const COMPACT_ABOVE = 72;
+    const EXPAND_BELOW = 24;
     let raf = 0;
     const onScroll = () => {
       if (raf) return;
       raf = requestAnimationFrame(() => {
         raf = 0;
-        const next = window.scrollY > 20;
-        setHeaderCompact((prev) => (prev === next ? prev : next));
+        const y = window.scrollY;
+        setHeaderCompact((prev) => {
+          if (!prev && y > COMPACT_ABOVE) return true;
+          if (prev && y < EXPAND_BELOW) return false;
+          return prev;
+        });
       });
     };
 
