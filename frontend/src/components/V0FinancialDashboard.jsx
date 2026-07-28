@@ -24,7 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import { trackBusinessClick, trackCurrencyView } from "../lib/analytics";
-import { apiUrl, getApiBase } from "../lib/api";
+import { apiUrl } from "../lib/api";
 
 /**
  * ✅ Piyasa Özeti Kartı - Gerçek Geçmiş Veri Grafiği ve SSE Canlı Güncellemeleri
@@ -994,8 +994,7 @@ export function V0FinancialDashboard() {
     let isMounted = true;
 
     const connect = () => {
-      // Absolute URL required in production (Vercel has no /api/rates-stream)
-      eventSource = new EventSource(`${getApiBase()}/api/rates-stream`);
+      eventSource = new EventSource(apiUrl("/api/rates-stream"));
 
       eventSource.onmessage = (event) => {
         try {
