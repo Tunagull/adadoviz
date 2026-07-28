@@ -6,6 +6,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { fetchAdminRates, saveAdminRates, changeBusinessPassword } from "../lib/auth";
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
+import { DualRangeSlider } from "../components/DualRangeSlider";
 
 // Granüler 6-kalem yapısı
 const MARGIN_ITEMS = [
@@ -433,14 +434,21 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ Telefon Formatı Yardımcı
-  const formatPhoneNumber = (value) => {
-    const digits = value.replace(/\D/g, "");
-    if (digits.length === 0) return "";
-    if (digits.length <= 3) return `+90 (${digits}`;
-    if (digits.length <= 6) return `+90 (${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    if (digits.length <= 10) return `+90 (${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6)}`;
-    return `+90 (${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6, 10)}`;
+  // ✅ Telefon Formatı Yardımcı (Fixed: Masking sistem)
+  const formatPhoneDisplay = (digits) => {
+    // digits: "5051234567" gibi raw rakamlar
+    // Output: "(505) 123 - 4567" (input value'suna yazılacak)
+    if (digits.length === 0) return "(XXX) XXX - XXXX";
+    if (digits.length === 1) return `(${digits}XX) XXX - XXXX`;
+    if (digits.length === 2) return `(${digits}X) XXX - XXXX`;
+    if (digits.length === 3) return `(${digits}) XXX - XXXX`;
+    if (digits.length === 4) return `(${digits.slice(0, 3)}) ${digits[3]}XX - XXXX`;
+    if (digits.length === 5) return `(${digits.slice(0, 3)}) ${digits.slice(3)}X - XXXX`;
+    if (digits.length === 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)} - XXXX`;
+    if (digits.length === 7) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits[6]}XXX`;
+    if (digits.length === 8) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6)}XX`;
+    if (digits.length === 9) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6)}X`;
+    if (digits.length >= 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6, 10)}`;
   };
 
   // ✅ Saat formatı yardımcı
@@ -1096,19 +1104,32 @@ export function InstitutionAdminPage() {
                       <Phone className="size-4" />
                       Yeni Telefon Numarası
                     </label>
-                    <input
-                      type="tel"
-                      inputMode="numeric"
-                      placeholder="+90 (XXX) XXX - XXXX"
-                      value={formatPhoneNumber(newBusinessPhone)}
-                      onChange={(e) => setNewBusinessPhone(formatPhoneNumber(e.target.value))}
-                      disabled={infoLoading}
-                      maxLength={19}
-                      className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-mono text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    />
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Sadece rakamları yazın, format otomatik uygulanır.
-                    </p>
+                    <div className="relative h-11 flex items-center rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950 focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-500/20 transition">
+                      {/* Sabit +90 Prefix */}
+                      <span className="absolute left-3 text-sm font-mono font-bold text-slate-600 dark:text-slate-400 pointer-events-none">
+                        +90
+                      </span>
+                      
+                      {/* Input: Sadece Rakamlar */}
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        placeholder=" (XXX) XXX - XXXX"
+                        value={newBusinessPhone}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
+                          setNewBusinessPhone(digits);
+                        }}
+                        disabled={infoLoading}
+                        maxLength="10"
+                        className="h-full flex-1 rounded-lg bg-transparent px-3 pl-[54px] text-sm font-mono text-slate-800 outline-none disabled:opacity-50 dark:text-slate-100"
+                      />
+                      
+                      {/* Masking Display */}
+                      <span className="absolute left-[54px] pointer-events-none text-sm font-mono text-slate-400 dark:text-slate-500 select-none">
+                        {formatPhoneDisplay(newBusinessPhone)}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Çalışma Saatleri — Haftanın 7 Günü */}
@@ -1125,15 +1146,15 @@ export function InstitutionAdminPage() {
                         const displayStart = minutesToTime(start);
                         const displayEnd = minutesToTime(end);
                         return (
-                          <div key={day} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-950/50">
-                            <div className="flex items-center justify-between mb-2">
+                          <div key={day} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/50">
+                            <div className="flex items-center justify-between mb-3">
                               <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                                 {dayDisplayNames[day]}
                               </label>
                               <button
                                 type="button"
                                 onClick={() => toggleDayOpen(day)}
-                                className={`text-xs px-2 py-1 rounded transition ${
+                                className={`text-xs px-2.5 py-1.5 rounded font-medium transition ${
                                   isClosed
                                     ? "bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-200"
                                     : "bg-cyan-500/20 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300"
@@ -1144,45 +1165,28 @@ export function InstitutionAdminPage() {
                             </div>
 
                             {!isClosed ? (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-3">
-                                  <input
-                                    type="range"
-                                    min="0"
-                                    max="1440"
-                                    step="30"
-                                    value={start}
-                                    onChange={(e) => handleHourChange(day, 0, e.target.value)}
-                                    disabled={infoLoading}
-                                    className="flex-1 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-cyan-500"
-                                  />
-                                  <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 min-w-[60px] text-center">
-                                    {displayStart}
-                                  </span>
-                                </div>
-
-                                <div className="flex items-center gap-3">
-                                  <input
-                                    type="range"
-                                    min="0"
-                                    max="1440"
-                                    step="30"
-                                    value={end}
-                                    onChange={(e) => handleHourChange(day, 1, e.target.value)}
-                                    disabled={infoLoading}
-                                    className="flex-1 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-cyan-500"
-                                  />
-                                  <span className="text-xs font-mono font-bold text-cyan-600 dark:text-cyan-400 min-w-[60px] text-center">
-                                    {displayEnd}
-                                  </span>
-                                </div>
-
-                                <p className="text-xs text-slate-600 dark:text-slate-400 text-center mt-2 font-semibold">
+                              <div className="space-y-3">
+                                <DualRangeSlider
+                                  min={0}
+                                  max={1440}
+                                  step={30}
+                                  minValue={start}
+                                  maxValue={end}
+                                  disabled={infoLoading}
+                                  onRangeChange={(newStart, newEnd) => {
+                                    setBusinessHours((prev) => ({
+                                      ...prev,
+                                      [day]: [newStart, newEnd],
+                                    }));
+                                  }}
+                                />
+                                
+                                <p className="text-sm font-semibold text-center text-cyan-600 dark:text-cyan-400 pt-1">
                                   {displayStart} — {displayEnd}
                                 </p>
                               </div>
                             ) : (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-2">
+                              <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-3 font-medium">
                                 Bu gün kapalıdır.
                               </p>
                             )}
@@ -1226,11 +1230,8 @@ export function InstitutionAdminPage() {
                     <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
                       Yeni Numaranız:
                     </p>
-                    <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400 mb-3">
-                      {newBusinessPhone}
-                    </p>
-                    <p className="text-xs text-slate-600 dark:text-slate-400">
-                      Kaydedilen e-posta adresinize 6 haneli bir doğrulama kodu gönderildi. Kodu aşağıya giriniz.
+                    <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400">
+                      +90 {newBusinessPhone.slice(0, 3) && `(${newBusinessPhone.slice(0, 3)}) `}{newBusinessPhone.slice(3, 6) && `${newBusinessPhone.slice(3, 6)} `}{newBusinessPhone.slice(6) && `- ${newBusinessPhone.slice(6)}`}
                     </p>
                   </div>
 
@@ -1248,9 +1249,6 @@ export function InstitutionAdminPage() {
                       disabled={infoLoading}
                       className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-center text-lg font-mono font-bold text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 tracking-[0.5em]"
                     />
-                    <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
-                      {verificationCode.length} / 6
-                    </p>
                   </div>
 
                   {infoError ? (
