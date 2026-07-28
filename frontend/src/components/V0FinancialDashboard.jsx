@@ -1465,7 +1465,7 @@ export function V0FinancialDashboard() {
                 ? navigate(isSuperAdmin ? "/super-admin" : "/admin")
                 : setIsBusinessLoginOpen(true)
             }
-            className={`${headerBtnClass} border-slate-300 bg-white text-slate-700 hover:border-teal-500/40 hover:text-slate-900 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:border-teal-500/30 dark:hover:text-white`}
+            className={`${headerBtnClass} border-slate-300 bg-white text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]`}
           >
             {isAuthenticated
               ? isSuperAdmin
@@ -1491,7 +1491,7 @@ export function V0FinancialDashboard() {
           <button
             type="button"
             onClick={scrollToPartnership}
-            className={`hidden sm:inline-flex rounded-full border border-indigo-500/30 bg-indigo-500/10 font-semibold text-indigo-700 transition-all duration-300 hover:border-indigo-500/50 hover:bg-indigo-500/15 dark:text-indigo-200 ${
+            className={`hidden sm:inline-flex rounded-full border border-slate-300 bg-white font-semibold text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >

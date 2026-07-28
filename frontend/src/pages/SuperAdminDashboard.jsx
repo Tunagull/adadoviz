@@ -633,10 +633,10 @@ export function SuperAdminDashboard() {
               setError("");
               setSuccess("");
             }}
-            className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-all duration-300 ${
               tab === item.id
-                ? "bg-teal-500/20 text-teal-700 border border-teal-500/40 dark:text-teal-300"
-                : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-transparent dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800/80"
+                ? "bg-cyan-500/20 text-cyan-700 border border-cyan-500/40 dark:text-cyan-300"
+                : "text-slate-500 border border-transparent hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:bg-slate-100 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:bg-slate-800/80 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
             }`}
           >
             {item.label}
@@ -754,7 +754,7 @@ export function SuperAdminDashboard() {
                             <button
                               type="button"
                               onClick={() => openEdit(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 transition hover:border-teal-500/50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:text-teal-300"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                             >
                               <Pencil size={14} />
                               {t("editBtn")}
