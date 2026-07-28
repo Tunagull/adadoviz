@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone } from "lucide-react";
+import Cropper from "react-easy-crop";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { fetchAdminRates, saveAdminRates, changeBusinessPassword } from "../lib/auth";
@@ -115,11 +116,17 @@ export function InstitutionAdminPage() {
   const [showLogoModal, setShowLogoModal] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState(null); // Object URL
+  const [logoCropStep, setLogoCropStep] = useState(false); // false: select, true: crop
+  const [logoCrop, setLogoCrop] = useState({ x: 0, y: 0 });
+  const [logoZoom, setLogoZoom] = useState(1);
+  const [logoCroppedArea, setLogoCroppedArea] = useState(null);
   const [logoLoading, setLogoLoading] = useState(false);
+  const logoObjectUrlRef = useRef(null);
   
   // ✅ İşletme Bilgileri Modal
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [currentBusinessPhone, setCurrentBusinessPhone] = useState("+90 (505) 123 - 4567"); // Mock: mevcut telefon
+  const [currentBusinessPhone, setCurrentBusinessPhone] = useState("+90 (505) 123 4567"); // Mock: mevcut telefon
   const [infoStep, setInfoStep] = useState(0); // 0: kapalı, 1: telefon, 2: onay, 3: kod
   const [newBusinessPhone, setNewBusinessPhone] = useState("");
   const [verificationCode, setVerificationCode] = useState("");
@@ -148,6 +155,15 @@ export function InstitutionAdminPage() {
     cumartesi: "Cumartesi",
     pazar: "Pazar",
   };
+
+  // ✅ Logo Object URL Cleanup
+  useEffect(() => {
+    return () => {
+      if (logoObjectUrlRef.current) {
+        URL.revokeObjectURL(logoObjectUrlRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (bootstrapping) return;
@@ -404,29 +420,76 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ Logo Handler
+  // ✅ Logo Handler — File Select
   const handleLogoFileSelect = (file) => {
     if (file && file.type.startsWith("image/")) {
       setLogoFile(file);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setLogoPreview(e.target.result);
-      };
-      reader.readAsDataURL(file);
+      // Cleanup eski URL
+      if (logoObjectUrlRef.current) {
+        URL.revokeObjectURL(logoObjectUrlRef.current);
+      }
+      // Yeni object URL oluştur
+      const objectUrl = URL.createObjectURL(file);
+      logoObjectUrlRef.current = objectUrl;
+      setLogoPreviewUrl(objectUrl);
+      setLogoCropStep(true); // Crop adımına geç
     }
   };
 
-  const handleLogoUpload = async () => {
-    if (!logoFile || !auth?.token) return;
+  // ✅ Kırpılmış görseli canvas'tan blob'a çevir
+  const getCroppedImage = async (imageSrc, crop) => {
+    const image = new Image();
+    image.src = imageSrc;
+    
+    return new Promise((resolve) => {
+      image.onload = () => {
+        const canvas = document.createElement("canvas");
+        const scaleX = image.naturalWidth / image.width;
+        const scaleY = image.naturalHeight / image.height;
+        
+        canvas.width = crop.width;
+        canvas.height = crop.height;
+        
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(
+          image,
+          crop.x * scaleX,
+          crop.y * scaleY,
+          crop.width * scaleX,
+          crop.height * scaleY,
+          0,
+          0,
+          crop.width,
+          crop.height
+        );
+        
+        canvas.toBlob((blob) => {
+          resolve(blob);
+        }, "image/png");
+      };
+    });
+  };
+
+  // ✅ onCropComplete callback
+  const handleCropComplete = (croppedArea, croppedAreaPixels) => {
+    setLogoCroppedArea(croppedAreaPixels);
+  };
+
+  // ✅ Kırpılmış logoyu kaydet
+  const handleSaveCroppedLogo = async () => {
+    if (!logoPreviewUrl || !logoCroppedArea || !auth?.token) return;
     setLogoLoading(true);
     try {
+      const blob = await getCroppedImage(logoPreviewUrl, logoCroppedArea);
+      console.log("[LOGO] Kırpılmış logo blob oluşturuldu:", blob);
       // Mock API call
-      console.log("[LOGO] Logo yükleniyor:", logoFile.name);
       await new Promise((resolve) => setTimeout(resolve, 1500));
       console.log("[LOGO] Logo başarıyla yüklendi!");
       setShowLogoModal(false);
       setLogoFile(null);
-      setLogoPreview(null);
+      setLogoPreviewUrl(null);
+      setLogoCropStep(false);
+      setLogoCroppedArea(null);
     } catch (err) {
       console.error("[LOGO] Yükleme hatası:", err);
     } finally {
@@ -434,21 +497,21 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ Telefon Formatı Yardımcı (Fixed: Masking sistem)
+  // ✅ Telefon Formatı Yardımcı (Fixed: Masking sistem, tiresiz)
   const formatPhoneDisplay = (digits) => {
     // digits: "5051234567" gibi raw rakamlar
-    // Output: "(505) 123 - 4567" (input value'suna yazılacak)
-    if (digits.length === 0) return "(XXX) XXX - XXXX";
-    if (digits.length === 1) return `(${digits}XX) XXX - XXXX`;
-    if (digits.length === 2) return `(${digits}X) XXX - XXXX`;
-    if (digits.length === 3) return `(${digits}) XXX - XXXX`;
-    if (digits.length === 4) return `(${digits.slice(0, 3)}) ${digits[3]}XX - XXXX`;
-    if (digits.length === 5) return `(${digits.slice(0, 3)}) ${digits.slice(3)}X - XXXX`;
-    if (digits.length === 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)} - XXXX`;
-    if (digits.length === 7) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits[6]}XXX`;
-    if (digits.length === 8) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6)}XX`;
-    if (digits.length === 9) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6)}X`;
-    if (digits.length >= 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} - ${digits.slice(6, 10)}`;
+    // Output: "(505) 123 XXXX" (input value'suna yazılacak, TİRESİZ)
+    if (digits.length === 0) return "(XXX) XXX XXXX";
+    if (digits.length === 1) return `(${digits}XX) XXX XXXX`;
+    if (digits.length === 2) return `(${digits}X) XXX XXXX`;
+    if (digits.length === 3) return `(${digits}) XXX XXXX`;
+    if (digits.length === 4) return `(${digits.slice(0, 3)}) ${digits[3]}XX XXXX`;
+    if (digits.length === 5) return `(${digits.slice(0, 3)}) ${digits.slice(3)}X XXXX`;
+    if (digits.length === 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)} XXXX`;
+    if (digits.length === 7) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits[6]}XXX`;
+    if (digits.length === 8) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6)}XX`;
+    if (digits.length === 9) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6)}X`;
+    if (digits.length >= 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6, 10)}`;
   };
 
   // ✅ Saat formatı yardımcı
@@ -948,14 +1011,14 @@ export function InstitutionAdminPage() {
           </div>
         )}
 
-        {/* ✅ Logo Modal */}
+        {/* ✅ Logo Modal — File Select ve Crop */}
         {showLogoModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => !logoLoading && setShowLogoModal(false)}
+            onClick={() => !logoLoading && !logoCropStep && setShowLogoModal(false)}
           >
             <div
-              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <X
@@ -965,93 +1028,158 @@ export function InstitutionAdminPage() {
                 aria-label="Kapat"
               />
 
-              <div className="mb-5 flex items-center gap-3 pr-8">
-                <div className="rounded-lg bg-indigo-500/10 p-2 text-indigo-600 dark:text-indigo-400">
-                  <Camera className="size-5" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  Logo Yönet
-                </h3>
-              </div>
+              {/* STEP 1: Dosya Seçimi */}
+              {!logoCropStep ? (
+                <div className="p-6">
+                  <div className="mb-5 flex items-center gap-3 pr-8">
+                    <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
+                      <Camera className="size-5" />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                      Logo Yönet
+                    </h3>
+                  </div>
 
-              <div className="space-y-4">
-                {/* Logo Önizlemesi */}
-                <div className="flex justify-center">
-                  <div className="flex h-32 w-32 items-center justify-center rounded-full border-2 border-slate-300 bg-slate-50 overflow-hidden dark:border-slate-700 dark:bg-slate-950">
-                    {logoPreview ? (
-                      <img src={logoPreview} alt="Logo preview" className="h-full w-full object-cover" />
-                    ) : auth?.institution_id ? (
-                      <img
-                        src={`/logos/${auth.institution_id}.png`}
-                        alt={auth.institution_name}
-                        className="h-full w-full object-cover"
-                        onError={(e) => (e.target.style.display = "none")}
+                  <div className="space-y-4">
+                    {/* Logo Önizlemesi */}
+                    <div className="flex justify-center">
+                      <div className="flex h-32 w-32 items-center justify-center rounded-full border-2 border-slate-300 bg-slate-50 overflow-hidden dark:border-slate-700 dark:bg-slate-950">
+                        {auth?.institution_id ? (
+                          <img
+                            src={`/logos/${auth.institution_id}.png`}
+                            alt={auth.institution_name}
+                            className="h-full w-full object-cover"
+                            onError={(e) => (e.target.style.display = "none")}
+                          />
+                        ) : (
+                          <Building2 className="size-12 text-slate-300 dark:text-slate-600" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Drag & Drop Dosya Yükleme */}
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (e.dataTransfer.files[0]) {
+                          handleLogoFileSelect(e.dataTransfer.files[0]);
+                        }
+                      }}
+                      className="rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-cyan-400 hover:bg-cyan-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-cyan-500 dark:hover:bg-cyan-950/20"
+                    >
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => e.target.files[0] && handleLogoFileSelect(e.target.files[0])}
+                        disabled={logoLoading}
+                        className="hidden"
+                        id="logo-input"
                       />
-                    ) : (
-                      <Building2 className="size-12 text-slate-300 dark:text-slate-600" />
-                    )}
+                      <label htmlFor="logo-input" className="cursor-pointer">
+                        <Camera className="mx-auto size-6 text-slate-400 mb-2" />
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          Dosya sürükleyin veya seçin
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          PNG, JPG, GIF, WEBP
+                        </p>
+                      </label>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowLogoModal(false)}
+                        disabled={logoLoading}
+                        className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                      >
+                        {t("cancel")}
+                      </button>
+                    </div>
                   </div>
                 </div>
+              ) : (
+                /* STEP 2: Kırpma */
+                <div className="p-6">
+                  <div className="mb-5 flex items-center gap-3 pr-8">
+                    <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
+                      <Camera className="size-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                        Logoyu Kırp
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Zoom ve konumu ayarla</p>
+                    </div>
+                  </div>
 
-                {/* Drag & Drop Dosya Yükleme */}
-                <div
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (e.dataTransfer.files[0]) {
-                      handleLogoFileSelect(e.dataTransfer.files[0]);
-                    }
-                  }}
-                  className="rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-indigo-400 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/20"
-                >
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => e.target.files[0] && handleLogoFileSelect(e.target.files[0])}
-                    disabled={logoLoading}
-                    className="hidden"
-                    id="logo-input"
-                  />
-                  <label htmlFor="logo-input" className="cursor-pointer">
-                    <Camera className="mx-auto size-6 text-slate-400 mb-2" />
-                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      Dosya sürükleyin veya seçin
-                    </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      PNG, JPG, GIF, WEBP
-                    </p>
-                  </label>
+                  <div className="space-y-4">
+                    {/* Cropper Container */}
+                    <div className="relative bg-slate-900 rounded-lg overflow-hidden" style={{ height: "300px" }}>
+                      {logoPreviewUrl && (
+                        <Cropper
+                          image={logoPreviewUrl}
+                          crop={logoCrop}
+                          zoom={logoZoom}
+                          aspect={1 / 1}
+                          cropShape="round"
+                          showGrid={false}
+                          onCropChange={setLogoCrop}
+                          onCropComplete={handleCropComplete}
+                          onZoomChange={setLogoZoom}
+                          restrictPosition={true}
+                        />
+                      )}
+                    </div>
+
+                    {/* Zoom Slider */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
+                        Zoom
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="3"
+                        step="0.1"
+                        value={logoZoom}
+                        onChange={(e) => setLogoZoom(parseFloat(e.target.value))}
+                        disabled={logoLoading}
+                        className="w-full h-2 bg-slate-300 rounded-lg cursor-pointer dark:bg-slate-700 accent-cyan-500"
+                      />
+                      <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+                        <span>1x</span>
+                        <span className="font-semibold">{logoZoom.toFixed(1)}x</span>
+                        <span>3x</span>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLogoCropStep(false);
+                          setLogoPreviewUrl(null);
+                          setLogoFile(null);
+                        }}
+                        disabled={logoLoading}
+                        className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                      >
+                        Geri
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveCroppedLogo}
+                        disabled={logoLoading}
+                        className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                      >
+                        {logoLoading ? "Kaydediliyor..." : "Logoyu Kaydet"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
-
-                {logoFile && (
-                  <p className="text-xs text-slate-600 dark:text-slate-400">
-                    Seçildi: <span className="font-semibold">{logoFile.name}</span>
-                  </p>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowLogoModal(false);
-                      setLogoFile(null);
-                      setLogoPreview(null);
-                    }}
-                    disabled={logoLoading}
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
-                  >
-                    {t("cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleLogoUpload}
-                    disabled={logoLoading || !logoFile}
-                    className="flex-1 rounded-lg bg-gradient-to-r from-indigo-400 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:brightness-110 disabled:opacity-50"
-                  >
-                    {logoLoading ? "Yükleniyor..." : "Logoyu Kaydet"}
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1110,11 +1238,11 @@ export function InstitutionAdminPage() {
                         +90
                       </span>
                       
-                      {/* Input: Sadece Rakamlar */}
+                      {/* Input: Sadece Rakamlar — pl-14 ile yeterli padding */}
                       <input
                         type="tel"
                         inputMode="numeric"
-                        placeholder=" (XXX) XXX - XXXX"
+                        placeholder=" (XXX) XXX XXXX"
                         value={newBusinessPhone}
                         onChange={(e) => {
                           const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
@@ -1122,11 +1250,11 @@ export function InstitutionAdminPage() {
                         }}
                         disabled={infoLoading}
                         maxLength="10"
-                        className="h-full flex-1 rounded-lg bg-transparent px-3 pl-[54px] text-sm font-mono text-slate-800 outline-none disabled:opacity-50 dark:text-slate-100"
+                        className="h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-slate-800 outline-none disabled:opacity-50 dark:text-slate-100"
                       />
                       
                       {/* Masking Display */}
-                      <span className="absolute left-[54px] pointer-events-none text-sm font-mono text-slate-400 dark:text-slate-500 select-none">
+                      <span className="absolute left-14 pointer-events-none text-sm font-mono text-slate-400 dark:text-slate-500 select-none">
                         {formatPhoneDisplay(newBusinessPhone)}
                       </span>
                     </div>
@@ -1231,7 +1359,7 @@ export function InstitutionAdminPage() {
                       Yeni Numaranız:
                     </p>
                     <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400">
-                      +90 {newBusinessPhone.slice(0, 3) && `(${newBusinessPhone.slice(0, 3)}) `}{newBusinessPhone.slice(3, 6) && `${newBusinessPhone.slice(3, 6)} `}{newBusinessPhone.slice(6) && `- ${newBusinessPhone.slice(6)}`}
+                      +90 {newBusinessPhone.slice(0, 3) && `(${newBusinessPhone.slice(0, 3)}) `}{newBusinessPhone.slice(3, 6) && `${newBusinessPhone.slice(3, 6)} `}{newBusinessPhone.slice(6)}
                     </p>
                   </div>
 
