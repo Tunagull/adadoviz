@@ -1,6 +1,8 @@
 import { MessageCircle } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
 
 export function Footer() {
+  const { t } = useLanguage();
   return (
     <footer className="border-t border-slate-200 bg-white/70 px-4 py-6 backdrop-blur-lg dark:border-white/10 dark:bg-slate-950/60">
       <div className="mx-auto max-w-[1600px]">
@@ -33,7 +35,7 @@ export function Footer() {
         </div>
 
         <div className="text-center text-xs text-slate-500">
-          Kuzey Kıbrıs&apos;ın Döviz Adresi | FinSight
+          {t("footerTagline")} | AdaDöviz
         </div>
       </div>
     </footer>

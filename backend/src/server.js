@@ -25,6 +25,7 @@ const {
   getAllAdjustmentsMap,
   upsertAdjustments,
   recordHistoricalRates,
+  getBusinessRateHistory,
   getHistoricalRates,
   getHistoricalRatesCount,
   listPublicBranches,
@@ -1122,6 +1123,52 @@ app.get("/api/historical-rates", (req, res) => {
   } catch (error) {
     console.error("[HISTORICAL] Endpoint hatası:", error.message);
     return res.status(500).json({ error: "Geçmiş veriler alınamadı." });
+  }
+});
+
+/**
+ * ✅ İŞLETME DETAY GRAFİĞİ — İZOLE ENDPOINT
+ * Query: ?institution_id=akbank&period=Saatlik&currency=USD
+ *
+ * Bu endpoint SADECE BusinessDetailModal (işletme detay grafiği) tarafından kullanılır.
+ * Nihai Kur = İlgili Tarihteki MB Kuru + İlgili Tarihteki İşletme Kâr Marjı formülüyle
+ * ÖNCEDEN HESAPLANMIŞ veri döner. Global "Piyasa Özeti" grafikleri hâlâ sadece
+ * /api/historical-rates uçunu (saf MB kurları) kullanır ve bu endpoint'ten
+ * KESİNLİKLE ETKİLENMEZ — veri kaynakları ve hesaplama mantığı tamamen izoledir.
+ */
+app.get("/api/business-rate-history", (req, res) => {
+  try {
+    const { institution_id, period = "Günlük", currency = "USD" } = req.query;
+
+    if (!institution_id || typeof institution_id !== "string" || !institution_id.trim()) {
+      return res.status(400).json({ error: "institution_id zorunludur." });
+    }
+    if (!["Saatlik", "Günlük", "Haftalık", "Aylık", "Yıllık"].includes(period)) {
+      return res.status(400).json({ error: "Geçersiz periyod." });
+    }
+    if (!["USD", "EUR", "GBP"].includes(currency)) {
+      return res.status(400).json({ error: "Geçersiz para birimi." });
+    }
+
+    const result = getBusinessRateHistory(institution_id, currency, period);
+
+    return res.json({
+      institution_id,
+      period,
+      currency,
+      count: result.rows.length,
+      rates: result.rows,
+      message: result.rows.length === 0
+        ? "Henüz yeterli veri biriktirilmemiş."
+        : undefined,
+      meta: {
+        hasAnyData: result.hasAnyData,
+        requestedSpanDays: result.requestedSpanDays,
+      },
+    });
+  } catch (error) {
+    console.error("[BUSINESS-RATE-HISTORY] Endpoint hatası:", error.message);
+    return res.status(500).json({ error: "İşletme grafik verisi alınamadı." });
   }
 });
 

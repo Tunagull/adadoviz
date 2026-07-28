@@ -76,7 +76,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
         navigate(role === "superadmin" ? "/super-admin" : "/admin");
       }, 1000);
     } catch (err) {
-      setError(err.message || "Giriş başarısız.");
+      setError(err.message || t("loginFailed"));
       setIsLoggingIn(false);
       setLoading(false);
     }
@@ -96,14 +96,11 @@ export function BusinessLoginModal({ isOpen, onClose }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data.error || "İstek gönderilemedi.");
+        throw new Error(data.error || t("forgotRequestFailed"));
       }
-      setForgotSuccess(
-        data.message ||
-          "Eğer bu hesap sistemde kayıtlıysa, şifre sıfırlama bağlantısı e-posta adresinize gönderildi."
-      );
+      setForgotSuccess(data.message || t("forgotSuccessDefault"));
     } catch (err) {
-      setForgotError(err.message || "İstek gönderilemedi.");
+      setForgotError(err.message || t("forgotRequestFailed"));
     } finally {
       setForgotLoading(false);
     }
@@ -130,7 +127,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
             type="button"
             onClick={toggleTheme}
             className="inline-flex size-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-amber-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-amber-300"
-            title={theme === "dark" ? "Light mode" : "Dark mode"}
+            title={theme === "dark" ? t("themeLight") : t("themeDark")}
             aria-label="Toggle theme"
           >
             {theme === "dark" ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
@@ -161,8 +158,8 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             </div>
-            <h3 className="text-slate-900 dark:text-white text-xl font-bold">Giriş Yapılıyor...</h3>
-            <p className="text-slate-500 dark:text-slate-300 text-sm mt-3">Admin paneline yönlendiriliyorsunuz</p>
+            <h3 className="text-slate-900 dark:text-white text-xl font-bold">{t("loggingInTitle")}</h3>
+            <p className="text-slate-500 dark:text-slate-300 text-sm mt-3">{t("loggingInSubtitle")}</p>
           </div>
         ) : (
           <>
@@ -173,9 +170,9 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                 </div>
                 <div>
                   <h2 id="business-login-title" className="text-lg font-bold text-slate-900 dark:text-white">
-                    İşletme Girişi
+                    {t("businessLogin")}
                   </h2>
-                  <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Kurum hesabınızla oranlarınızı yönetin</p>
+                  <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{t("businessLoginSubtitle")}</p>
                 </div>
               </div>
             </div>
@@ -186,7 +183,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   htmlFor="business-username"
                   className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
                 >
-                  Kullanıcı Adı
+                  {t("usernameLabel")}
                 </label>
                 <div className="relative">
                   <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
@@ -196,7 +193,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     autoComplete="username"
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
-                    placeholder="örn: akbank"
+                    placeholder={t("usernamePlaceholder")}
                     className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                     required
                   />
@@ -208,7 +205,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   htmlFor="business-password"
                   className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
                 >
-                  Şifre
+                  {t("passwordLabel")}
                 </label>
                 <div className="relative">
                   <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
@@ -234,7 +231,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     }}
                     className="text-xs text-teal-400 hover:text-teal-300 transition-colors"
                   >
-                    Şifremi Unuttum
+                    {t("forgotPassword")}
                   </button>
                 </div>
               </div>
@@ -256,14 +253,14 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   disabled={loading}
                   className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-400 hover:text-slate-900 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
                 >
-                  Vazgeç
+                  {t("cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
                   className="flex-1 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-60"
                 >
-                  {loading ? "Giriş yapılıyor..." : "Giriş Yap"}
+                  {loading ? t("loggingIn") : t("loginButton")}
                 </button>
               </div>
             </form>
@@ -292,11 +289,9 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               aria-label="Kapat"
             />
             <h3 id="forgot-password-title" className="pr-8 text-base font-bold text-slate-100">
-              Şifremi Unuttum
+              {t("forgotPasswordTitle")}
             </h3>
-            <p className="mt-1 text-xs text-slate-400">
-              Kayıtlı e-posta veya kullanıcı adınızı girin. Sıfırlama bağlantısı gönderilecektir.
-            </p>
+            <p className="mt-1 text-xs text-slate-400">{t("forgotPasswordDesc")}</p>
 
             <form onSubmit={handleForgotSubmit} className="mt-4 space-y-4">
               <div className="space-y-2">
@@ -304,7 +299,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   htmlFor="forgot-email"
                   className="text-xs font-medium uppercase tracking-wide text-slate-400"
                 >
-                  E-posta / Kullanıcı Adı
+                  {t("emailOrUsername")}
                 </label>
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
@@ -314,7 +309,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     autoComplete="email"
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="ornek@firma.com"
+                    placeholder={t("emailOrUsernamePlaceholder")}
                     className="h-11 w-full rounded-lg border border-slate-700 bg-slate-950 pl-10 pr-3 text-sm text-slate-100 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20"
                     required
                     disabled={forgotLoading}
@@ -339,14 +334,14 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   onClick={() => setShowForgotModal(false)}
                   className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 hover:text-white"
                 >
-                  Vazgeç
+                  {t("cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={forgotLoading}
                   className="flex-1 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  {forgotLoading ? "Gönderiliyor..." : "Gönder"}
+                  {forgotLoading ? t("sending") : t("send")}
                 </button>
               </div>
             </form>

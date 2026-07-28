@@ -366,16 +366,11 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const tooltipColor = isDark ? "#fff" : "#0f172a";
   const tooltipBorder = isDark ? "none" : "1px solid #e2e8f0";
   const areaOpacity = isDark ? 0.3 : 0.18;
-  const navBtnDisabled = isDark
-    ? "text-slate-600 bg-slate-800/40 opacity-30 cursor-not-allowed"
-    : "text-slate-400 bg-slate-100 opacity-40 cursor-not-allowed";
-  const navBtnActive = isDark
-    ? "text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 cursor-pointer border-slate-600/50"
-    : "text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-50 cursor-pointer border-slate-200 shadow-sm";
-  const nextBtnDisabled = isDark
+  // ✅ Sol ve sağ ok butonları TEK ortak stil setini paylaşır (simetri için)
+  const chartNavBtnDisabled = isDark
     ? "text-slate-600 opacity-40 cursor-not-allowed border-white/10 bg-slate-900/90"
     : "text-slate-400 opacity-40 cursor-not-allowed border-slate-200 bg-white";
-  const nextBtnActive = isDark
+  const chartNavBtnActive = isDark
     ? "text-slate-300 hover:bg-slate-800 hover:text-white border-white/10 bg-slate-900/90"
     : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-slate-200 bg-white shadow-sm";
 
@@ -443,12 +438,12 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => prev + 1);
           }}
           disabled={timeWindow.isLeftDisabled}
-          className={`absolute left-2 md:left-4 top-1/2 z-10 -translate-y-1/2 p-1 md:p-2 rounded-full transition-all border ${
-            timeWindow.isLeftDisabled ? navBtnDisabled : navBtnActive
+          className={`absolute left-2 md:left-4 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+            timeWindow.isLeftDisabled ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Önceki dönem"
         >
-          <ChevronLeft size={isExpanded ? 24 : 18} />
+          <ChevronLeft size={chevronSize} />
         </button>
         <button
           type="button"
@@ -457,8 +452,8 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.max(0, prev - 1));
           }}
           disabled={timeOffset === 0}
-          className={`absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
-            timeOffset === 0 ? nextBtnDisabled : nextBtnActive
+          className={`absolute right-2 md:right-4 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+            timeOffset === 0 ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Sonraki dönem"
         >
@@ -584,6 +579,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 }
 
 function PartnershipForm() {
+  const { t } = useLanguage();
   const [formData, setFormData] = useState({
     institution_name: "",
     contact_person: "",
@@ -625,7 +621,7 @@ function PartnershipForm() {
       });
       setTimeout(() => setSubmitted(false), 5000);
     } catch (err) {
-      setError(err.message || "Gönderme başarısız.");
+      setError(err.message || t("applicationSendFailed"));
     } finally {
       setLoading(false);
     }
@@ -637,15 +633,13 @@ function PartnershipForm() {
       className="mt-12 scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-slate-900/60"
     >
       <div className="mb-6">
-        <h3 className="text-xl font-bold text-slate-900 dark:text-white">Partnerlik</h3>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-          FinSight ile iş ortaklığı kurmak için başvuru formunu doldurun. Biz size ulaşalım.
-        </p>
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white">{t("partnership")}</h3>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("partnershipDesc")}</p>
       </div>
 
       {submitted ? (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-200">
-          Başvurunuz başarıyla gönderildi. En kısa sürede size dönüş yapacağız.
+          {t("applicationSuccess")}
         </div>
       ) : (
         <>
@@ -657,11 +651,11 @@ function PartnershipForm() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Kurum Adı</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("institutionName")}</label>
                 <input
                   type="text"
                   name="institution_name"
-                  placeholder="Örn: Akbank"
+                  placeholder={t("institutionNamePlaceholder")}
                   value={formData.institution_name}
                   onChange={handleChange}
                   required
@@ -669,11 +663,11 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Yetkili Kişi</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("contactPerson")}</label>
                 <input
                   type="text"
                   name="contact_person"
-                  placeholder="Örn: Ayşe Yılmaz"
+                  placeholder={t("contactPersonPlaceholder")}
                   value={formData.contact_person}
                   onChange={handleChange}
                   required
@@ -683,11 +677,11 @@ function PartnershipForm() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">E-posta</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("emailLabel")}</label>
                 <input
                   type="email"
                   name="email"
-                  placeholder="partner@kurum.com"
+                  placeholder={t("emailPlaceholder")}
                   value={formData.email}
                   onChange={handleChange}
                   required
@@ -695,11 +689,11 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Telefon</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("phoneLabel")}</label>
                 <input
                   type="tel"
                   name="phone"
-                  placeholder="+90 ..."
+                  placeholder={t("phonePlaceholder")}
                   value={formData.phone}
                   onChange={handleChange}
                   required
@@ -708,11 +702,11 @@ function PartnershipForm() {
               </div>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">Mesaj</label>
+              <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("messageLabel")}</label>
               <textarea
                 name="message"
                 rows={4}
-                placeholder="Sözleşme kapsamı ve talebinizi kısaca belirtin..."
+                placeholder={t("messagePlaceholder")}
                 value={formData.message}
                 onChange={handleChange}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400/70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
@@ -723,7 +717,7 @@ function PartnershipForm() {
               disabled={loading}
               className="rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-60"
             >
-              {loading ? "Gönderiliyor..." : "Başvuruyu Gönder"}
+              {loading ? t("submitting") : t("submitApplication")}
             </button>
           </form>
         </>
@@ -1615,7 +1609,7 @@ export function V0FinancialDashboard() {
               </div>
             </div>
 
-            {/* 3️⃣ BANKA SEÇİN (Dinamik kur gösterimi) */}
+            {/* 3️⃣ DÖVİZ BÜROSU SEÇİN (Dinamik kur gösterimi) */}
             <div className="flex flex-col gap-1 sm:col-span-3">
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">{t("selectBank")}</label>
               <SearchableSelect
@@ -1747,7 +1741,7 @@ export function V0FinancialDashboard() {
             <div className="sm:col-span-6 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-300">
               {Number.isFinite(selectedDepositRate)
                 ? `Kullanılan Faiz Oranı: %${selectedDepositRate.toFixed(2)} (${depositType === "daily" ? "Günlük" : depositType === "monthly" ? "Aylık" : "Yıllık"} baz)`
-                : "Faiz oranı banka verisine göre belirlenecektir."}
+                : "Faiz oranı döviz bürosu verisine göre belirlenecektir."}
             </div>
           </div>
         ) : (
@@ -1824,7 +1818,7 @@ export function V0FinancialDashboard() {
                 ? `💡 Uygulanan Aylık Faiz: %${activeLoanRate.toFixed(2)} (${selectedCalculatorBank.name} ${
                     loanType === "tasit" ? "Taşıt Kredisi" : loanType === "konut" ? "Konut Kredisi" : "İhtiyaç Kredisi"
                   })`
-                : "💡 Uygulanan faiz, seçilen banka ve kredi türüne göre belirlenir."}
+                : "💡 Uygulanan faiz, seçilen döviz bürosu ve kredi türüne göre belirlenir."}
             </div>
           </div>
         )}
@@ -1922,7 +1916,6 @@ export function V0FinancialDashboard() {
       {selectedBusiness ? (
         <BusinessDetailModal
           business={selectedBusiness}
-          marginsByInstitution={marginAdjustments}
           onClose={() => setSelectedBusiness(null)}
         />
       ) : null}

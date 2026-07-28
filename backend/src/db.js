@@ -137,6 +137,16 @@ function initDb() {
       recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS margin_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      institution_id TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      type TEXT NOT NULL,
+      margin_type TEXT NOT NULL DEFAULT 'fixed',
+      margin_value REAL NOT NULL DEFAULT 0,
+      recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS branches (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       business_id INTEGER NOT NULL,
@@ -1049,9 +1059,19 @@ function upsertAdjustments(institutionId, adjustments) {
 
       // Kontrol: kayıt var mı?
       const existing = db.prepare(`
-        SELECT id FROM rate_adjustments 
+        SELECT id, margin_type, margin_value FROM rate_adjustments 
         WHERE institution_id = ? AND currency = ? AND type = ?
       `).get(trimmedInstitutionId, currency, type);
+
+      // ✅ Değişim tespiti: sadece gerçekten değişen marjlar için tarihçe (margin_history)
+      // kaydı oluşturulur. Böylece işletme grafiği, marj güncellendiği ANDA yeni bir
+      // zaman damgalı kırılım noktası kazanır (aynı değerle tekrar kaydetmek spam yaratmaz).
+      const previousMarginType = existing ? existing.margin_type : null;
+      const previousMarginValue = existing ? Number(existing.margin_value) : null;
+      const hasChanged =
+        !existing ||
+        previousMarginType !== marginType ||
+        previousMarginValue !== marginValue;
 
       if (existing) {
         // ✅ UPDATE: Parametreleri doğru sırada geç
@@ -1070,6 +1090,32 @@ function upsertAdjustments(institutionId, adjustments) {
         `);
         insertStmt.run(trimmedInstitutionId, currency, type, marginType, marginValue);
         console.log(`[DB] ✅ Marj eklendi: ${trimmedInstitutionId}/${currency}/${type} = ${marginValue}`);
+      }
+
+      if (hasChanged) {
+        // ✅ KRİTİK: Bu institution/currency/type için İLK KEZ tarihçe kaydı oluşuyorsa,
+        // önce ESKİ değeri (değişiklikten önce ne olduğunu) geçmişe damgalanmış çok eski
+        // bir zaman ile kaydet. Aksi halde grafik birleştirme fonksiyonu (getBusinessRateHistory)
+        // elinde SADECE yeni değeri bulur ve bunu geçmişe doğru sabitleyip TÜM eski noktaları
+        // da yeni değermiş gibi göstererek grafikte hiçbir kırılım oluşmamasına sebep olur.
+        const hasPriorHistory = db.prepare(`
+          SELECT id FROM margin_history WHERE institution_id = ? AND currency = ? AND type = ? LIMIT 1
+        `).get(trimmedInstitutionId, currency, type);
+
+        if (!hasPriorHistory) {
+          const baselineType = previousMarginType || "fixed";
+          const baselineValue = previousMarginValue != null ? previousMarginValue : 0;
+          db.prepare(`
+            INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now', '-10 years'))
+          `).run(trimmedInstitutionId, currency, type, baselineType, baselineValue);
+        }
+
+        db.prepare(`
+          INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
+          VALUES (?, ?, ?, ?, ?, datetime('now'))
+        `).run(trimmedInstitutionId, currency, type, marginType, marginValue);
+        console.log(`[DB] 🕒 Marj tarihçesi kaydedildi: ${trimmedInstitutionId}/${currency}/${type} = ${marginValue} (${marginType})`);
       }
     }
   });
@@ -1215,6 +1261,161 @@ function getHistoricalRates(period = 'Günlük', currency = 'USD') {
 function getHistoricalRatesCount() {
   const result = db.prepare(`SELECT COUNT(*) as count FROM historical_rates`).get();
   return result?.count || 0;
+}
+
+/**
+ * ✅ İŞLETME DETAY GRAFİĞİ — İZOLE VERİ HATTI
+ * ------------------------------------------------------------------
+ * Bu fonksiyon SADECE BusinessDetailModal (işletme detay grafiği) tarafından
+ * kullanılır. Global "Piyasa Özeti" grafikleri getHistoricalRates() üzerinden
+ * beslenir ve bu fonksiyondan TAMAMEN bağımsızdır — kesinlikle etkilenmez.
+ *
+ * Nihai Kur = İlgili Tarihteki MB Kuru + İlgili Tarihteki İşletme Kâr Marjı
+ *
+ * MB kuru sadece değiştiğinde, kâr marjı da sadece işletme onu güncellediğinde
+ * (margin_history) kaydedilir; bu yüzden bu iki zaman serisi ayrı ayrı tutulur
+ * ve burada zaman damgasına göre birleştirilir (basamak/step fonksiyonu).
+ * Pencerenin başlangıcında ve "şu an"da senkron nokta eklenerek grafiğin
+ * X ekseninde her zaman genişçe yayılması garanti edilir (tek dikey çizgi
+ * sorununun kök nedeni: yalnızca 1 olay noktası olduğunda çizgi çizilemiyordu).
+ */
+function periodToHoursBack(period) {
+  if (period === "Saatlik") return 24;
+  if (period === "Haftalık") return 24 * 30;
+  if (period === "Aylık") return 24 * 365;
+  if (period === "Yıllık") return 24 * 365 * 5;
+  return 24 * 7; // Günlük (varsayılan)
+}
+
+function lastRowAtOrBefore(sortedRows, tsMs, tsKey = "recorded_at") {
+  let result = null;
+  for (const row of sortedRows) {
+    const rowMs = new Date(row[tsKey]).getTime();
+    if (rowMs <= tsMs) {
+      result = row;
+    } else {
+      break;
+    }
+  }
+  return result;
+}
+
+function mbRateValueAt(sortedMbRows, tsMs) {
+  const found = lastRowAtOrBefore(sortedMbRows, tsMs);
+  if (found) return found;
+  return sortedMbRows.length > 0 ? sortedMbRows[0] : null;
+}
+
+function marginValueAt(sortedHistoryRows, currentAdjustment, tsMs) {
+  const found = lastRowAtOrBefore(sortedHistoryRows, tsMs);
+  if (found) return { margin_type: found.margin_type, margin_value: Number(found.margin_value) };
+  if (sortedHistoryRows.length > 0) {
+    const first = sortedHistoryRows[0];
+    return { margin_type: first.margin_type, margin_value: Number(first.margin_value) };
+  }
+  return {
+    margin_type: currentAdjustment?.margin_type === "percent" ? "percent" : "fixed",
+    margin_value: Math.max(0, Number(currentAdjustment?.margin_value) || 0),
+  };
+}
+
+function applyMarginToRate(rawRate, marginType, marginValue) {
+  const base = Number(rawRate);
+  const m = Math.max(0, Number(marginValue) || 0);
+  if (!Number.isFinite(base)) return null;
+  if (marginType === "percent") return base + (base * m) / 100;
+  return base + m;
+}
+
+/**
+ * İşletmenin belirtilen para birimi + periyot için "Nihai Kur" (MB kuru + kâr marjı)
+ * zaman serisini döndürür. Sadece BusinessDetailModal tarafından kullanılır.
+ */
+function getBusinessRateHistory(institutionId, currency, period = "Günlük") {
+  const trimmedInstitutionId = String(institutionId || "").trim().toLowerCase();
+  const hoursBack = periodToHoursBack(period);
+  const nowMs = Date.now();
+  const windowStartMs = nowMs - hoursBack * 60 * 60 * 1000;
+
+  // Tüm MB kur değişim olayları (tablo zaten sadece değişince kayıt alıyor — küçük veri seti)
+  const allMbRows = db
+    .prepare(
+      `SELECT buy_rate, sell_rate, recorded_at FROM historical_rates
+       WHERE currency = ? ORDER BY recorded_at ASC`
+    )
+    .all(currency);
+
+  if (allMbRows.length === 0) {
+    return { rows: [], hasAnyData: false, requestedSpanDays: Math.floor(hoursBack / 24) };
+  }
+
+  const buyHistory = db
+    .prepare(
+      `SELECT margin_type, margin_value, recorded_at FROM margin_history
+       WHERE institution_id = ? AND currency = ? AND type = 'buy' ORDER BY recorded_at ASC`
+    )
+    .all(trimmedInstitutionId, currency);
+  const sellHistory = db
+    .prepare(
+      `SELECT margin_type, margin_value, recorded_at FROM margin_history
+       WHERE institution_id = ? AND currency = ? AND type = 'sell' ORDER BY recorded_at ASC`
+    )
+    .all(trimmedInstitutionId, currency);
+
+  const currentAdjustments = getAdjustmentsForInstitution(trimmedInstitutionId);
+  const currentBuyAdj = currentAdjustments[`${currency}_buy`];
+  const currentSellAdj = currentAdjustments[`${currency}_sell`];
+
+  // Olay zaman damgaları: pencere başlangıcı + pencere içindeki tüm MB/marj değişimleri + "şu an"
+  const eventTimestamps = new Set([windowStartMs, nowMs]);
+  for (const row of allMbRows) {
+    const t = new Date(row.recorded_at).getTime();
+    if (Number.isFinite(t) && t >= windowStartMs && t <= nowMs) eventTimestamps.add(t);
+  }
+  for (const row of buyHistory) {
+    const t = new Date(row.recorded_at).getTime();
+    if (Number.isFinite(t) && t >= windowStartMs && t <= nowMs) eventTimestamps.add(t);
+  }
+  for (const row of sellHistory) {
+    const t = new Date(row.recorded_at).getTime();
+    if (Number.isFinite(t) && t >= windowStartMs && t <= nowMs) eventTimestamps.add(t);
+  }
+
+  const sortedTimestamps = Array.from(eventTimestamps).sort((a, b) => a - b);
+
+  const rows = [];
+  for (const tsMs of sortedTimestamps) {
+    const mbRow = mbRateValueAt(allMbRows, tsMs);
+    if (!mbRow) continue;
+    const buyRate = Number(mbRow.buy_rate);
+    const sellRate = Number(mbRow.sell_rate);
+    if (!(buyRate > 0) || !(sellRate > 0)) continue;
+
+    const buyMargin = marginValueAt(buyHistory, currentBuyAdj, tsMs);
+    const sellMargin = marginValueAt(sellHistory, currentSellAdj, tsMs);
+
+    const finalBuy = applyMarginToRate(buyRate, buyMargin.margin_type, buyMargin.margin_value);
+    const finalSell = applyMarginToRate(sellRate, sellMargin.margin_type, sellMargin.margin_value);
+    if (finalBuy == null || finalSell == null) continue;
+
+    rows.push({
+      recorded_at: new Date(tsMs).toISOString(),
+      buy_rate: buyRate,
+      sell_rate: sellRate,
+      margin_buy_type: buyMargin.margin_type,
+      margin_buy_value: buyMargin.margin_value,
+      margin_sell_type: sellMargin.margin_type,
+      margin_sell_value: sellMargin.margin_value,
+      final_buy: Math.round(finalBuy * 10000) / 10000,
+      final_sell: Math.round(finalSell * 10000) / 10000,
+    });
+  }
+
+  return {
+    rows,
+    hasAnyData: true,
+    requestedSpanDays: Math.floor(hoursBack / 24),
+  };
 }
 
 /** Public: tüm şubeler (konum sıralaması için) */
@@ -1475,6 +1676,7 @@ module.exports = {
   recordHistoricalRates,
   getHistoricalRates,
   getHistoricalRatesCount,
+  getBusinessRateHistory,
   getVisitorStats,
   incrementVisitorCount,
   startVisitorSession,

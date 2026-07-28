@@ -54,24 +54,15 @@ const PERIOD_TABS = [
 
 const CURRENCIES = ["USD", "EUR", "GBP"];
 
-function applyMarginToRawRate(rawRate, marginType, marginValue) {
-  const base = Number(rawRate);
-  const m = Math.max(0, Number(marginValue) || 0);
-  if (!Number.isFinite(base)) return null;
-  if (marginType === "percent") {
-    return base + (base * m) / 100;
-  }
-  return base + m;
-}
-
 function roundDisplay(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.round(n * 10000) / 10000;
 }
 
-function formatAxisTime(iso, periodId) {
-  const d = new Date(iso);
+// İşletme grafiği X ekseni zaman formatlayıcı — SADECE bu grafik için kullanılır.
+function formatAxisTime(timeMs, periodId) {
+  const d = new Date(timeMs);
   if (!Number.isFinite(d.getTime())) return "";
   if (periodId === "daily") {
     return d.toLocaleString("tr-TR", {
@@ -110,12 +101,11 @@ function MapUpdater({ lat, lng }) {
 /**
  * İşletme Analiz Modalı — KKTC MB historical_rates + gerçek işletme marjları + şube konumları.
  */
-export function BusinessDetailModal({ business, marginsByInstitution, onClose }) {
+export function BusinessDetailModal({ business, onClose }) {
   const [activeView, setActiveView] = useState("grafik");
   const [periodId, setPeriodId] = useState("daily");
   const [currency, setCurrency] = useState("USD");
-  const [baseRates, setBaseRates] = useState([]);
-  const [fetchedMargins, setFetchedMargins] = useState(null);
+  const [chartRows, setChartRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [branches, setBranches] = useState([]);
@@ -142,53 +132,30 @@ export function BusinessDetailModal({ business, marginsByInstitution, onClose })
     trackCurrencyView(currency);
   }, [currency]);
 
-  // Marjlar: prop yoksa /api/margins'ten gerçek DB kaydı
+  // ✅ İşletme grafiği — İZOLE veri kaynağı: /api/business-rate-history
+  // Nihai Kur = İlgili Tarihteki MB Kuru + İlgili Tarihteki İşletme Kâr Marjı
+  // (Bu hesaplama backend'de yapılır; Piyasa Özeti /api/historical-rates'i kullanır ve
+  // bu istekten tamamen bağımsızdır.)
   useEffect(() => {
-    if (!institutionId) return;
-    if (marginsByInstitution?.[institutionId]) {
-      setFetchedMargins(marginsByInstitution[institutionId]);
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(apiUrl("/api/margins"));
-        if (!res.ok) throw new Error(`Marj API ${res.status}`);
-        const data = await res.json();
-        if (!cancelled) {
-          setFetchedMargins(data?.margins?.[institutionId] || {});
-        }
-      } catch (err) {
-        console.error("[BusinessDetailModal] Marj yüklenemedi:", err);
-        if (!cancelled) setFetchedMargins({});
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [institutionId, marginsByInstitution]);
-
-  // KKTC MB geçmiş kurları
-  useEffect(() => {
-    if (!business || activeView !== "grafik") return;
+    if (!business || !institutionId || activeView !== "grafik") return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       setError("");
       try {
         const url = apiUrl(
-          `/api/historical-rates?period=${encodeURIComponent(activePeriod.apiPeriod)}&currency=${currency}`
+          `/api/business-rate-history?institution_id=${encodeURIComponent(institutionId)}&period=${encodeURIComponent(activePeriod.apiPeriod)}&currency=${currency}`
         );
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
-        setBaseRates(Array.isArray(data.rates) ? data.rates : []);
+        setChartRows(Array.isArray(data.rates) ? data.rates : []);
       } catch (err) {
-        console.error("[BusinessDetailModal] Historical rates:", err);
+        console.error("[BusinessDetailModal] Business rate history:", err);
         if (!cancelled) {
           setError(err.message || "Geçmiş kurlar alınamadı.");
-          setBaseRates([]);
+          setChartRows([]);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -197,7 +164,7 @@ export function BusinessDetailModal({ business, marginsByInstitution, onClose })
     return () => {
       cancelled = true;
     };
-  }, [business, activePeriod.apiPeriod, currency, activeView]);
+  }, [business, institutionId, activePeriod.apiPeriod, currency, activeView]);
 
   // Şubeler (public API — institution_id slug)
   useEffect(() => {
@@ -236,48 +203,29 @@ export function BusinessDetailModal({ business, marginsByInstitution, onClose })
     };
   }, [institutionId]);
 
-  const margins = fetchedMargins || marginsByInstitution?.[institutionId] || {};
-
+  // Backend zaten "Nihai Kur = MB Kuru + Kâr Marjı" formülüyle hesaplayıp
+  // kronolojik sırada döndürüyor; burada sadece grafik için sayısal timeMs +
+  // okunabilir label alanları ekleniyor.
   const finalChartData = useMemo(() => {
-    if (!baseRates.length) return [];
+    if (!chartRows.length) return [];
 
-    const buyAdj = margins[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
-    const sellAdj = margins[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
-    const cutoff = Date.now() - activePeriod.windowMs;
-
-    return baseRates
-      .filter((row) => {
-        const t = new Date(row.recorded_at).getTime();
-        if (!Number.isFinite(t) || t < cutoff) return false;
-        const buy = Number(row.buy_rate);
-        const sell = Number(row.sell_rate);
-        return buy > 0 && sell > 0;
-      })
-      .sort((a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime())
+    return chartRows
       .map((row) => {
-        const baseBuy = Number(row.buy_rate);
-        const baseSell = Number(row.sell_rate);
-        const finalBuy = roundDisplay(
-          applyMarginToRawRate(baseBuy, buyAdj.margin_type, buyAdj.margin_value)
-        );
-        const finalSell = roundDisplay(
-          applyMarginToRawRate(baseSell, sellAdj.margin_type, sellAdj.margin_value)
-        );
+        const timeMs = new Date(row.recorded_at).getTime();
+        const finalBuy = roundDisplay(row.final_buy);
+        const finalSell = roundDisplay(row.final_sell);
         return {
           recorded_at: row.recorded_at,
-          timeMs: new Date(row.recorded_at).getTime(),
-          label: formatAxisTime(row.recorded_at, periodId),
-          baseBuy,
-          baseSell,
+          timeMs,
+          baseBuy: Number(row.buy_rate),
+          baseSell: Number(row.sell_rate),
           finalBuy,
           finalSell,
-          finalRate: roundDisplay(
-            finalBuy != null && finalSell != null ? (finalBuy + finalSell) / 2 : finalBuy ?? finalSell
-          ),
         };
       })
-      .filter((row) => row.finalBuy != null && row.finalSell != null);
-  }, [baseRates, margins, currency, activePeriod.windowMs, periodId]);
+      .filter((row) => Number.isFinite(row.timeMs) && row.finalBuy != null && row.finalSell != null)
+      .sort((a, b) => a.timeMs - b.timeMs);
+  }, [chartRows]);
 
   const yDomain = useMemo(() => {
     if (!finalChartData.length) return ["auto", "auto"];
@@ -426,11 +374,15 @@ export function BusinessDetailModal({ business, marginsByInstitution, onClose })
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" opacity={0.5} />
                       <XAxis
-                        dataKey="label"
+                        dataKey="timeMs"
+                        type="number"
+                        domain={["dataMin", "dataMax"]}
+                        scale="time"
                         tick={{ fill: "#94a3b8", fontSize: 11 }}
                         tickLine={false}
                         axisLine={{ stroke: "#475569" }}
-                        minTickGap={28}
+                        minTickGap={40}
+                        tickFormatter={(ms) => formatAxisTime(ms, periodId)}
                       />
                       <YAxis
                         domain={yDomain}
@@ -453,10 +405,10 @@ export function BusinessDetailModal({ business, marginsByInstitution, onClose })
                             name === "finalBuy" ? "Alış" : name === "finalSell" ? "Satış" : name;
                           return [Number(value).toFixed(4), label];
                         }}
-                        labelFormatter={(_, payload) => {
-                          const row = payload?.[0]?.payload;
-                          if (!row?.recorded_at) return "";
-                          return new Date(row.recorded_at).toLocaleString("tr-TR");
+                        labelFormatter={(ms) => {
+                          const d = new Date(ms);
+                          if (!Number.isFinite(d.getTime())) return "";
+                          return d.toLocaleString("tr-TR");
                         }}
                       />
                       <Area
