@@ -200,6 +200,19 @@ function initDb() {
     console.warn("[DB] site_stats init:", err.message);
   }
 
+  // ✅ Eski (legacy) Render servisinden veri aktarımı sırasında aynı kaydın
+  // tekrar tekrar eklenmesini önlemek için (idempotent migrate endpoint).
+  // Zaten çakışan (currency, recorded_at) kayıtları varsa index oluşturma
+  // sessizce başarısız olur — şema kurulumunun tamamını bozmaz.
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_historical_rates_unique
+      ON historical_rates(currency, recorded_at)
+    `);
+  } catch (err) {
+    console.warn("[DB] idx_historical_rates_unique oluşturulamadı (çakışan kayıtlar olabilir):", err.message);
+  }
+
   if (!columnExists("rate_adjustments", "margin_type")) {
     db.exec(`ALTER TABLE rate_adjustments ADD COLUMN margin_type TEXT NOT NULL DEFAULT 'fixed'`);
   }
@@ -1264,6 +1277,39 @@ function getHistoricalRatesCount() {
 }
 
 /**
+ * ✅ TEK SEFERLİK VERİ AKTARIMI (migrate endpoint tarafından kullanılır)
+ * Orijinal recorded_at zaman damgalarını KORUYARAK geçmiş kur satırlarını ekler.
+ * idx_historical_rates_unique sayesinde aynı (currency, recorded_at) çifti
+ * tekrar eklenmeye çalışılırsa sessizce atlanır (idempotent — güvenle tekrar çalıştırılabilir).
+ */
+function bulkInsertHistoricalRates(currency, rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return { inserted: 0, skipped: 0 };
+  let inserted = 0;
+  let skipped = 0;
+
+  runInTransaction(() => {
+    const insert = db.prepare(`
+      INSERT OR IGNORE INTO historical_rates (currency, buy_rate, sell_rate, recorded_at)
+      VALUES (?, ?, ?, ?)
+    `);
+    for (const row of rows) {
+      const buy = Number(row.buy_rate);
+      const sell = Number(row.sell_rate);
+      const recordedAt = row.recorded_at;
+      if (!(buy > 0) || !(sell > 0) || !recordedAt) {
+        skipped += 1;
+        continue;
+      }
+      const result = insert.run(currency, buy, sell, recordedAt);
+      if (result.changes > 0) inserted += 1;
+      else skipped += 1;
+    }
+  });
+
+  return { inserted, skipped };
+}
+
+/**
  * ✅ İŞLETME DETAY GRAFİĞİ — İZOLE VERİ HATTI
  * ------------------------------------------------------------------
  * Bu fonksiyon SADECE BusinessDetailModal (işletme detay grafiği) tarafından
@@ -1677,6 +1723,7 @@ module.exports = {
   getHistoricalRates,
   getHistoricalRatesCount,
   getBusinessRateHistory,
+  bulkInsertHistoricalRates,
   getVisitorStats,
   incrementVisitorCount,
   startVisitorSession,

@@ -26,6 +26,7 @@ const {
   upsertAdjustments,
   recordHistoricalRates,
   getBusinessRateHistory,
+  bulkInsertHistoricalRates,
   getHistoricalRates,
   getHistoricalRatesCount,
   listPublicBranches,
@@ -1169,6 +1170,54 @@ app.get("/api/business-rate-history", (req, res) => {
   } catch (error) {
     console.error("[BUSINESS-RATE-HISTORY] Endpoint hatası:", error.message);
     return res.status(500).json({ error: "İşletme grafik verisi alınamadı." });
+  }
+});
+
+/**
+ * ✅ TEK SEFERLİK VERİ AKTARIM ENDPOINT'İ (Super Admin)
+ * Eski/kullanılmayan Render servisinde (LEGACY_API_BASE) biriken çok yıllık
+ * MB kur geçmişini ve işletme kâr marjlarını, bu servisin (ephemeral disk
+ * nedeniyle her deploy'da sıfırlanan) veritabanına aktarır.
+ * idempotent'tir — birden fazla kez çalıştırılması veri tekrarına yol açmaz.
+ */
+app.post("/api/admin/migrate-legacy-data", requireSuperAdmin, async (req, res) => {
+  const LEGACY_API_BASE = "https://adadoviz-api.onrender.com";
+  const summary = { historicalRates: {}, margins: 0, errors: [] };
+
+  try {
+    for (const currency of ["USD", "EUR", "GBP"]) {
+      try {
+        const response = await axios.get(`${LEGACY_API_BASE}/api/historical-rates`, {
+          params: { period: "Yıllık", currency },
+          timeout: 20000,
+        });
+        const rows = Array.isArray(response.data?.rates) ? response.data.rates : [];
+        const result = bulkInsertHistoricalRates(currency, rows);
+        summary.historicalRates[currency] = { fetched: rows.length, ...result };
+      } catch (err) {
+        summary.errors.push(`${currency}: ${err.message}`);
+      }
+    }
+
+    try {
+      const marginsRes = await axios.get(`${LEGACY_API_BASE}/api/margins`, { timeout: 20000 });
+      const margins = marginsRes.data?.margins || {};
+      for (const [institutionId, adjustments] of Object.entries(margins)) {
+        try {
+          upsertAdjustments(institutionId, adjustments);
+          summary.margins += 1;
+        } catch (err) {
+          summary.errors.push(`margins/${institutionId}: ${err.message}`);
+        }
+      }
+    } catch (err) {
+      summary.errors.push(`margins: ${err.message}`);
+    }
+
+    return res.json({ success: true, summary });
+  } catch (error) {
+    console.error("[MIGRATE-LEGACY-DATA] Hata:", error.message);
+    return res.status(500).json({ error: "Veri aktarımı başarısız.", details: error.message });
   }
 });
 
