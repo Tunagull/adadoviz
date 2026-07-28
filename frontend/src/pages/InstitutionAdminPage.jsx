@@ -766,6 +766,8 @@ export function InstitutionAdminPage() {
             onClick={() => {
               setInfoError("");
               setInfoSuccess("");
+              setInfoStep(0);
+              setRawPhone("");
               setShowInfoModal(true);
             }}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
