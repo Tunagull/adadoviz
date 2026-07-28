@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Key, LogOut, Save, X } from "lucide-react";
+import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { fetchAdminRates, saveAdminRates, changeBusinessPassword } from "../lib/auth";
@@ -109,6 +109,20 @@ export function InstitutionAdminPage() {
   const [passwordSuccess, setPasswordSuccess] = useState("");
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [institutionName, setInstitutionName] = useState(auth?.institution_name || "");
+  
+  // ✅ Logo Yönetimi Modal
+  const [showLogoModal, setShowLogoModal] = useState(false);
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [logoLoading, setLogoLoading] = useState(false);
+  
+  // ✅ İşletme Bilgileri Modal
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [businessHours, setBusinessHours] = useState("");
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [infoError, setInfoError] = useState("");
+  const [infoSuccess, setInfoSuccess] = useState("");
 
   useEffect(() => {
     if (bootstrapping) return;
@@ -365,6 +379,61 @@ export function InstitutionAdminPage() {
     }
   };
 
+  // ✅ Logo Handler
+  const handleLogoFileSelect = (file) => {
+    if (file && file.type.startsWith("image/")) {
+      setLogoFile(file);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setLogoPreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleLogoUpload = async () => {
+    if (!logoFile || !auth?.token) return;
+    setLogoLoading(true);
+    try {
+      // Mock API call
+      console.log("[LOGO] Logo yükleniyor:", logoFile.name);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      console.log("[LOGO] Logo başarıyla yüklendi!");
+      setShowLogoModal(false);
+      setLogoFile(null);
+      setLogoPreview(null);
+    } catch (err) {
+      console.error("[LOGO] Yükleme hatası:", err);
+    } finally {
+      setLogoLoading(false);
+    }
+  };
+
+  // ✅ İşletme Bilgileri Handler
+  const handleInfoUpdate = async () => {
+    if (!auth?.token) return;
+    setInfoLoading(true);
+    setInfoError("");
+    setInfoSuccess("");
+    try {
+      // Mock API call
+      console.log("[INFO] İşletme bilgileri güncelleniyor:", { businessPhone, businessHours });
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      console.log("[INFO] İşletme bilgileri başarıyla güncellendi!");
+      setInfoSuccess("İşletme bilgileri başarıyla güncellendi!");
+      setTimeout(() => {
+        setShowInfoModal(false);
+        setBusinessPhone("");
+        setBusinessHours("");
+        setInfoSuccess("");
+      }, 1500);
+    } catch (err) {
+      setInfoError(err.message || "Güncelleme başarısız.");
+    } finally {
+      setInfoLoading(false);
+    }
+  };
+
   if (bootstrapping) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500 dark:bg-[#020617] dark:text-slate-400">
@@ -407,13 +476,17 @@ export function InstitutionAdminPage() {
               {t("backToDashboard")}
             </button>
 
-            {/* İşletme Logosu */}
-            <div className="flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-950/60">
+            {/* İşletme Logosu — Interactive */}
+            <button
+              type="button"
+              onClick={() => setShowLogoModal(true)}
+              className="group relative flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-white transition hover:border-teal-500/40 dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-teal-500/40"
+            >
               {auth?.institution_id ? (
                 <img
                   src={`/logos/${auth.institution_id}.png`}
                   alt={auth.institution_name}
-                  className="h-full w-full object-contain p-1"
+                  className="h-full w-full object-contain p-1 group-hover:opacity-70 transition-opacity"
                   onError={(e) => {
                     e.target.style.display = "none";
                   }}
@@ -421,7 +494,8 @@ export function InstitutionAdminPage() {
               ) : (
                 <Building2 className="size-8 text-slate-400" />
               )}
-            </div>
+              <Camera className="absolute size-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+            </button>
 
             {/* İşletme Bilgisi */}
             <div>
@@ -480,7 +554,7 @@ export function InstitutionAdminPage() {
           </div>
         </div>
 
-        <div>
+        <div className="flex gap-3 flex-wrap">
           <button
             type="button"
             onClick={() => {
@@ -491,6 +565,19 @@ export function InstitutionAdminPage() {
           >
             <Key className="size-4" />
             {t("changePassword")}
+          </button>
+          
+          <button
+            type="button"
+            onClick={() => {
+              setInfoError("");
+              setInfoSuccess("");
+              setShowInfoModal(true);
+            }}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-indigo-500/40 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:text-indigo-300"
+          >
+            <Edit2 className="size-4" />
+            İşletme Bilgilerini Güncelle
           </button>
         </div>
 
@@ -744,6 +831,212 @@ export function InstitutionAdminPage() {
               </div>
               <h3 className="text-white text-xl font-bold">Çıkış Yapılıyor...</h3>
               <p className="text-slate-300 text-sm mt-2">Dashboard'a dönüyorsunuz</p>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Logo Modal */}
+        {showLogoModal && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => !logoLoading && setShowLogoModal(false)}
+          >
+            <div
+              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <X
+                size={24}
+                onClick={() => !logoLoading && setShowLogoModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
+                aria-label="Kapat"
+              />
+
+              <div className="mb-5 flex items-center gap-3 pr-8">
+                <div className="rounded-lg bg-indigo-500/10 p-2 text-indigo-600 dark:text-indigo-400">
+                  <Camera className="size-5" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  Logo Yönet
+                </h3>
+              </div>
+
+              <div className="space-y-4">
+                {/* Logo Önizlemesi */}
+                <div className="flex justify-center">
+                  <div className="flex h-32 w-32 items-center justify-center rounded-full border-2 border-slate-300 bg-slate-50 overflow-hidden dark:border-slate-700 dark:bg-slate-950">
+                    {logoPreview ? (
+                      <img src={logoPreview} alt="Logo preview" className="h-full w-full object-cover" />
+                    ) : auth?.institution_id ? (
+                      <img
+                        src={`/logos/${auth.institution_id}.png`}
+                        alt={auth.institution_name}
+                        className="h-full w-full object-cover"
+                        onError={(e) => (e.target.style.display = "none")}
+                      />
+                    ) : (
+                      <Building2 className="size-12 text-slate-300 dark:text-slate-600" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Drag & Drop Dosya Yükleme */}
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (e.dataTransfer.files[0]) {
+                      handleLogoFileSelect(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  className="rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-indigo-400 hover:bg-indigo-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-indigo-500 dark:hover:bg-indigo-950/20"
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => e.target.files[0] && handleLogoFileSelect(e.target.files[0])}
+                    disabled={logoLoading}
+                    className="hidden"
+                    id="logo-input"
+                  />
+                  <label htmlFor="logo-input" className="cursor-pointer">
+                    <Camera className="mx-auto size-6 text-slate-400 mb-2" />
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Dosya sürükleyin veya seçin
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      PNG, JPG, GIF, WEBP
+                    </p>
+                  </label>
+                </div>
+
+                {logoFile && (
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    Seçildi: <span className="font-semibold">{logoFile.name}</span>
+                  </p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowLogoModal(false);
+                      setLogoFile(null);
+                      setLogoPreview(null);
+                    }}
+                    disabled={logoLoading}
+                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                  >
+                    {t("cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogoUpload}
+                    disabled={logoLoading || !logoFile}
+                    className="flex-1 rounded-lg bg-gradient-to-r from-indigo-400 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-500/20 transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    {logoLoading ? "Yükleniyor..." : "Logoyu Kaydet"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ İşletme Bilgileri Modal */}
+        {showInfoModal && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={() => !infoLoading && setShowInfoModal(false)}
+          >
+            <div
+              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <X
+                size={24}
+                onClick={() => !infoLoading && setShowInfoModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
+                aria-label="Kapat"
+              />
+
+              <div className="mb-5 flex items-center gap-3 pr-8">
+                <div className="rounded-lg bg-purple-500/10 p-2 text-purple-600 dark:text-purple-400">
+                  <Edit2 className="size-5" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  İşletme Bilgilerini Güncelle
+                </h3>
+              </div>
+
+              <form className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    <Phone className="size-4" />
+                    Telefon Numarası
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="+90 (XXX) XXX-XXXX"
+                    value={businessPhone}
+                    onChange={(e) => setBusinessPhone(e.target.value)}
+                    disabled={infoLoading}
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-purple-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    <Clock className="size-4" />
+                    Çalışma Saatleri
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="09:00 - 18:00"
+                    value={businessHours}
+                    onChange={(e) => setBusinessHours(e.target.value)}
+                    disabled={infoLoading}
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-purple-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+
+                {infoError ? (
+                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                    {infoError}
+                  </div>
+                ) : null}
+
+                {infoSuccess ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
+                    {infoSuccess}
+                  </div>
+                ) : null}
+
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowInfoModal(false);
+                      setBusinessPhone("");
+                      setBusinessHours("");
+                      setInfoError("");
+                      setInfoSuccess("");
+                    }}
+                    disabled={infoLoading}
+                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                  >
+                    {t("cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleInfoUpdate}
+                    disabled={infoLoading || (!businessPhone && !businessHours)}
+                    className="flex-1 rounded-lg bg-gradient-to-r from-purple-400 to-pink-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-500/20 transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    {infoLoading ? "Kaydediliyor..." : "Kaydet"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
