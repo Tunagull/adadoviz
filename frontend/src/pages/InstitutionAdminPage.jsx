@@ -128,7 +128,7 @@ export function InstitutionAdminPage() {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [currentBusinessPhone, setCurrentBusinessPhone] = useState("+90 (505) 123 4567"); // Mock: mevcut telefon
   const [infoStep, setInfoStep] = useState(0); // 0: kapalı, 1: telefon, 2: onay, 3: kod
-  const [newBusinessPhone, setNewBusinessPhone] = useState("");
+  const [rawPhone, setRawPhone] = useState(""); // Sadece rakamlar: "5051234567"
   const [verificationCode, setVerificationCode] = useState("");
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState("");
@@ -497,21 +497,29 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ Telefon Formatı Yardımcı (Fixed: Masking sistem, tiresiz)
-  const formatPhoneDisplay = (digits) => {
-    // digits: "5051234567" gibi raw rakamlar
-    // Output: "(505) 123 XXXX" (input value'suna yazılacak, TİRESİZ)
-    if (digits.length === 0) return "(XXX) XXX XXXX";
-    if (digits.length === 1) return `(${digits}XX) XXX XXXX`;
-    if (digits.length === 2) return `(${digits}X) XXX XXXX`;
-    if (digits.length === 3) return `(${digits}) XXX XXXX`;
-    if (digits.length === 4) return `(${digits.slice(0, 3)}) ${digits[3]}XX XXXX`;
-    if (digits.length === 5) return `(${digits.slice(0, 3)}) ${digits.slice(3)}X XXXX`;
-    if (digits.length === 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)} XXXX`;
-    if (digits.length === 7) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits[6]}XXX`;
-    if (digits.length === 8) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6)}XX`;
-    if (digits.length === 9) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6)}X`;
-    if (digits.length >= 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6, 10)}`;
+  // ✅ Telefon Formatı Yardımcı (Kusursuz Masking Algoritması)
+  const formatPhoneDisplay = (rawDigits) => {
+    // rawDigits: "5051234567" gibi sadece rakamlar
+    // Template: "(XXX) XXX XXXX"
+    // Output: Her X'i sırasıyla rakamla değiştir
+    let template = "(XXX) XXX XXXX";
+    let digitIndex = 0;
+    
+    let result = "";
+    for (let i = 0; i < template.length; i++) {
+      if (template[i] === "X") {
+        if (digitIndex < rawDigits.length) {
+          result += rawDigits[digitIndex];
+          digitIndex++;
+        } else {
+          result += "X";
+        }
+      } else {
+        result += template[i];
+      }
+    }
+    
+    return result;
   };
 
   // ✅ Saat formatı yardımcı
@@ -522,9 +530,17 @@ export function InstitutionAdminPage() {
     return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
   };
 
+  // ✅ Telefon Input Change Handler
+  const handlePhoneInputChange = (e) => {
+    const inputValue = e.target.value;
+    // Sadece rakamları ayıkla ve max 10 hane olacak şekilde sınırla
+    const digitsOnly = inputValue.replace(/\D/g, "").slice(0, 10);
+    setRawPhone(digitsOnly);
+  };
+
   // ✅ Telefon step 1: Yeni numara girilip onaya hazırlanma
   const handlePhoneSubmit = async () => {
-    if (newBusinessPhone.replace(/\D/g, "").length !== 10) {
+    if (rawPhone.length !== 10) {
       setInfoError("Lütfen geçerli bir telefon numarası girin (10 rakam).");
       return;
     }
@@ -555,7 +571,9 @@ export function InstitutionAdminPage() {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       // Mock başarı
       if (verificationCode === "000000" || verificationCode !== "") {
-        setCurrentBusinessPhone(newBusinessPhone);
+        // Formatted phone number: +90 (XXX) XXX XXXX
+        const formattedPhone = `+90 ${formatPhoneDisplay(rawPhone)}`;
+        setCurrentBusinessPhone(formattedPhone);
         setInfoSuccess("Telefon numarası başarıyla güncellendi!");
         setTimeout(() => {
           closeInfoModal();
@@ -573,7 +591,7 @@ export function InstitutionAdminPage() {
   const closeInfoModal = () => {
     setShowInfoModal(false);
     setInfoStep(0);
-    setNewBusinessPhone("");
+    setRawPhone("");
     setVerificationCode("");
     setInfoError("");
     setInfoSuccess("");
@@ -646,7 +664,7 @@ export function InstitutionAdminPage() {
             <button
               type="button"
               onClick={() => navigate("/")}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-teal-500/40 hover:text-slate-900 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:text-white"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400"
             >
               <ArrowLeft className="size-4" />
               {t("backToDashboard")}
@@ -737,7 +755,7 @@ export function InstitutionAdminPage() {
               resetPasswordForm();
               setShowPasswordModal(true);
             }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-teal-500/40 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-teal-500/40 dark:hover:text-teal-300"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
             <Key className="size-4" />
             {t("changePassword")}
@@ -750,7 +768,7 @@ export function InstitutionAdminPage() {
               setInfoSuccess("");
               setShowInfoModal(true);
             }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition hover:border-indigo-500/40 hover:text-indigo-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-indigo-500/40 dark:hover:text-indigo-300"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
             <Edit2 className="size-4" />
             İşletme Bilgilerini Güncelle
@@ -1238,25 +1256,17 @@ export function InstitutionAdminPage() {
                         +90
                       </span>
                       
-                      {/* Input: Sadece Rakamlar — pl-14 ile yeterli padding */}
+                      {/* Input: Maskeleme ile otomatik format */}
                       <input
                         type="tel"
                         inputMode="numeric"
-                        placeholder=" (XXX) XXX XXXX"
-                        value={newBusinessPhone}
-                        onChange={(e) => {
-                          const digits = e.target.value.replace(/\D/g, "").slice(0, 10);
-                          setNewBusinessPhone(digits);
-                        }}
+                        value={formatPhoneDisplay(rawPhone)}
+                        onChange={handlePhoneInputChange}
                         disabled={infoLoading}
-                        maxLength="10"
+                        placeholder="+90 (XXX) XXX XXXX"
+                        maxLength="17"
                         className="h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-slate-800 outline-none disabled:opacity-50 dark:text-slate-100"
                       />
-                      
-                      {/* Masking Display */}
-                      <span className="absolute left-14 pointer-events-none text-sm font-mono text-slate-400 dark:text-slate-500 select-none">
-                        {formatPhoneDisplay(newBusinessPhone)}
-                      </span>
                     </div>
                   </div>
 
@@ -1359,7 +1369,7 @@ export function InstitutionAdminPage() {
                       Yeni Numaranız:
                     </p>
                     <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400">
-                      +90 {newBusinessPhone.slice(0, 3) && `(${newBusinessPhone.slice(0, 3)}) `}{newBusinessPhone.slice(3, 6) && `${newBusinessPhone.slice(3, 6)} `}{newBusinessPhone.slice(6)}
+                      +90 {formatPhoneDisplay(rawPhone)}
                     </p>
                   </div>
 
