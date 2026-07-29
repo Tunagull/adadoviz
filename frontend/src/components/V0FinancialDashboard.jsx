@@ -603,7 +603,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
     return (
       <div className={`relative w-full overflow-hidden ${isExpanded ? 'h-full' : ''}`}>
-        {/* Sol Ok - Kenar çizgisine çok yakın (temas etmeyecek) */}
+        {/* Sol Ok - Dış çerçevenin kenarına çok yakın, chart'tan uzak */}
         <button
           type="button"
           onClick={() => {
@@ -614,12 +614,12 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeWindow.isLeftDisabled ? chartNavBtnDisabled : chartNavBtnActive
           }`}
-          style={{ left: '4px' }}
+          style={{ left: '6px' }}
           aria-label="Önceki dönem"
         >
           <ChevronLeft size={chevronSize} />
         </button>
-        {/* Sağ Ok - Kenar çizgisine çok yakın (temas etmeyecek) */}
+        {/* Sağ Ok - Dış çerçevenin kenarına çok yakın, chart'tan uzak */}
         <button
           type="button"
           onClick={() => {
@@ -630,16 +630,16 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeOffset === 0 ? chartNavBtnDisabled : chartNavBtnActive
           }`}
-          style={{ right: '4px' }}
+          style={{ right: '6px' }}
           aria-label="Sonraki dönem"
         >
           <ChevronRight size={chevronSize} />
         </button>
 
-        {/* Chart Container: Minimal padding ile maksimum grafik alanı */}
+        {/* Chart Container: Okları kaplamayan padding ile geniş grafik */}
         <div
           className={`w-full ${isExpanded ? 'h-full' : ''}`}
-          style={isExpanded ? { height: '100%', paddingLeft: '48px', paddingRight: '48px' } : { height: 200, paddingLeft: '48px', paddingRight: '48px' }}
+          style={isExpanded ? { height: '100%', paddingLeft: '64px', paddingRight: '64px' } : { height: 200, paddingLeft: '64px', paddingRight: '64px' }}
         >
           <ResponsiveContainer width="100%" height={isExpanded ? 400 : 200}>
             {chartInner}
