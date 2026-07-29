@@ -1675,7 +1675,7 @@ export function V0FinancialDashboard() {
               <div className={`flex h-11 items-center rounded-lg border px-3 text-sm font-semibold ${
                 Number.isFinite(exchangeResult)
                   ? "border-indigo-300/60 bg-indigo-50 text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100"
-                  : "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                  : "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-not-allowed"
               }`}>
                 {Number.isFinite(exchangeResult)
                   ? `${exchangeResult.toLocaleString("tr-TR", {
