@@ -1019,6 +1019,40 @@ export function V0FinancialDashboard() {
     };
   }, []);
 
+  // ⚠️ DÜZELTME (bkz. project_audit_report.md, 1.6 "SSE ile kart kurları kopuk"):
+  // SSE mesajı `liveRates` state'ine yazılıyordu ama hiçbir yerde `banks` dizisini
+  // (kartların gerçekte gösterdiği kurları) güncellemiyordu — V0BankCard'ın flash
+  // efekti bile `bank.exchangeRates`'i (5 dakikalık poll'dan gelen) karşılaştırıyordu,
+  // yani SSE bağlantısı fiilen faydasız bir "heartbeat"ten ibaretti.
+  // Şimdi: Merkez Bankası'nda değişiklik olduğu an (SSE), aynı marj formülü
+  // (applyMarginToRawRate) mevcut `marginAdjustments` ile yeniden uygulanarak
+  // TÜM kartların `exchangeRates` alanı anlık güncellenir; 5 dakikalık poll artık
+  // yalnızca meta veriyi (yeni işletme, abonelik durumu vb.) tazelemek için kalır.
+  useEffect(() => {
+    if (!liveRates) return;
+    setRawCentralBankRates(liveRates);
+    setBanks((prevBanks) => {
+      if (!prevBanks.length) return prevBanks;
+      return prevBanks.map((bank) => {
+        if (!bank.institutionId) return bank;
+        const bankMargins = marginAdjustments[bank.institutionId] || {};
+        const nextExchangeRates = ["EUR", "USD", "GBP"].map((currency) => {
+          const rawKur = liveRates[currency];
+          if (!rawKur) {
+            const existing = bank.exchangeRates?.find((r) => r.currency === currency);
+            return existing || { currency, buy: null, sell: null };
+          }
+          const buyMargin = bankMargins[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
+          const sellMargin = bankMargins[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
+          const finalBuy = applyMarginToRawRate(rawKur.buy, buyMargin.margin_type, buyMargin.margin_value);
+          const finalSell = applyMarginToRawRate(rawKur.sell, sellMargin.margin_type, sellMargin.margin_value);
+          return { currency, buy: finalBuy, sell: finalSell };
+        });
+        return { ...bank, exchangeRates: nextExchangeRates };
+      });
+    });
+  }, [liveRates, marginAdjustments]);
+
   const scrollToPartnership = () => {
     document.getElementById("partnership")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -1625,10 +1659,16 @@ export function V0FinancialDashboard() {
                     .sort((a, b) => a.name.localeCompare(b.name, "tr"))
                     .map((bank) => {
                       const rate = bank.exchangeRates?.find((r) => r.currency === exchangeCurrency);
+                      // ⚠️ DÜZELTME (bkz. project_audit_report.md, 1.5): Müşteri "Alış" yaptığında
+                      // (TL verip döviz alır) fiilen büronun SATIŞ kuru uygulanır — hesaplama zaten
+                      // `exchangeTl / sell` şeklindeydi. Ancak burada etiket/rakam yanlışlıkla
+                      // `rate.buy` (büronun alış kuru) gösteriyordu; ekranda görünen kur, gerçekte
+                      // kullanılan kurdan farklıydı. Aynı mantık "Satış" için de tersti. Artık
+                      // gösterilen kur, hesaplamada kullanılan kurla birebir eşleşiyor.
                       const price = exchangeOperation === "buy"
-                        ? (Number.isFinite(rate?.buy) ? rate.buy.toFixed(2) : "—")
-                        : (Number.isFinite(rate?.sell) ? rate.sell.toFixed(2) : "—");
-                      const operationType = exchangeOperation === "buy" ? t("buy") : t("sell");
+                        ? (Number.isFinite(rate?.sell) ? rate.sell.toFixed(2) : "—")
+                        : (Number.isFinite(rate?.buy) ? rate.buy.toFixed(2) : "—");
+                      const operationType = exchangeOperation === "buy" ? t("sell") : t("buy");
                       return {
                         value: bank.name,
                         label: `${bank.name} | ${operationType}: ${price}`,
