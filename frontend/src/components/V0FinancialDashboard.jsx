@@ -603,7 +603,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
     return (
       <div className={`relative w-full ${isExpanded ? 'h-full' : ''}`}>
-        {/* Sol Ok - Grafiğin İçinde Solda, Margin'in Sınırında */}
+        {/* Sol Ok - Chart kenarına yakın, temas etmeyecek */}
         <button
           type="button"
           onClick={() => {
@@ -611,14 +611,14 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
           }}
           disabled={timeWindow.isLeftDisabled}
-          className={`absolute left-3 md:left-5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute left-1.5 md:left-2 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeWindow.isLeftDisabled ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Önceki dönem"
         >
           <ChevronLeft size={chevronSize} />
         </button>
-        {/* Sağ Ok - Grafiğin İçinde Sağda, Margin'in Sınırında */}
+        {/* Sağ Ok - Chart kenarına yakın, temas etmeyecek */}
         <button
           type="button"
           onClick={() => {
@@ -626,7 +626,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.max(0, prev - 1));
           }}
           disabled={timeOffset === 0}
-          className={`absolute right-3 md:right-5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute right-1.5 md:right-2 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeOffset === 0 ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Sonraki dönem"
@@ -634,9 +634,9 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           <ChevronRight size={chevronSize} />
         </button>
 
-        {/* Grafik Container: Oklar için boşluk bırakarak marjin ayarı */}
+        {/* Grafik Container: Minimal padding ile geniş grafik alanı */}
         <div
-          className={`w-full px-14 sm:px-16 md:px-20 ${isExpanded ? 'h-full' : ''}`}
+          className={`w-full px-10 sm:px-12 md:px-14 ${isExpanded ? 'h-full' : ''}`}
           style={isExpanded ? { height: '100%' } : { height: 200 }}
         >
           <ResponsiveContainer width="100%" height={isExpanded ? 400 : 200}>
