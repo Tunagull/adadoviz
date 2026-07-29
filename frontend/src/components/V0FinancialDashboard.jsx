@@ -2136,10 +2136,10 @@ export function V0FinancialDashboard() {
             role="switch"
             aria-checked={openNowOnly}
             onClick={() => setOpenNowOnly((v) => !v)}
-            className={`inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-all duration-300 ${
+            className={`inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-all duration-300 border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:hover:border-cyan-400 ${
               openNowOnly
-                ? "border-cyan-400 bg-gradient-to-r from-cyan-500/15 to-indigo-500/20 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.4)]"
-                : "border-slate-300 bg-white text-slate-600 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400"
+                ? "text-cyan-300 dark:text-cyan-300"
+                : "text-slate-600 dark:text-slate-300"
             }`}
             title={t("openNow")}
           >
