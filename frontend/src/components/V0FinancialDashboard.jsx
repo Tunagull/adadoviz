@@ -1658,10 +1658,10 @@ export function V0FinancialDashboard() {
                 value={exchangeAmountTl}
                 onChange={(e) => setExchangeAmountTl(e.target.value)}
                 className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder="Tutar giriniz"
+                placeholder={!exchangeCurrency ? "Döviz Seçiniz" : !calculatorBank ? "Döviz Bürosu Seçin" : "Tutar giriniz"}
               />
               {exchangeAmountTl !== "0" && (!exchangeCurrency || !calculatorBank) && (
-                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                <p className="text-xs text-indigo-600 dark:text-indigo-300 mt-1">
                   ⚠️ Döviz birimi ya da şube seçilmedi
                 </p>
               )}
@@ -1675,7 +1675,7 @@ export function V0FinancialDashboard() {
               <div className={`flex h-11 items-center rounded-lg border px-3 text-sm font-semibold ${
                 Number.isFinite(exchangeResult)
                   ? "border-indigo-300/60 bg-indigo-50 text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100"
-                  : "border-amber-300/50 bg-amber-50 text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-200"
+                  : "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
               }`}>
                 {Number.isFinite(exchangeResult)
                   ? `${exchangeResult.toLocaleString("tr-TR", {
@@ -1683,7 +1683,7 @@ export function V0FinancialDashboard() {
                       maximumFractionDigits: 2,
                     })} ${exchangeOperation === "buy" ? exchangeCurrency : "TL"}`
                   : !exchangeCurrency
-                    ? "Döviz Birimi Seçiniz"
+                    ? "Döviz Seçiniz"
                     : !calculatorBank
                       ? "Döviz Bürosu Seçin"
                       : (exchangeAmountTl === "0" || exchangeAmountTl === "")
