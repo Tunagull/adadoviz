@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, memo } from "react";
 
 function getCurrencyDisplay(currency) {
   return currency;
@@ -34,7 +34,7 @@ function formatRate(rate, currency) {
   return n.toFixed(2);
 }
 
-export function V0BankCard({ bank, mode, liveRates, onSelect }) {
+function V0BankCardComponent({ bank, mode, onSelect }) {
   // ✅ ADIM 2: Flash effect durumları
   const [flashColor, setFlashColor] = useState(null); // 'green' | 'red' | null
   const prevRatesRef = useRef({});
@@ -64,15 +64,11 @@ export function V0BankCard({ bank, mode, liveRates, onSelect }) {
     };
   });
 
-  // ✅ FIX: Artık her kart kendi SSE bağlantısını AÇMIYOR (16+ kart x kendi bağlantısı,
-  // tarayıcının host başına bağlantı limitini tüketip Market Summary fetch'lerini
-  // sonsuza kadar bloke ediyordu). Tek bir SSE bağlantısı Dashboard seviyesinde açılır,
-  // gelen mesaj `liveRates` prop'u olarak buraya akar. Biz sadece değişimi tespit edip
-  // flash effect tetikliyoruz.
+  // SSE → Dashboard banks güncellemesi → bu prop değişir; flash buradan tetiklenir.
+  // liveRates ayrı prop olarak verilmez: memo ile gereksiz tüm-kart re-render önlenir.
   useEffect(() => {
-    if (mode !== "exchange" || !liveRates || !bank.institutionId) return;
+    if (mode !== "exchange" || !bank.institutionId) return;
 
-    // İlk başta önceki değerleri başlat
     if (Object.keys(prevRatesRef.current).length === 0) {
       for (const rate of exchangeRates) {
         if (rate.buy) {
@@ -82,7 +78,6 @@ export function V0BankCard({ bank, mode, liveRates, onSelect }) {
       return;
     }
 
-    // Kur değişikliklerini kontrol et
     let hasChanged = false;
     let isPositive = true;
 
@@ -105,7 +100,7 @@ export function V0BankCard({ bank, mode, liveRates, onSelect }) {
       const timer = setTimeout(() => setFlashColor(null), 3000);
       return () => clearTimeout(timer);
     }
-  }, [liveRates, mode, bank.institutionId]);
+  }, [mode, bank.institutionId, bank.exchangeRates]);
 
   // ✅ ADIM 3: Tailwind Flash Effect - Dinamik sınıflar + Smooth Fade
   // Hover glow = Admin Paneli butonuyla birebir aynı:
@@ -269,3 +264,5 @@ export function V0BankCard({ bank, mode, liveRates, onSelect }) {
     </div>
   );
 }
+
+export const V0BankCard = memo(V0BankCardComponent);

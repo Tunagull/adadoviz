@@ -987,9 +987,14 @@ export function V0FinancialDashboard() {
     let eventSource = null;
     let reconnectTimer = null;
     let isMounted = true;
+    let reconnectAttempt = 0;
 
     const connect = () => {
       eventSource = new EventSource("https://adadoviz-backend.onrender.com/api/rates-stream");
+
+      eventSource.onopen = () => {
+        reconnectAttempt = 0;
+      };
 
       eventSource.onmessage = (event) => {
         try {
@@ -1005,7 +1010,10 @@ export function V0FinancialDashboard() {
       eventSource.onerror = () => {
         eventSource.close();
         if (isMounted) {
-          reconnectTimer = setTimeout(connect, 3000);
+          // Exponential backoff (1s, 2s, 4s, … max 30s) — reconnect storm önlenir
+          const delayMs = Math.min(30000, 1000 * Math.pow(2, reconnectAttempt));
+          reconnectAttempt += 1;
+          reconnectTimer = setTimeout(connect, delayMs);
         }
       };
     };
@@ -1065,7 +1073,8 @@ export function V0FinancialDashboard() {
     return undefined;
   }, []);
   const [exchangeCurrency, setExchangeCurrency] = useState("");
-  const [exchangeAmountTl, setExchangeAmountTl] = useState("0");
+  // Alış: TL tutarı; Satış: döviz tutarı — operasyona göre anlam değişir
+  const [exchangeAmount, setExchangeAmount] = useState("0");
   const [exchangeOperation, setExchangeOperation] = useState("buy");
   const [depositAmount, setDepositAmount] = useState("100000");
   const [depositDays, setDepositDays] = useState("32");
@@ -1411,14 +1420,14 @@ export function V0FinancialDashboard() {
     selectedCalculatorBank?.exchangeRates?.find((r) => r.currency === exchangeCurrency) ?? null;
   const selectedExchangeSellRate = selectedExchangePair?.sell ?? null;
   const selectedExchangeBuyRate = selectedExchangePair?.buy ?? null;
-  const exchangeTl = Number.parseFloat(exchangeAmountTl);
+  const exchangeAmountNum = Number.parseFloat(exchangeAmount);
   const exchangeResult =
-    Number.isFinite(exchangeTl) &&
-    exchangeTl > 0 &&
+    Number.isFinite(exchangeAmountNum) &&
+    exchangeAmountNum > 0 &&
     (exchangeOperation === "buy" ? Number.isFinite(selectedExchangeSellRate) : Number.isFinite(selectedExchangeBuyRate))
       ? exchangeOperation === "buy"
-        ? exchangeTl / selectedExchangeSellRate
-        : exchangeTl * selectedExchangeBuyRate
+        ? exchangeAmountNum / selectedExchangeSellRate
+        : exchangeAmountNum * selectedExchangeBuyRate
       : null;
 
   const depositPrincipal = Number.parseFloat(depositAmount);
@@ -1661,7 +1670,7 @@ export function V0FinancialDashboard() {
                       const rate = bank.exchangeRates?.find((r) => r.currency === exchangeCurrency);
                       // ⚠️ DÜZELTME (bkz. project_audit_report.md, 1.5): Müşteri "Alış" yaptığında
                       // (TL verip döviz alır) fiilen büronun SATIŞ kuru uygulanır — hesaplama zaten
-                      // `exchangeTl / sell` şeklindeydi. Ancak burada etiket/rakam yanlışlıkla
+                      // `exchangeAmountNum / sell` şeklindeydi. Ancak burada etiket/rakam yanlışlıkla
                       // `rate.buy` (büronun alış kuru) gösteriyordu; ekranda görünen kur, gerçekte
                       // kullanılan kurdan farklıydı. Aynı mantık "Satış" için de tersti. Artık
                       // gösterilen kur, hesaplamada kullanılan kurla birebir eşleşiyor.
@@ -1687,12 +1696,12 @@ export function V0FinancialDashboard() {
                 type="number"
                 min="0"
                 disabled={!exchangeCurrency}
-                value={exchangeAmountTl}
-                onChange={(e) => setExchangeAmountTl(e.target.value)}
+                value={exchangeAmount}
+                onChange={(e) => setExchangeAmount(e.target.value)}
                 className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder={!exchangeCurrency ? "Döviz Seçiniz" : !calculatorBank ? "Döviz Bürosu Seçin" : "Tutar giriniz"}
               />
-              {exchangeAmountTl !== "0" && (!exchangeCurrency || !calculatorBank) && (
+              {exchangeAmount !== "0" && (!exchangeCurrency || !calculatorBank) && (
                 <p className="text-xs text-indigo-600 dark:text-indigo-300 mt-1">
                   ⚠️ Döviz birimi ya da şube seçilmedi
                 </p>
@@ -1718,7 +1727,7 @@ export function V0FinancialDashboard() {
                     ? "Döviz Seçiniz"
                     : !calculatorBank
                       ? "Döviz Bürosu Seçin"
-                      : (exchangeAmountTl === "0" || exchangeAmountTl === "")
+                      : (exchangeAmount === "0" || exchangeAmount === "")
                         ? "Dönüştürmek istediğiniz tutarı giriniz"
                         : t("resultWaiting")}
               </div>
@@ -1952,7 +1961,6 @@ export function V0FinancialDashboard() {
               key={bank.institutionId || bank.id}
               bank={bank}
               mode={mode}
-              liveRates={liveRates}
               onSelect={(biz) => {
                 const name = String(biz?.name || "")
                   .replace(/\s*\([Tt]est\)\s*/g, "")
