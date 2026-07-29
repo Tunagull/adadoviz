@@ -1671,13 +1671,23 @@ export function V0FinancialDashboard() {
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">
                 {exchangeOperation === "buy" ? `${t("resultBuy")} ${exchangeCurrency}` : t("resultSell")}
               </label>
-              <div className="flex h-11 items-center rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 font-semibold dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
+              <div className={`flex h-11 items-center rounded-lg border px-3 text-sm font-semibold ${
+                Number.isFinite(exchangeResult)
+                  ? "border-indigo-300/60 bg-indigo-50 text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100"
+                  : "border-amber-300/50 bg-amber-50 text-amber-700 dark:border-amber-700/50 dark:bg-amber-900/30 dark:text-amber-200"
+              }`}>
                 {Number.isFinite(exchangeResult)
                   ? `${exchangeResult.toLocaleString("tr-TR", {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })} ${exchangeOperation === "buy" ? exchangeCurrency : "TL"}`
-                  : t("resultWaiting")}
+                  : !exchangeCurrency
+                    ? "Döviz Birimi Seçiniz"
+                    : !calculatorBank
+                      ? "Döviz Bürosu Seçin"
+                      : (exchangeAmountTl === "0" || exchangeAmountTl === "")
+                        ? "Dönüştürmek istediğiniz tutarı giriniz"
+                        : t("resultWaiting")}
               </div>
             </div>
 
