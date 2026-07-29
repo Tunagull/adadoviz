@@ -1624,11 +1624,12 @@ export function V0FinancialDashboard() {
               <SearchableSelect
                 value={calculatorBank}
                 onChange={setCalculatorBank}
-                placeholder={t("selectBankPlaceholder")}
+                placeholder={!exchangeCurrency ? "Lütfen önce Döviz Birimi seçin" : "Bir döviz bürosu seçin"}
+                disabled={!exchangeCurrency}
                 aria-label={t("selectBank")}
                 options={[
-                  { value: "", label: t("selectBankPlaceholder") },
-                  ...[...banks]
+                  { value: "", label: !exchangeCurrency ? "Lütfen önce Döviz Birimi seçin" : "Bir döviz bürosu seçin" },
+                  ...(exchangeCurrency ? [...banks]
                     .sort((a, b) => a.name.localeCompare(b.name, "tr"))
                     .map((bank) => {
                       const rate = bank.exchangeRates?.find((r) => r.currency === exchangeCurrency);
@@ -1638,11 +1639,9 @@ export function V0FinancialDashboard() {
                       const operationType = exchangeOperation === "buy" ? t("buy") : t("sell");
                       return {
                         value: bank.name,
-                        label: exchangeCurrency
-                          ? `${bank.name} | ${operationType}: ${price}`
-                          : bank.name,
+                        label: `${bank.name} | ${operationType}: ${price}`,
                       };
-                    }),
+                    }) : []),
                 ]}
               />
             </div>
@@ -1658,8 +1657,13 @@ export function V0FinancialDashboard() {
                 value={exchangeAmountTl}
                 onChange={(e) => setExchangeAmountTl(e.target.value)}
                 className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                placeholder="0"
+                placeholder="Tutar giriniz"
               />
+              {exchangeAmountTl !== "0" && (!exchangeCurrency || !calculatorBank) && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  ⚠️ Döviz birimi ya da şube seçilmedi
+                </p>
+              )}
             </div>
 
             {/* 5️⃣ SONUÇ (En sağda) */}
