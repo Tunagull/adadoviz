@@ -30,6 +30,9 @@ const {
   listAllInstitutionsForSync,
   listAllBranchesForSync,
   listAllAdjustmentsForSync,
+  applySupabaseInstitutionRow,
+  applySupabaseAdjustmentRow,
+  applySupabaseBranchRow,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,
@@ -51,7 +54,7 @@ const {
   updateInstitutionPassword,
 } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
-const { findInstitutionByName, CURRENCIES } = require("./institutions");
+const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./institutions");
 const { applyAdjustmentsToBanksPayload, applyMarginToValue } = require("./rateMath");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
 const { sendPartnershipEmail, sendPasswordResetEmail } = require("./email");
@@ -73,6 +76,7 @@ const {
   syncPasswordReset,
   syncVisitorSession,
   syncSiteStats,
+  hydrateAdminDataFromSupabase,
   bootstrapAdminDataToSupabase,
 } = require("./config/supabaseSync");
 
@@ -232,7 +236,6 @@ app.get("/api/kurlar", (_req, res) => {
     }
 
     const adjustmentsMap = getAllAdjustmentsMap();
-    const institutionMeta = getInstitutionsMetaById();
     const isBankVisible = (bank) => {
       const active = bank.is_active === true || bank.is_active === 1 || bank.is_active === "1";
       if (!active) return false;
@@ -243,93 +246,65 @@ app.get("/api/kurlar", (_req, res) => {
       return true;
     };
 
-    const buildBankPayload = (bankDef, institutionId, meta) => {
-      const adj = institutionId ? adjustmentsMap.get(institutionId) || {} : {};
-      const rates = {};
-      for (const currency of ["EUR", "USD", "GBP"]) {
-        const kur = cachedRates.centralBankRates[currency];
-        const buyKey = `${currency}_buy`;
-        const sellKey = `${currency}_sell`;
-        const buyAdj = adj[buyKey] || { margin_type: "fixed", margin_value: 0 };
-        const sellAdj = adj[sellKey] || { margin_type: "fixed", margin_value: 0 };
-        rates[currency] = {
-          buy: applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type),
-          sell: applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type),
-        };
-      }
-      return {
-        bank: bankDef.name,
-        bankName: bankDef.name,
-        institutionId: institutionId || null,
-        sourceUrl: bankDef.sourceUrl || null,
-        rates,
-        exchangeRates: [
-          { currency: "EUR", buy: rates.EUR.buy, sell: rates.EUR.sell },
-          { currency: "USD", buy: rates.USD.buy, sell: rates.USD.sell },
-          { currency: "GBP", buy: rates.GBP.buy, sell: rates.GBP.sell },
-        ],
-        depositRate: null,
-        loans: { tasit: null, konut: null, ihtiyac: null },
-        interestRates: [],
-        subscription_type: meta?.subscription_type || null,
-        subscription_end_date: meta?.subscription_end_date || null,
-        logo_url: meta?.logo_url || null,
-        // meta yoksa varsayılan aktif; 0/false dışındaki her şey aktif
-        is_active: meta
-          ? meta.is_active === true || meta.is_active === 1 || meta.is_active === "1"
-          : true,
-      };
-    };
-
-    // Tüm kurulu institution'lar için, KKTC kurları + marj kombinasyonu
-    const banksFromDefs = BANK_DEFINITIONS.map((bankDef) => {
-      const institution = findInstitutionByName(bankDef.name);
-      const institutionId = institution?.id;
-      const meta = institutionId ? institutionMeta[institutionId] : null;
-      return buildBankPayload(bankDef, institutionId, meta);
-    });
-
-    // Admin'den eklenen ve BANK_DEFINITIONS'ta olmayan aktif işletmeleri de ekle
-    const existingIds = new Set(
-      banksFromDefs.map((b) => b.institutionId).filter(Boolean)
-    );
-    const existingNames = new Set(
-      banksFromDefs.map((b) =>
-        String(b.bankName || b.bank || "")
+    // Favicon / kaynak URL eşlemesi (katalog)
+    const sourceByName = new Map(
+      BANK_DEFINITIONS.map((d) => [
+        String(d.name)
           .toLocaleLowerCase("tr-TR")
           .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-      )
+          .replace(/[\u0300-\u036f]/g, ""),
+        d.sourceUrl,
+      ])
     );
-    const extraBanks = listBusinesses()
-      .filter((biz) => {
-        if (existingIds.has(biz.institution_id)) return false;
+
+    /**
+     * Tek kaynak: Super Admin'deki aktif işletmeler.
+     * Kart kuru = Merkez Bankası kuru + o işletmenin kâr marjı (fixed/percent).
+     */
+    const banks = listBusinesses()
+      .filter((biz) =>
+        isBankVisible({
+          is_active: biz.is_active,
+          subscription_end_date: biz.subscription_end_date,
+        })
+      )
+      .map((biz) => {
+        const institutionId = biz.institution_id;
+        const adj = adjustmentsMap.get(institutionId) || {};
+        const rates = {};
+        for (const currency of ["EUR", "USD", "GBP"]) {
+          const kur = cachedRates.centralBankRates[currency];
+          const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
+          const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
+          rates[currency] = {
+            buy: applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type),
+            sell: applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type),
+          };
+        }
         const nameKey = String(biz.institution_name || "")
           .toLocaleLowerCase("tr-TR")
           .normalize("NFD")
           .replace(/[\u0300-\u036f]/g, "");
-        if (nameKey && existingNames.has(nameKey)) return false;
-        // Bilinen banka listesinde isim eşleşmesi varsa ekstra kart ekleme
-        if (findInstitutionByName(biz.institution_name)) return false;
-        return isBankVisible({
-          is_active: biz.is_active,
-          subscription_end_date: biz.subscription_end_date,
-        });
-      })
-      .map((biz) =>
-        buildBankPayload(
-          { name: biz.institution_name, sourceUrl: null },
-          biz.institution_id,
-          {
-            subscription_type: biz.subscription_type,
-            subscription_end_date: biz.subscription_end_date,
-            is_active: biz.is_active,
-            logo_url: biz.logo_url,
-          }
-        )
-      );
-
-    const banks = [...banksFromDefs, ...extraBanks].filter(isBankVisible);
+        return {
+          bank: biz.institution_name,
+          bankName: biz.institution_name,
+          institutionId,
+          sourceUrl: sourceByName.get(nameKey) || null,
+          rates,
+          exchangeRates: [
+            { currency: "EUR", buy: rates.EUR.buy, sell: rates.EUR.sell },
+            { currency: "USD", buy: rates.USD.buy, sell: rates.USD.sell },
+            { currency: "GBP", buy: rates.GBP.buy, sell: rates.GBP.sell },
+          ],
+          depositRate: null,
+          loans: { tasit: null, konut: null, ihtiyac: null },
+          interestRates: [],
+          subscription_type: biz.subscription_type || null,
+          subscription_end_date: biz.subscription_end_date || null,
+          logo_url: biz.logo_url || null,
+          is_active: true,
+        };
+      });
 
     res.json({
       updatedAt: cachedRates.centralBankUpdatedAt || new Date().toISOString(),
@@ -337,7 +312,7 @@ app.get("/api/kurlar", (_req, res) => {
       banks,
       centralBankUpdatedAt: cachedRates.centralBankUpdatedAt,
       centralBankXmlDate: cachedRates.centralBankXmlDate,
-      rawCentralBankRates: cachedRates.centralBankRates, // ✅ SAF XML kurlarını da gönder
+      rawCentralBankRates: cachedRates.centralBankRates,
     });
   } catch (error) {
     console.error("[KURLAR] Endpoint hata:", error.message, error.stack);
@@ -1304,8 +1279,11 @@ app.get("/api/business-rate-history", async (req, res) => {
 
     const institutionId = institution_id.trim().toLowerCase();
 
-    // Yeni işletme: created_at'ten önceki MB geçmişi gösterilmez → grafik sıfırdan birikir
-    const inceptionMs = getInstitutionCreatedAtMs(institutionId);
+    // Katalog işletmeler: tam MB geçmişi + marj.
+    // Super Admin'den yeni eklenen işletmeler: created_at'ten itibaren birikir.
+    const rawInception = getInstitutionCreatedAtMs(institutionId);
+    const isCatalog = !!findInstitutionById(institutionId);
+    const inceptionMs = isCatalog ? 0 : rawInception || 0;
 
     // Marj geçmişi: önce Supabase, yoksa SQLite
     let buyHistory = await fetchMarginHistory(institutionId, currency, "buy");
@@ -1317,8 +1295,30 @@ app.get("/api/business-rate-history", async (req, res) => {
       sellHistory = getMarginHistoryForInstitution(institutionId, currency, "sell");
     }
 
-    const currentAdjustments = getAdjustmentsForInstitution(institutionId);
+    // Güncel marj: SQLite; yoksa Supabase rate_adjustments
+    let currentAdjustments = getAdjustmentsForInstitution(institutionId);
+    const hasLocalMargin =
+      currentAdjustments[`${currency}_buy`] || currentAdjustments[`${currency}_sell`];
+    if (!hasLocalMargin) {
+      try {
+        const { supabase } = require("./config/supabaseClient");
+        const { data: remoteAdj } = await supabase
+          .from("rate_adjustments")
+          .select("currency, type, margin_type, margin_value")
+          .eq("institution_id", institutionId)
+          .eq("currency", currency);
+        for (const row of remoteAdj || []) {
+          currentAdjustments[`${row.currency}_${row.type}`] = {
+            margin_type: row.margin_type || "fixed",
+            margin_value: Number(row.margin_value) || 0,
+          };
+        }
+      } catch (err) {
+        console.warn("[BUSINESS-RATE-HISTORY] remote margin:", err.message);
+      }
+    }
 
+    // Nihai Kur = MB Kuru + Kâr Marjı (geçmiş basamak + güncel marj)
     const result = await getSupabaseBusinessRateHistory(
       institutionId,
       currency,
@@ -1327,8 +1327,14 @@ app.get("/api/business-rate-history", async (req, res) => {
         inceptionMs: inceptionMs || 0,
         buyHistory,
         sellHistory,
-        currentBuyAdj: currentAdjustments[`${currency}_buy`],
-        currentSellAdj: currentAdjustments[`${currency}_sell`],
+        currentBuyAdj: currentAdjustments[`${currency}_buy`] || {
+          margin_type: "fixed",
+          margin_value: 0,
+        },
+        currentSellAdj: currentAdjustments[`${currency}_sell`] || {
+          margin_type: "fixed",
+          margin_value: 0,
+        },
       }
     );
 
@@ -1530,7 +1536,18 @@ async function refreshRatesCacheWithChangeDetection() {
 async function startServer() {
   initDb();
 
-  // Mevcut SQLite admin verisini Supabase'e yansıt (kalıcılık)
+  // 1) Supabase'teki kalıcı admin verisini SQLite'a geri yükle (deploy sonrası)
+  try {
+    await hydrateAdminDataFromSupabase({
+      upsertInstitutionRow: applySupabaseInstitutionRow,
+      upsertAdjustmentRow: applySupabaseAdjustmentRow,
+      upsertBranchRow: applySupabaseBranchRow,
+    });
+  } catch (err) {
+    console.warn("[SUPABASE-SYNC] Hydrate hatası:", err.message);
+  }
+
+  // 2) Güncel SQLite durumunu Supabase'e yansıt
   bootstrapAdminDataToSupabase({
     institutions: listAllInstitutionsForSync(),
     branches: listAllBranchesForSync(),

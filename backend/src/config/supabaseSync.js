@@ -210,6 +210,74 @@ async function syncSiteStats(totalVisitors) {
 }
 
 /**
+ * Render ephemeral SQLite sıfırlandığında Supabase'teki kalıcı admin verisini geri yükler.
+ * seed'den SONRA çağrılmalı — mevcut satırları institution_id üzerinden günceller.
+ */
+async function hydrateAdminDataFromSupabase(applyFns = {}) {
+  const {
+    upsertInstitutionRow,
+    upsertAdjustmentRow,
+    upsertBranchRow,
+  } = applyFns;
+
+  console.log("[SUPABASE-SYNC] Hydrate (Supabase → SQLite) başlıyor...");
+
+  let institutions = 0;
+  let adjustments = 0;
+  let branches = 0;
+
+  try {
+    const { data: instRows, error: instErr } = await supabase
+      .from("institutions")
+      .select("*")
+      .neq("role", "superadmin");
+    if (instErr) throw instErr;
+
+    for (const row of instRows || []) {
+      if (typeof upsertInstitutionRow === "function") {
+        upsertInstitutionRow(row);
+        institutions += 1;
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.institutions", err);
+  }
+
+  try {
+    const { data: adjRows, error: adjErr } = await supabase
+      .from("rate_adjustments")
+      .select("*");
+    if (adjErr) throw adjErr;
+    for (const row of adjRows || []) {
+      if (typeof upsertAdjustmentRow === "function") {
+        upsertAdjustmentRow(row);
+        adjustments += 1;
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.rate_adjustments", err);
+  }
+
+  try {
+    const { data: branchRows, error: brErr } = await supabase.from("branches").select("*");
+    if (brErr) throw brErr;
+    for (const row of branchRows || []) {
+      if (typeof upsertBranchRow === "function") {
+        upsertBranchRow(row);
+        branches += 1;
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.branches", err);
+  }
+
+  console.log(
+    `[SUPABASE-SYNC] Hydrate bitti — institutions=${institutions} adjustments=${adjustments} branches=${branches}`
+  );
+  return { institutions, adjustments, branches };
+}
+
+/**
  * SQLite'daki mevcut işletme / şube / marj verisini Supabase'e toplu iter.
  * Sunucu açılışında bir kez çağrılır.
  */
@@ -258,5 +326,6 @@ module.exports = {
   syncPasswordReset,
   syncVisitorSession,
   syncSiteStats,
+  hydrateAdminDataFromSupabase,
   bootstrapAdminDataToSupabase,
 };

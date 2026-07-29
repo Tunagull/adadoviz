@@ -261,6 +261,7 @@ function initDb() {
 
   migrateBankAdminsToInstitutions();
   seedAdminsIfNeeded();
+  seedCatalogInstitutionsIfNeeded();
   seedSuperAdminIfNeeded();
   backfillSubscriptionFieldsIfNeeded();
   seedAdjustmentsIfNeeded();
@@ -341,6 +342,39 @@ function seedAdminsIfNeeded() {
   }
 }
 
+/**
+ * Dashboard'da görünen tüm katalog işletmelerini Super Admin listesine de ekler.
+ * Böylece panel ↔ dashboard tek kaynaktan beslenir.
+ * Mevcut kayıtlar (username/password) korunur — INSERT OR IGNORE.
+ */
+function seedCatalogInstitutionsIfNeeded() {
+  const passwordHash = bcrypt.hashSync("123", 10);
+  const endDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO institutions
+      (username, password_hash, institution_id, institution_name, role, subscription,
+       subscription_type, subscription_end_date, is_active, created_at)
+    VALUES (?, ?, ?, ?, 'business', 'Yıllık', 'Yıllık', ?, 1, '2020-01-01T00:00:00.000Z')
+  `);
+
+  let added = 0;
+  runInTransaction(() => {
+    for (const inst of INSTITUTIONS) {
+      // akbank zaten banka1 username ile var — institution_id çakışmasında IGNORE
+      const username = inst.id === "akbank" ? "banka1" : inst.id;
+      const info = insert.run(username, passwordHash, inst.id, inst.name, endDate);
+      if (info.changes > 0) added += 1;
+    }
+  });
+
+  if (added > 0) {
+    console.log(`[DB] Katalog işletmeleri eklendi: +${added} (şifre: 123)`);
+  } else {
+    console.log("[DB] Katalog işletmeleri zaten mevcut.");
+  }
+}
+
 function seedSuperAdminIfNeeded() {
   const passwordHash = bcrypt.hashSync("123", 10);
   const existing = db.prepare("SELECT id FROM institutions WHERE username = 'tuna'").get();
@@ -365,31 +399,33 @@ function seedSuperAdminIfNeeded() {
 }
 
 function seedAdjustmentsIfNeeded() {
-  const count = db.prepare("SELECT COUNT(*) AS c FROM rate_adjustments").get().c;
-  if (count > 0) return;
-
   const insert = db.prepare(`
-    INSERT INTO rate_adjustments (institution_id, currency, type, margin_type, margin_value)
+    INSERT OR IGNORE INTO rate_adjustments (institution_id, currency, type, margin_type, margin_value)
     VALUES (?, ?, ?, 'fixed', 0)
   `);
 
-  const customInsts = [
-    { id: "akbank", name: "Akbank" },
-    { id: "banka2", name: "Banka 2" },
-    { id: "banka3", name: "Banka 3" },
-    { id: "sun_doviz", name: "Sun Döviz" },
-  ];
+  const rows = db
+    .prepare(
+      `SELECT institution_id FROM institutions
+       WHERE COALESCE(role, 'business') != 'superadmin'`
+    )
+    .all();
 
+  let added = 0;
   runInTransaction(() => {
-    for (const inst of customInsts) {
+    for (const row of rows) {
       for (const currency of ["EUR", "USD", "GBP"]) {
-        // Sadece sıfır marj ile, temiz insert
-        insert.run(inst.id, currency, "buy");
-        insert.run(inst.id, currency, "sell");
+        for (const type of ["buy", "sell"]) {
+          const info = insert.run(row.institution_id, currency, type);
+          if (info.changes > 0) added += 1;
+        }
       }
     }
   });
-  console.log("[DB] Rate adjustments temiz şekilde seeded (tüm marjlar = 0)");
+
+  if (added > 0) {
+    console.log(`[DB] Rate adjustments seeded (+${added} satır, varsayılan 0)`);
+  }
 }
 
 function resetAllMarginsToZero() {
@@ -1860,6 +1896,108 @@ function listAllAdjustmentsForSync() {
     .all();
 }
 
+/** Supabase hydrate: institution satırını SQLite'a yaz (slug eşleşmesi) */
+function applySupabaseInstitutionRow(row) {
+  if (!row?.institution_id || row.role === "superadmin") return;
+  const existing = db
+    .prepare(`SELECT id FROM institutions WHERE institution_id = ?`)
+    .get(row.institution_id);
+
+  const isActive = row.is_active === false || row.is_active === 0 ? 0 : 1;
+  if (existing) {
+    db.prepare(
+      `UPDATE institutions SET
+         username = COALESCE(?, username),
+         password_hash = COALESCE(?, password_hash),
+         institution_name = COALESCE(?, institution_name),
+         subscription = COALESCE(?, subscription),
+         subscription_type = COALESCE(?, subscription_type),
+         subscription_end_date = COALESCE(?, subscription_end_date),
+         is_active = ?,
+         logo_url = COALESCE(?, logo_url),
+         email = COALESCE(?, email),
+         phone = COALESCE(?, phone),
+         working_hours = COALESCE(?, working_hours)
+       WHERE institution_id = ?`
+    ).run(
+      row.username || null,
+      row.password_hash || null,
+      row.institution_name || null,
+      row.subscription || null,
+      row.subscription_type || null,
+      row.subscription_end_date || null,
+      isActive,
+      row.logo_url || null,
+      row.email || null,
+      row.phone || null,
+      row.working_hours || null,
+      row.institution_id
+    );
+  } else {
+    db.prepare(
+      `INSERT INTO institutions
+        (username, password_hash, institution_id, institution_name, role, subscription,
+         subscription_type, subscription_end_date, is_active, logo_url, email, phone, working_hours)
+       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      row.username || row.institution_id,
+      row.password_hash || bcrypt.hashSync("123", 10),
+      row.institution_id,
+      row.institution_name || row.institution_id,
+      row.subscription || "Yıllık",
+      row.subscription_type || "Yıllık",
+      row.subscription_end_date || null,
+      isActive,
+      row.logo_url || null,
+      row.email || null,
+      row.phone || null,
+      row.working_hours || null
+    );
+  }
+}
+
+function applySupabaseAdjustmentRow(row) {
+  if (!row?.institution_id || !row?.currency || !row?.type) return;
+  db.prepare(
+    `INSERT INTO rate_adjustments (institution_id, currency, type, margin_type, margin_value, updated_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(institution_id, currency, type) DO UPDATE SET
+       margin_type = excluded.margin_type,
+       margin_value = excluded.margin_value,
+       updated_at = datetime('now')`
+  ).run(
+    row.institution_id,
+    row.currency,
+    row.type,
+    row.margin_type || "fixed",
+    Number(row.margin_value) || 0
+  );
+}
+
+function applySupabaseBranchRow(row) {
+  if (!row?.institution_id || !row?.name) return;
+  const biz = db
+    .prepare(`SELECT id FROM institutions WHERE institution_id = ?`)
+    .get(row.institution_id);
+  if (!biz) return;
+
+  const existing = db
+    .prepare(`SELECT id FROM branches WHERE business_id = ? AND name = ?`)
+    .get(biz.id, row.name);
+
+  if (existing) {
+    db.prepare(
+      `UPDATE branches SET phone = ?, address = ?, lat = ?, lng = ?, updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(row.phone || "", row.address || "", row.lat, row.lng, existing.id);
+  } else {
+    db.prepare(
+      `INSERT INTO branches (business_id, name, phone, address, lat, lng)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(biz.id, row.name, row.phone || "", row.address || "", row.lat, row.lng);
+  }
+}
+
 module.exports = {
   initDb,
   getDb,
@@ -1885,6 +2023,9 @@ module.exports = {
   listAllInstitutionsForSync,
   listAllBranchesForSync,
   listAllAdjustmentsForSync,
+  applySupabaseInstitutionRow,
+  applySupabaseAdjustmentRow,
+  applySupabaseBranchRow,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,
