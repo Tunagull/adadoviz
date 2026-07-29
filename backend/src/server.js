@@ -105,7 +105,42 @@ const sseClients = [];
 /** ✅ ADIM 1: Bir önceki kurları hafızada tut (değişim tespiti için) */
 let previousRates = null;
 
-app.use(cors({ origin: "*" }));
+/** CORS: local Vite + bilinen production origin'ler; bilinmeyenler için * (mevcut davranış) */
+const DEFAULT_CORS_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:4173",
+  "https://adadoviz.tunahangul.com",
+  "https://www.adadoviz.tunahangul.com",
+];
+
+const extraCors = String(process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const corsAllowList = new Set([...DEFAULT_CORS_ORIGINS, ...extraCors]);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Same-origin / curl / server-to-server: Origin yok
+      if (!origin) return callback(null, true);
+      if (corsAllowList.has(origin) || process.env.CORS_ALLOW_ALL === "1") {
+        return callback(null, true);
+      }
+      // Vercel preview deploy'ları
+      if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) {
+        return callback(null, true);
+      }
+      // Geriye dönük uyumluluk: bilinmeyen origin'e de izin (canlı bozulmasın)
+      return callback(null, true);
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/", (_req, res) => {
@@ -1269,8 +1304,45 @@ app.get("/api/historical-rates", async (req, res) => {
       return res.status(400).json({ error: "Geçersiz para birimi. 'USD', 'EUR', 'GBP' olabilir." });
     }
 
-    // Kalıcı kaynak: Supabase (Render ephemeral SQLite DEĞİL)
-    const result = await getMarketHistoricalRates(period, currency);
+    // Kalıcı kaynak: Supabase. Boş/hatalıysa SQLite yedek (lokal + geçici outage).
+    let result;
+    try {
+      result = await getMarketHistoricalRates(period, currency);
+    } catch (supabaseErr) {
+      console.warn("[HISTORICAL] Supabase hata, SQLite yedek:", supabaseErr.message);
+      result = null;
+    }
+
+    if (!result || !result.rows || result.rows.length === 0) {
+      try {
+        const sqliteFallback = getHistoricalRates(period, currency);
+        const rows = Array.isArray(sqliteFallback?.rows) ? sqliteFallback.rows : [];
+        if (rows.length > 0) {
+          console.log(
+            `[HISTORICAL] ${period}/${currency}: Supabase boş — SQLite yedek ${rows.length} satır`
+          );
+          return res.json({
+            period,
+            currency,
+            count: rows.length,
+            rates: rows,
+            exactPercentageChange: sqliteFallback.exactPercentageChange ?? 0,
+            meta: {
+              isLimitedByAvailableData: sqliteFallback.isLimitedByAvailableData ?? true,
+              actualSpanDays: sqliteFallback.actualSpanDays ?? 0,
+              requestedSpanDays: sqliteFallback.requestedSpanDays ?? 1,
+              source: "sqlite-fallback",
+            },
+          });
+        }
+      } catch (sqliteErr) {
+        console.warn("[HISTORICAL] SQLite yedek de başarısız:", sqliteErr.message);
+      }
+    }
+
+    if (!result) {
+      return res.status(500).json({ error: "Geçmiş veriler alınamadı." });
+    }
 
     if (result.rows.length === 0) {
       console.log(`[HISTORICAL] ${period} / ${currency}: Supabase'de veri yok.`);

@@ -24,7 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import { trackBusinessClick, trackCurrencyView } from "../lib/analytics";
-import { apiUrl } from "../lib/api";
+import { apiUrl, ratesStreamUrl } from "../lib/api";
 
 /**
  * ✅ Piyasa Özeti Kartı - Gerçek Geçmiş Veri Grafiği ve SSE Canlı Güncellemeleri
@@ -112,110 +112,271 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     });
 
     // ✅ SAATLİK: Ham noktaları sakla; yoğun saatlik doldurma displayChartData'da yapılır
-    return sortedRates.map((rate) => ({
-      timeMs: new Date(rate.recorded_at).getTime(),
-      buy: rate.buy_rate,
-      sell: rate.sell_rate,
-      mid: (rate.buy_rate + rate.sell_rate) / 2,
-      recorded_at: rate.recorded_at,
-      buy_rate: rate.buy_rate,
-      sell_rate: rate.sell_rate,
-    }));
+    return sortedRates
+      .map((rate) => {
+        const timeMs = new Date(rate.recorded_at).getTime();
+        return {
+          timeMs,
+          buy: rate.buy_rate,
+          sell: rate.sell_rate,
+          mid: (rate.buy_rate + rate.sell_rate) / 2,
+          recorded_at: rate.recorded_at,
+          buy_rate: rate.buy_rate,
+          sell_rate: rate.sell_rate,
+        };
+      })
+      .filter((rate) => Number.isFinite(rate.timeMs));
   }, [rates, period]);
+
+  const oldestDataTime = chartData.length > 0 ? chartData[0].timeMs : null;
+  const newestDataTime = chartData.length > 0 ? chartData[chartData.length - 1].timeMs : null;
+
+  /** Periyot kaydırma adımı (ms) — sol/sağ ok her tıkta bu kadar geri/ileri gider */
+  const periodStepMs = useMemo(() => {
+    const day = 24 * 60 * 60 * 1000;
+    switch (period) {
+      case "Yıllık":
+        return 365 * day;
+      case "Aylık":
+        return 30 * day;
+      case "Haftalık":
+        return 7 * day;
+      case "Günlük":
+        return 1 * day;
+      case "Saatlik":
+      default:
+        return 1 * day; // 24 saatlik pencere, 1 gün kaydır
+    }
+  }, [period]);
+
+  /** Görünür pencere genişliği (ms) */
+  const viewSpanMs = useMemo(() => {
+    const day = 24 * 60 * 60 * 1000;
+    switch (period) {
+      case "Yıllık":
+        return 365 * day;
+      case "Aylık":
+        return 30 * day;
+      case "Haftalık":
+        return 7 * day;
+      case "Günlük":
+        return 1 * day;
+      case "Saatlik":
+      default:
+        return 1 * day;
+    }
+  }, [period]);
+
+  /**
+   * En eski veriye ulaşınca sol ok kilitlensin.
+   * maxOffset: windowStart'ın oldestDataTime'ın altına INMEMESİ için üst sınır.
+   */
+  const maxTimeOffset = useMemo(() => {
+    if (!Number.isFinite(oldestDataTime)) return 0;
+    const nowMs = Date.now();
+    // offset=0 iken end≈now, start≈now-viewSpan
+    // offset arttıkça end/start geri kayar; start >= oldest olmalı
+    // start ≈ now - viewSpan - offset*step  >= oldest
+    // offset <= (now - viewSpan - oldest) / step
+    const room = nowMs - viewSpanMs - oldestDataTime;
+    if (!(room > 0)) return 0;
+    return Math.max(0, Math.floor(room / periodStepMs));
+  }, [oldestDataTime, viewSpanMs, periodStepMs]);
+
+  // Veri yüklendikten / periyot değiştikten sonra offset arşiv dışına taşmasın
+  useEffect(() => {
+    setTimeOffset((prev) => Math.min(prev, maxTimeOffset));
+  }, [maxTimeOffset, currency, period]);
 
   // ✅ Tüm periyotlar: kesin takvim (Calendar Date) kaydırması + özel tarih clamp
   const timeWindow = useMemo(() => {
-    const now = new Date();
-    const endDate = new Date(now);
-    const startDate = new Date(now);
+    const nowMs = Date.now();
+    const safeOffset = Math.min(Math.max(0, timeOffset), maxTimeOffset);
 
-    // Seçilen periyoda göre tam takvim kaydırması (Sliding Window)
+    const endDate = new Date(nowMs);
+    const startDate = new Date(nowMs);
+
     switch (period) {
-      case 'Yıllık':
-        endDate.setFullYear(endDate.getFullYear() - timeOffset);
-        startDate.setFullYear(endDate.getFullYear() - 1);
+      case "Yıllık":
+        endDate.setFullYear(endDate.getFullYear() - safeOffset);
+        startDate.setTime(endDate.getTime());
+        startDate.setFullYear(startDate.getFullYear() - 1);
         break;
-      case 'Aylık':
-        endDate.setMonth(endDate.getMonth() - timeOffset);
-        startDate.setMonth(endDate.getMonth() - 1);
+      case "Aylık":
+        endDate.setMonth(endDate.getMonth() - safeOffset);
+        startDate.setTime(endDate.getTime());
+        startDate.setMonth(startDate.getMonth() - 1);
         break;
-      case 'Haftalık':
-        endDate.setDate(endDate.getDate() - (timeOffset * 7));
-        startDate.setDate(endDate.getDate() - 7);
+      case "Haftalık":
+        endDate.setDate(endDate.getDate() - safeOffset * 7);
+        startDate.setTime(endDate.getTime());
+        startDate.setDate(startDate.getDate() - 7);
         break;
-      case 'Günlük':
-        endDate.setDate(endDate.getDate() - (timeOffset * 1));
-        startDate.setDate(endDate.getDate() - 1);
+      case "Günlük":
+        endDate.setDate(endDate.getDate() - safeOffset);
+        startDate.setTime(endDate.getTime());
+        startDate.setDate(startDate.getDate() - 1);
         break;
-      case 'Saatlik':
+      case "Saatlik":
       default:
-        endDate.setHours(endDate.getHours() - (timeOffset * 24));
-        startDate.setHours(endDate.getHours() - 24);
+        endDate.setHours(endDate.getHours() - safeOffset * 24);
+        startDate.setTime(endDate.getTime());
+        startDate.setHours(startDate.getHours() - 24);
         break;
     }
 
-    const defaultEnd = endDate.getTime();
-    const defaultStart = startDate.getTime();
+    let defaultEnd = endDate.getTime();
+    let defaultStart = startDate.getTime();
 
-    // Özel tarih seçildiyse onu kullan; geleceği sınırla
-    const actualStart = customDateRange.start ? Math.min(customDateRange.start, Date.now()) : defaultStart;
-    const actualEnd = customDateRange.end ? Math.min(customDateRange.end, Date.now()) : defaultEnd;
-    const windowStart = Math.min(actualStart, actualEnd);
-    const windowEnd = Math.max(actualStart, actualEnd);
+    // Geçersiz custom tarihler yok sayılır
+    const rawStart = Number.isFinite(customDateRange.start) ? customDateRange.start : null;
+    const rawEnd = Number.isFinite(customDateRange.end) ? customDateRange.end : null;
+
+    let actualStart = rawStart != null ? Math.min(rawStart, nowMs) : defaultStart;
+    let actualEnd = rawEnd != null ? Math.min(rawEnd, nowMs) : defaultEnd;
+
+    if (!Number.isFinite(actualStart) || !Number.isFinite(actualEnd)) {
+      actualStart = defaultStart;
+      actualEnd = defaultEnd;
+    }
+
+    // Bitiş < başlangıç → güvenli default
+    if (actualEnd < actualStart) {
+      actualStart = defaultStart;
+      actualEnd = defaultEnd;
+    }
+
+    let windowStart = actualStart;
+    let windowEnd = actualEnd;
+
+    // Özel aralık çok genişse max 6 yıl
+    const MAX_CUSTOM_SPAN_MS = 6 * 365.25 * 24 * 60 * 60 * 1000;
+    if (windowEnd - windowStart > MAX_CUSTOM_SPAN_MS) {
+      windowStart = windowEnd - MAX_CUSTOM_SPAN_MS;
+    }
+
+    // ⚠️ KRİTİK: Pencereyi arşiv sınırlarının DIŞINA çıkarma.
+    // Aksi halde displayChartData boş kalır → tüm kart "Veri yok" olur ve oklar kaybolur.
+    if (Number.isFinite(oldestDataTime) && Number.isFinite(newestDataTime)) {
+      const span = Math.max(windowEnd - windowStart, 1);
+      if (windowEnd < oldestDataTime) {
+        // Tamamen veriden önce → en eski görünüme yapıştır
+        windowStart = oldestDataTime;
+        windowEnd = Math.min(nowMs, oldestDataTime + span);
+      } else if (windowStart < oldestDataTime) {
+        windowStart = oldestDataTime;
+        if (windowEnd <= windowStart) {
+          windowEnd = Math.min(nowMs, windowStart + span);
+        }
+      }
+      if (windowStart > newestDataTime) {
+        windowEnd = Math.min(nowMs, newestDataTime);
+        windowStart = Math.max(oldestDataTime, windowEnd - span);
+      }
+    }
+
     const span = Math.max(windowEnd - windowStart, 1);
-
-    // Ham serideki en eski veri — sol ok arşiv bitene kadar açık (Yıllık ile aynı)
-    const oldestDataTime = chartData.length > 0 ? chartData[0].timeMs : Date.now();
-    const isLeftDisabled = windowStart <= oldestDataTime;
+    // Sol ok: bir adım daha geri gitmek start'ı oldest'in altına iterse kilitli
+    const isLeftDisabled =
+      !Number.isFinite(oldestDataTime) ||
+      safeOffset >= maxTimeOffset ||
+      windowStart <= oldestDataTime + 1000; // 1sn tolerans
 
     return {
       windowStart,
       windowEnd,
-      oldestDataTime,
+      oldestDataTime: oldestDataTime ?? nowMs,
+      newestDataTime: newestDataTime ?? nowMs,
       isLeftDisabled,
+      isInvalidCustomRange: false,
+      maxTimeOffset,
       customTicks: [
         windowStart,
-        windowStart + (span * 0.25),
-        windowStart + (span * 0.50),
-        windowStart + (span * 0.75),
+        windowStart + span * 0.25,
+        windowStart + span * 0.5,
+        windowStart + span * 0.75,
         windowEnd,
       ],
     };
-  }, [period, timeOffset, chartData, customDateRange]);
+  }, [
+    period,
+    timeOffset,
+    maxTimeOffset,
+    oldestDataTime,
+    newestDataTime,
+    customDateRange,
+  ]);
 
   // Inputlar için YYYY-MM-DD (timezone kaymasını önlemek için yerel zaman)
   // Ham custom değer gösterilir (klavye yazımını bozmamak için); grafik clamp'i timeWindow'da
   const formatForInput = (ms) => {
+    if (!Number.isFinite(ms)) return "";
     const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return "";
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-    return d.toISOString().split('T')[0];
+    return d.toISOString().split("T")[0];
   };
 
   const startDateStr = formatForInput(
-    customDateRange.start != null ? customDateRange.start : timeWindow.windowStart
+    customDateRange.start != null && Number.isFinite(customDateRange.start)
+      ? customDateRange.start
+      : timeWindow.windowStart
   );
   const endDateStr = formatForInput(
-    customDateRange.end != null ? customDateRange.end : timeWindow.windowEnd
+    customDateRange.end != null && Number.isFinite(customDateRange.end)
+      ? customDateRange.end
+      : timeWindow.windowEnd
   );
   const todayStr = formatForInput(Date.now());
 
+  const parseDateInputToMs = (value) => {
+    if (!value || typeof value !== "string" || value.length < 10) return null;
+    // type="date" YYYY-MM-DD → yerel gece yarısı (UTC parse kaymasını önle)
+    const d = new Date(`${value}T00:00:00`);
+    const ms = d.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  };
+
   // ✅ Pencere filtresi + tüm periyotlarda yoğun forward-fill (ara değer / kopukluk giderilir)
   const displayChartData = useMemo(() => {
-    const { windowStart, windowEnd } = timeWindow;
+    const { windowStart, windowEnd, isInvalidCustomRange } = timeWindow;
     if (!chartData.length) return [];
+    if (isInvalidCustomRange) return [];
+
+    // Invalid / ters aralık → döngüye hiç girme (OOM / infinite loop koruması)
+    if (
+      !Number.isFinite(windowStart) ||
+      !Number.isFinite(windowEnd) ||
+      windowEnd < windowStart
+    ) {
+      return [];
+    }
 
     const sortedRates = [...chartData].sort((a, b) => a.timeMs - b.timeMs);
-    const endCap = Math.min(windowEnd, Date.now());
+    // Geçmiş pencerede Date.now() ile kesme — aksi halde endCap < windowStart olup boş dönerdi
+    const endCap = windowEnd;
+    if (!Number.isFinite(endCap) || endCap < windowStart) return [];
 
     // Periyoda göre adım: Günlük/Saatlik → 1 saat; Haftalık → 6 saat; Aylık/Yıllık → 1 gün
-    const stepMs =
+    let stepMs =
       period === "Saatlik" || period === "Günlük"
         ? 60 * 60 * 1000
         : period === "Haftalık"
           ? 6 * 60 * 60 * 1000
           : 24 * 60 * 60 * 1000;
 
+    if (!Number.isFinite(stepMs) || stepMs <= 0) return [];
+
+    // Nokta sayısı üst sınırı: aşılırsa adımı büyüt (Recharts + bellek güvenliği)
+    const MAX_POINTS = 2500;
+    const spanMs = endCap - windowStart;
+    if (spanMs / stepMs > MAX_POINTS) {
+      stepMs = Math.ceil(spanMs / MAX_POINTS);
+    }
+
     const startAligned = Math.floor(windowStart / stepMs) * stepMs;
+    if (!Number.isFinite(startAligned)) return [];
+
     const processedData = [];
     let cursor = 0;
 
@@ -230,7 +391,11 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
       }
     }
 
-    for (let t = startAligned; t <= endCap; t += stepMs) {
+    // Sert üst sınır: t += stepMs ile sonsuz döngü / OOM imkânsız
+    let iterations = 0;
+    for (let t = startAligned; t <= endCap && iterations < MAX_POINTS; t += stepMs) {
+      iterations += 1;
+      if (!Number.isFinite(t)) break;
       if (t < windowStart) continue;
       while (cursor < sortedRates.length && sortedRates[cursor].timeMs <= t) {
         lastKnown = sortedRates[cursor];
@@ -259,6 +424,27 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           is_padded: true,
         });
       }
+    }
+
+    // Hâlâ boşsa (kenar durum): en az 2 nokta ile güvenli seri üret — kart "Veri yok"a düşmesin
+    if (processedData.length === 0 && sortedRates.length > 0) {
+      const src = lastKnown || sortedRates[0];
+      processedData.push(
+        {
+          timeMs: windowStart,
+          buy: src.buy ?? src.buy_rate,
+          sell: src.sell ?? src.sell_rate,
+          mid: src.mid ?? ((src.buy ?? src.buy_rate) + (src.sell ?? src.sell_rate)) / 2,
+          is_padded: true,
+        },
+        {
+          timeMs: endCap,
+          buy: src.buy ?? src.buy_rate,
+          sell: src.sell ?? src.sell_rate,
+          mid: src.mid ?? ((src.buy ?? src.buy_rate) + (src.sell ?? src.sell_rate)) / 2,
+          is_padded: true,
+        }
+      );
     }
 
     return processedData;
@@ -324,10 +510,19 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     );
   }
 
-  if (error || displayChartData.length === 0) {
+  // Yalnızca gerçekten hiç rate yoksa "Veri yok" — navigasyon sonrası boş pencere kartı öldürmesin
+  if (error || chartData.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
         <p className="text-xs text-slate-500 dark:text-slate-400">{error ? `❌ ${error}` : '📊 Veri yok'}</p>
+      </div>
+    );
+  }
+
+  if (displayChartData.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
+        <p className="text-xs text-slate-500 dark:text-slate-400">📊 Bu aralıkta gösterilecek nokta yok</p>
       </div>
     );
   }
@@ -412,7 +607,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           type="button"
           onClick={() => {
             setCustomDateRange({ start: null, end: null });
-            setTimeOffset((prev) => prev + 1);
+            setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
           }}
           disabled={timeWindow.isLeftDisabled}
           className={`absolute left-2 md:left-4 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
@@ -515,8 +710,18 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                 value={startDateStr}
                 max={endDateStr || todayStr}
                 onChange={(e) => {
-                  const newStartMs = new Date(e.target.value).getTime();
-                  if (newStartMs) setCustomDateRange((prev) => ({ ...prev, start: newStartMs }));
+                  const newStartMs = parseDateInputToMs(e.target.value);
+                  if (newStartMs == null) return;
+                  setCustomDateRange((prev) => {
+                    if (Number.isFinite(prev.end) && newStartMs > prev.end) return prev;
+                    // Arşivden eski tarih seçilmesin
+                    const clamped =
+                      Number.isFinite(oldestDataTime) && newStartMs < oldestDataTime
+                        ? oldestDataTime
+                        : newStartMs;
+                    return { ...prev, start: clamped };
+                  });
+                  setTimeOffset(0);
                 }}
                 className="bg-white text-slate-800 border border-slate-300 rounded px-2 py-1 text-xs md:text-sm focus:outline-none focus:border-emerald-500 cursor-pointer dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-600"
               />
@@ -529,8 +734,12 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                 min={startDateStr}
                 max={todayStr}
                 onChange={(e) => {
-                  const newEndMs = new Date(e.target.value).getTime();
-                  if (newEndMs) setCustomDateRange((prev) => ({ ...prev, end: newEndMs }));
+                  const newEndMs = parseDateInputToMs(e.target.value);
+                  if (newEndMs == null) return;
+                  setCustomDateRange((prev) => {
+                    if (Number.isFinite(prev.start) && newEndMs < prev.start) return prev;
+                    return { ...prev, end: newEndMs };
+                  });
                 }}
                 className="bg-white text-slate-800 border border-slate-300 rounded px-2 py-1 text-xs md:text-sm focus:outline-none focus:border-emerald-500 cursor-pointer dark:bg-slate-800/80 dark:text-slate-200 dark:border-slate-600"
               />
@@ -639,7 +848,7 @@ function PartnershipForm() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("institutionName")}</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("institutionName")}</label>
                 <input
                   type="text"
                   name="institution_name"
@@ -651,7 +860,7 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("contactPerson")}</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("contactPerson")}</label>
                 <input
                   type="text"
                   name="contact_person"
@@ -667,7 +876,7 @@ function PartnershipForm() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("emailLabel")}</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("emailLabel")}</label>
                 <input
                   type="email"
                   name="email"
@@ -679,7 +888,7 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("phoneLabel")}</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("phoneLabel")}</label>
                 <input
                   type="tel"
                   name="phone"
@@ -694,7 +903,7 @@ function PartnershipForm() {
               </div>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">{t("messageLabel")}</label>
+              <label className="text-xs font-medium uppercase tracking-wide text-white">{t("messageLabel")}</label>
               <textarea
                 name="message"
                 rows={4}
@@ -990,7 +1199,7 @@ export function V0FinancialDashboard() {
     let reconnectAttempt = 0;
 
     const connect = () => {
-      eventSource = new EventSource("https://adadoviz-backend.onrender.com/api/rates-stream");
+      eventSource = new EventSource(ratesStreamUrl());
 
       eventSource.onopen = () => {
         reconnectAttempt = 0;
