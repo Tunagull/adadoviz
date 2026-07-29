@@ -603,7 +603,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
     return (
       <div className={`relative w-full overflow-hidden ${isExpanded ? 'h-full' : ''}`}>
-        {/* Sol Ok - Kartın en dış kenarına yakın (8-10px boşluk) */}
+        {/* Sol Ok - Kenar çizgisine çok yakın (temas etmeyecek) */}
         <button
           type="button"
           onClick={() => {
@@ -611,14 +611,15 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
           }}
           disabled={timeWindow.isLeftDisabled}
-          className={`absolute left-2 md:left-2.5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeWindow.isLeftDisabled ? chartNavBtnDisabled : chartNavBtnActive
           }`}
+          style={{ left: '4px' }}
           aria-label="Önceki dönem"
         >
           <ChevronLeft size={chevronSize} />
         </button>
-        {/* Sağ Ok - Kartın en dış kenarına yakın (8-10px boşluk) */}
+        {/* Sağ Ok - Kenar çizgisine çok yakın (temas etmeyecek) */}
         <button
           type="button"
           onClick={() => {
@@ -626,9 +627,10 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.max(0, prev - 1));
           }}
           disabled={timeOffset === 0}
-          className={`absolute right-2 md:right-2.5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeOffset === 0 ? chartNavBtnDisabled : chartNavBtnActive
           }`}
+          style={{ right: '4px' }}
           aria-label="Sonraki dönem"
         >
           <ChevronRight size={chevronSize} />
