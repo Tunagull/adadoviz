@@ -47,6 +47,7 @@ const { applyAdjustmentsToBanksPayload, applyMarginToValue } = require("./rateMa
 const { getRates: getCentralBankRates } = require("./services/ratesService");
 const { sendPartnershipEmail, sendPasswordResetEmail } = require("./email");
 const crypto = require("crypto");
+const { insertHistoricalRate, getBusinessRateHistory: getSupabaseBusinessRateHistory } = require("./config/supabaseClient");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -1137,7 +1138,7 @@ app.get("/api/historical-rates", (req, res) => {
  * /api/historical-rates uçunu (saf MB kurları) kullanır ve bu endpoint'ten
  * KESİNLİKLE ETKİLENMEZ — veri kaynakları ve hesaplama mantığı tamamen izoledir.
  */
-app.get("/api/business-rate-history", (req, res) => {
+app.get("/api/business-rate-history", async (req, res) => {
   try {
     const { institution_id, period = "Günlük", currency = "USD" } = req.query;
 
@@ -1151,20 +1152,40 @@ app.get("/api/business-rate-history", (req, res) => {
       return res.status(400).json({ error: "Geçersiz para birimi." });
     }
 
-    const result = getBusinessRateHistory(institution_id, currency, period);
+    // Calculate date range based on period
+    const endDate = new Date();
+    const startDate = new Date();
+    
+    const periodDays = {
+      "Saatlik": 1,
+      "Günlük": 7,
+      "Haftalık": 30,
+      "Aylık": 90,
+      "Yıllık": 365,
+    };
+    
+    startDate.setDate(startDate.getDate() - periodDays[period]);
+
+    // Fetch data from Supabase
+    const result = await getSupabaseBusinessRateHistory(
+      parseInt(institution_id),
+      currency,
+      startDate,
+      endDate
+    );
 
     return res.json({
       institution_id,
       period,
       currency,
-      count: result.rows.length,
-      rates: result.rows,
-      message: result.rows.length === 0
+      count: result.length,
+      rows: result,
+      message: result.length === 0
         ? "Henüz yeterli veri biriktirilmemiş."
         : undefined,
       meta: {
-        hasAnyData: result.hasAnyData,
-        requestedSpanDays: result.requestedSpanDays,
+        hasAnyData: result.length > 0,
+        requestedSpanDays: periodDays[period],
       },
     });
   } catch (error) {
@@ -1294,8 +1315,19 @@ async function refreshRatesCacheWithChangeDetection() {
         }
       }
       if (historicalData.length > 0) {
+        // Record to SQLite (legacy)
         recordHistoricalRates(historicalData);
-        console.log(`[HISTORICAL] ${historicalData.length} kur kaydedildi.`);
+        
+        // Also save to Supabase
+        const now = new Date().toISOString();
+        for (const data of historicalData) {
+          try {
+            await insertHistoricalRate(data.currency, data.buy_rate, data.sell_rate, now);
+          } catch (err) {
+            console.error(`[SUPABASE] Kur kaydetme hatası (${data.currency}):`, err.message);
+          }
+        }
+        console.log(`[HISTORICAL] ${historicalData.length} kur kaydedildi (SQLite + Supabase).`);
       }
 
       // SSE ile tüm istemcilere broadcast et
