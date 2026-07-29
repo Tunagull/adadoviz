@@ -5,6 +5,12 @@ const crypto = require("crypto");
 const { DatabaseSync } = require("node:sqlite");
 const bcrypt = require("bcryptjs");
 const { INSTITUTIONS, CURRENCIES, findInstitutionByName } = require("./institutions");
+const { periodToHoursBack } = require("./periodSpec");
+const {
+  enforceSellGteBuy,
+  normalizeKind,
+  baselineRecordedAtIso,
+} = require("./marginSchema");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DATA_DIR, "finsight.db");
@@ -1186,7 +1192,7 @@ function upsertAdjustments(institutionId, adjustments) {
       const item = adjustments[key];
       const [currency, type] = key.split("_");
       const marginValue = Number(item.margin_value);
-      const marginType = item.margin_type === "percent" ? "percent" : "fixed";
+      const marginType = normalizeKind(item.margin_type);
       
       // ✅ VALIDATION: Marj değeri kontrolü
       if (!Number.isFinite(marginValue) || marginValue < 0) {
@@ -1255,9 +1261,9 @@ function upsertAdjustments(institutionId, adjustments) {
 
         let baselineWrite = null;
         if (!hasPriorHistory) {
-          const baselineType = previousMarginType || "fixed";
+          const baselineType = normalizeKind(previousMarginType);
           const baselineValue = previousMarginValue != null ? previousMarginValue : 0;
-          const baselineRecordedAt = new Date(Date.now() - 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
+          const baselineRecordedAt = baselineRecordedAtIso();
           db.prepare(`
             INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
             VALUES (?, ?, ?, ?, ?, datetime('now', '-10 years'))
@@ -1323,21 +1329,8 @@ function recordHistoricalRates(rates) {
  * - "Yıllık": Son 6 Yıl (yaklaşık 2200 veri noktası) ✅ GÜNCEL
  */
 function getHistoricalRates(period = 'Günlük', currency = 'USD') {
-  // ✅ Period'e göre zaman aralığını belirle
-  let hoursBack = 24 * 7; // Default: Günlük
-  
-  if (period === 'Saatlik') {
-    hoursBack = 24; // Son 24 saat
-  } else if (period === 'Günlük') {
-    hoursBack = 24 * 7; // Son 7 gün
-  } else if (period === 'Haftalık') {
-    hoursBack = 24 * 30; // Son 30 gün
-  } else if (period === 'Aylık') {
-    hoursBack = 24 * 365; // Son 1 yıl
-  } else if (period === 'Yıllık') {
-    hoursBack = 24 * 365 * 5; // Son 5 yıl
-  }
-
+  // Tek sözlük: periodSpec.js
+  const hoursBack = periodToHoursBack(period);
   const cutoffTime = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
 
   let query;
@@ -1469,19 +1462,8 @@ function bulkInsertHistoricalRates(currency, rows) {
  *
  * MB kuru sadece değiştiğinde, kâr marjı da sadece işletme onu güncellediğinde
  * (margin_history) kaydedilir; bu yüzden bu iki zaman serisi ayrı ayrı tutulur
- * ve burada zaman damgasına göre birleştirilir (basamak/step fonksiyonu).
- * Pencerenin başlangıcında ve "şu an"da senkron nokta eklenerek grafiğin
- * X ekseninde her zaman genişçe yayılması garanti edilir (tek dikey çizgi
- * sorununun kök nedeni: yalnızca 1 olay noktası olduğunda çizgi çizilemiyordu).
+ * Periyot derinliği: periodSpec.js (tek sözlük).
  */
-function periodToHoursBack(period) {
-  if (period === "Saatlik") return 24;
-  if (period === "Haftalık") return 24 * 30;
-  if (period === "Aylık") return 24 * 365;
-  if (period === "Yıllık") return 24 * 365 * 5;
-  return 24 * 7; // Günlük (varsayılan)
-}
-
 function lastRowAtOrBefore(sortedRows, tsMs, tsKey = "recorded_at") {
   let result = null;
   for (const row of sortedRows) {
@@ -1503,13 +1485,21 @@ function mbRateValueAt(sortedMbRows, tsMs) {
 
 function marginValueAt(sortedHistoryRows, currentAdjustment, tsMs) {
   const found = lastRowAtOrBefore(sortedHistoryRows, tsMs);
-  if (found) return { margin_type: found.margin_type, margin_value: Number(found.margin_value) };
+  if (found) {
+    return {
+      margin_type: normalizeKind(found.margin_type),
+      margin_value: Number(found.margin_value),
+    };
+  }
   if (sortedHistoryRows.length > 0) {
     const first = sortedHistoryRows[0];
-    return { margin_type: first.margin_type, margin_value: Number(first.margin_value) };
+    return {
+      margin_type: normalizeKind(first.margin_type),
+      margin_value: Number(first.margin_value),
+    };
   }
   return {
-    margin_type: currentAdjustment?.margin_type === "percent" ? "percent" : "fixed",
+    margin_type: normalizeKind(currentAdjustment?.margin_type),
     margin_value: Math.max(0, Number(currentAdjustment?.margin_value) || 0),
   };
 }
@@ -1518,7 +1508,7 @@ function applyMarginToRate(rawRate, marginType, marginValue) {
   const base = Number(rawRate);
   const m = Math.max(0, Number(marginValue) || 0);
   if (!Number.isFinite(base)) return null;
-  if (marginType === "percent") return base + (base * m) / 100;
+  if (normalizeKind(marginType) === "percent") return base + (base * m) / 100;
   return base + m;
 }
 
@@ -1593,6 +1583,7 @@ function getBusinessRateHistory(institutionId, currency, period = "Günlük") {
     const finalSell = applyMarginToRate(sellRate, sellMargin.margin_type, sellMargin.margin_value);
     if (finalBuy == null || finalSell == null) continue;
 
+    const ordered = enforceSellGteBuy(finalBuy, finalSell);
     rows.push({
       recorded_at: new Date(tsMs).toISOString(),
       buy_rate: buyRate,
@@ -1601,8 +1592,8 @@ function getBusinessRateHistory(institutionId, currency, period = "Günlük") {
       margin_buy_value: buyMargin.margin_value,
       margin_sell_type: sellMargin.margin_type,
       margin_sell_value: sellMargin.margin_value,
-      final_buy: Math.round(finalBuy * 10000) / 10000,
-      final_sell: Math.round(finalSell * 10000) / 10000,
+      final_buy: Math.round(ordered.buy * 10000) / 10000,
+      final_sell: Math.round(ordered.sell * 10000) / 10000,
     });
   }
 

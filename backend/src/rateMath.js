@@ -1,4 +1,5 @@
 const { findInstitutionByName } = require("./institutions");
+const { enforceSellGteBuy, normalizeKind } = require("./marginSchema");
 
 /**
  * ✅ ADIM 2: Floating-Point Precision Guarantee
@@ -61,7 +62,7 @@ function applyMarginToValue(kur, margin, marginType) {
   // ✅ Step 2: Calculate with precision guarantee
   let result;
   
-  if (marginType === "percent") {
+  if (normalizeKind(marginType) === "percent") {
     // ✅ Percentage calculation: KUR + (KUR * margin / 100)
     // Example: 39.15 + (39.15 * 0.5 / 100) = 39.15 + 0.19575 = 39.34575
     const percentageIncrease = (base * m) / 100;
@@ -96,35 +97,32 @@ function getGranularMargin(institutionId, currency, type, adjustmentsMap) {
 
 function applyAdjustmentToPair(pair, adj) {
   if (!adj) {
-    return {
-      buy: pair?.buy ?? null,
-      sell: pair?.sell ?? null,
-    };
+    return enforceSellGteBuy(pair?.buy ?? null, pair?.sell ?? null);
   }
 
   // Granüler format (buy/sell ayrı ayrı): { buy: { margin_type, margin_value }, sell: { ... } }
-  if (adj.buy && adj.sell && typeof adj.buy === 'object') {
-    return {
-      buy: applyMarginToValue(pair?.buy, adj.buy.margin_value, adj.buy.margin_type),
-      sell: applyMarginToValue(pair?.sell, adj.sell.margin_value, adj.sell.margin_type),
-    };
+  if (adj.buy && adj.sell && typeof adj.buy === "object") {
+    return enforceSellGteBuy(
+      applyMarginToValue(pair?.buy, adj.buy.margin_value, adj.buy.margin_type),
+      applyMarginToValue(pair?.sell, adj.sell.margin_value, adj.sell.margin_type)
+    );
   }
 
   // Eski format (single): { buy_adj, sell_adj, margin_type }
-  const marginType = adj?.margin_type === "percent" ? "percent" : "fixed";
+  const marginType = normalizeKind(adj?.margin_type);
   const buyAdj = Math.max(0, Number(adj?.buy_adj) || 0);
   const sellAdj = Math.max(0, Number(adj?.sell_adj) || 0);
-  return {
-    buy: applyMarginToValue(pair?.buy, buyAdj, marginType),
-    sell: applyMarginToValue(pair?.sell, sellAdj, marginType),
-  };
+  return enforceSellGteBuy(
+    applyMarginToValue(pair?.buy, buyAdj, marginType),
+    applyMarginToValue(pair?.sell, sellAdj, marginType)
+  );
 }
 
 function applyGranularAdjustments(pair, buyMargin, sellMargin) {
-  return {
-    buy: applyMarginToValue(pair?.buy, buyMargin?.margin_value, buyMargin?.margin_type),
-    sell: applyMarginToValue(pair?.sell, sellMargin?.margin_value, sellMargin?.margin_type),
-  };
+  return enforceSellGteBuy(
+    applyMarginToValue(pair?.buy, buyMargin?.margin_value, buyMargin?.margin_type),
+    applyMarginToValue(pair?.sell, sellMargin?.margin_value, sellMargin?.margin_type)
+  );
 }
 
 /** Public API: banka kurlarına kurum marjını uygula. */
@@ -180,4 +178,5 @@ module.exports = {
   getGranularMargin,
   applyGranularAdjustments,
   applyAdjustmentsToBanksPayload,
+  enforceSellGteBuy,
 };

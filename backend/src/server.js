@@ -59,7 +59,8 @@ const {
 } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
 const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./institutions");
-const { applyAdjustmentsToBanksPayload, applyMarginToValue } = require("./rateMath");
+const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
+const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
 const { sendPartnershipEmail, sendPasswordResetEmail } = require("./email");
 const crypto = require("crypto");
@@ -281,10 +282,10 @@ app.get("/api/kurlar", (_req, res) => {
           const kur = cachedRates.centralBankRates[currency];
           const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
           const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
-          rates[currency] = {
-            buy: applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type),
-            sell: applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type),
-          };
+          rates[currency] = enforceSellGteBuy(
+            applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type),
+            applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type)
+          );
         }
         const nameKey = String(biz.institution_name || "")
           .toLocaleLowerCase("tr-TR")
@@ -1046,6 +1047,10 @@ function buildCurrencyPayload(institutionId, institutionName) {
     const sellKey = `${currency}_sell`;
     const buyAdj = adjustments[buyKey] || { margin_type: "fixed", margin_value: 0 };
     const sellAdj = adjustments[sellKey] || { margin_type: "fixed", margin_value: 0 };
+    const ordered = enforceSellGteBuy(
+      applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type),
+      applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type)
+    );
 
     result.push({
       currency,
@@ -1054,14 +1059,14 @@ function buildCurrencyPayload(institutionId, institutionName) {
         efektif_kur: kur.efektif_buy,
         margin_type: buyAdj.margin_type,
         margin_value: buyAdj.margin_value,
-        final: applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type),
+        final: ordered.buy,
       },
       sell: {
         kur: kur.sell,
         efektif_kur: kur.efektif_sell,
         margin_type: sellAdj.margin_type,
         margin_value: sellAdj.margin_value,
-        final: applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type),
+        final: ordered.sell,
       },
     });
   }
@@ -1107,9 +1112,9 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
         return res.status(400).json({ error: `Geçersiz para birimi: ${currency}` });
       }
 
-      const buyMarginType = item.buy?.margin_type === "percent" ? "percent" : "fixed";
+      const buyMarginType = normalizeKind(item.buy?.margin_type);
       const buyMarginValue = Number(item.buy?.margin_value || 0);
-      const sellMarginType = item.sell?.margin_type === "percent" ? "percent" : "fixed";
+      const sellMarginType = normalizeKind(item.sell?.margin_type);
       const sellMarginValue = Number(item.sell?.margin_value || 0);
 
       if (!Number.isFinite(buyMarginValue) || !Number.isFinite(sellMarginValue)) {
@@ -1117,6 +1122,24 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
       }
       if (buyMarginValue < 0 || sellMarginValue < 0) {
         return res.status(400).json({ error: `Kâr negatif olamaz: ${currency}` });
+      }
+
+      // İş kuralı (project_audit_report.md §1.2): finalSell >= finalBuy
+      const kur = cachedRates.centralBankRates?.[currency];
+      if (kur) {
+        const finalBuy = applyMarginToValue(kur.buy, buyMarginValue, buyMarginType);
+        const finalSell = applyMarginToValue(kur.sell, sellMarginValue, sellMarginType);
+        if (
+          finalBuy != null &&
+          finalSell != null &&
+          Number.isFinite(finalBuy) &&
+          Number.isFinite(finalSell) &&
+          finalSell < finalBuy
+        ) {
+          return res.status(400).json({
+            error: `Ters kotasyon engellendi (${currency}): satış kuru alıştan düşük olamaz (alış=${finalBuy.toFixed(4)}, satış=${finalSell.toFixed(4)}).`,
+          });
+        }
       }
 
       adjustments[`${currency}_buy`] = {
@@ -1558,21 +1581,15 @@ async function refreshRatesCacheWithChangeDetection() {
 
 async function startServer() {
   // ⚠️ MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1 Çift yazım / dual-write):
-  // Önceki akış her boot'ta önce SQLite'a varsayılan katalog/işletme verisini
-  // (şifre "123") seed ediyor, SONRA Supabase'ten hydrate ediyor, SONRA da
-  // SQLite'ı Supabase'e geri yazıyordu. Hydrate ağ hatasıyla başarısız olursa
-  // ya da yarım kalırsa, geçici seed verisi bootstrap ile kalıcı Supabase
-  // verisinin ÜZERİNE yazılabiliyordu.
+  // Tek gerçeklik kaynağı (Source of Truth) = Supabase.
   //
-  // Yeni akış:
+  // Boot sırası:
   //   1) Şemayı kur, katalog/işletme seed'ini ERTELE (skipBusinessSeed).
-  //   2) Supabase'te (superadmin hariç) gerçekten hiç kurum var mı diye SOR.
-  //   3) Hiç yoksa (gerçek ilk kurulum) → seed'i şimdi çalıştır.
-  //      Varsa VEYA Supabase'e ulaşılamadıysa → seed'i ATLA (var olana güven).
-  //   4) Supabase → SQLite hydrate et.
-  //   5) Bootstrap'ı (SQLite → Supabase) SADECE ilk kurulumda YA DA hydrate
-  //      gerçekten başarılı olduysa çalıştır. Aksi halde eksik/boş SQLite
-  //      durumu kalıcı Supabase verisini ezebilir.
+  //   2) Supabase'te (superadmin hariç) kurum var mı diye SOR.
+  //   3) Varsa → seed ATLA, hydrate et, bootstrap ÇALIŞTIRMA
+  //      (SQLite → Supabase geri yazımı kalıcı veriyi ezebilir).
+  //   4) Hiç yoksa (gerçek ilk kurulum) → seed + bootstrap.
+  //   5) Supabase'e ulaşılamadıysa → seed/bootstrap ATLA (güvenli taraf).
   initDb({ skipBusinessSeed: true });
 
   const supabaseState = await checkSupabaseHasInstitutions();
@@ -1588,10 +1605,10 @@ async function startServer() {
       "[BOOT] ⚠️ Supabase'e ulaşılamadı — güvenlik için katalog seed'i ATLANDI (mevcut kalıcı veri korunur)."
     );
   } else {
-    console.log(`[BOOT] Supabase'te ${supabaseState.count} kurum bulundu — seed atlanıyor, hydrate'e güveniliyor.`);
+    console.log(`[BOOT] Supabase'te ${supabaseState.count} kurum bulundu — seed atlanıyor, SoT=Supabase.`);
   }
 
-  // Supabase'teki kalıcı admin verisini SQLite'a geri yükle (deploy sonrası)
+  // Supabase'teki kalıcı admin verisini SQLite'a geri yükle (deploy sonrası cache)
   let hydrateResult = { ok: false, institutions: 0, adjustments: 0, branches: 0 };
   try {
     hydrateResult = await hydrateAdminDataFromSupabase({
@@ -1603,8 +1620,9 @@ async function startServer() {
     console.warn("[SUPABASE-SYNC] Hydrate hatası:", err.message);
   }
 
-  // Güncel SQLite durumunu Supabase'e yansıt — YALNIZCA güvenli olduğunda
-  if (isFreshInstall || hydrateResult.ok) {
+  // Bootstrap (SQLite → Supabase) SADECE Supabase tamamen boşken (ilk kurulum).
+  // Hydrate başarılı olsa bile geri yazma YOK — aksi halde SoT ihlali.
+  if (isFreshInstall) {
     bootstrapAdminDataToSupabase({
       institutions: listAllInstitutionsForSync(),
       branches: listAllBranchesForSync(),
@@ -1613,8 +1631,8 @@ async function startServer() {
       console.warn("[SUPABASE-SYNC] Bootstrap hatası:", err.message);
     });
   } else {
-    console.warn(
-      "[SUPABASE-SYNC] Bootstrap ATLANDI — hydrate başarısız oldu, yerel veri kalıcı Supabase verisinin üzerine yazılmayacak."
+    console.log(
+      `[SUPABASE-SYNC] Bootstrap ATLANDI — SoT=Supabase (hydrate ok=${hydrateResult.ok}, institutions=${hydrateResult.institutions}).`
     );
   }
   

@@ -214,12 +214,18 @@ async function syncSiteStats(totalVisitors) {
  * Bu, server.js'in "gerçek ilk kurulum mu, yoksa Supabase zaten kalıcı veri
  * içeriyor mu" ayrımını yapabilmesi için kullanılır (bkz. project_audit_report.md, 1.1).
  *
- * @returns {{ ok: boolean, hasInstitutions: boolean, count: number }}
- *   ok=false ise Supabase'e ULAŞILAMADI demektir (network/auth hatası) — bu
- *   durumda "boş" ile "ulaşılamadı" birbirine KARIŞTIRILMAMALI, çağıran taraf
- *   seed/bootstrap kararını buna göre güvenli tarafta (seed yapma) vermelidir.
+ * @returns {{ ok: boolean, hasInstitutions: boolean, count: number, reason?: string }}
+ *   ok=false ise Supabase'e ULAŞILAMADI veya anahtar RLS nedeniyle güvenilir sayım
+ *   veremiyor demektir — çağıran taraf seed/bootstrap kararını güvenli tarafta
+ *   (seed yapma / bootstrap yapma) vermelidir.
  */
 async function checkSupabaseHasInstitutions() {
+  const key = String(process.env.SUPABASE_KEY || "");
+  const looksLikePublishableOrAnon =
+    key.startsWith("sb_publishable_") ||
+    key.includes("anon") ||
+    key.includes("publishable");
+
   try {
     const { count, error } = await supabase
       .from("institutions")
@@ -227,10 +233,27 @@ async function checkSupabaseHasInstitutions() {
       .neq("role", "superadmin");
     if (error) throw error;
     const total = count || 0;
+
+    // RLS "default deny" + anon/publishable key: hata DÖNMEZ, count=0 döner.
+    // Bu durumda "boş = ilk kurulum" sanmak seed+bootstrap ile SoT'yi bozar.
+    if (total === 0 && looksLikePublishableOrAnon) {
+      console.warn(
+        "[SUPABASE-SYNC] ⚠️ SUPABASE_KEY publishable/anon görünüyor ve institutions=0. " +
+          "RLS lockdown sonrası bu anahtar gerçek veriyi göremez. " +
+          "service_role key kullanın; aksi halde seed/bootstrap ATLANIR."
+      );
+      return {
+        ok: false,
+        hasInstitutions: false,
+        count: 0,
+        reason: "publishable_key_rls_mask",
+      };
+    }
+
     return { ok: true, hasInstitutions: total > 0, count: total };
   } catch (err) {
     logErr("check.institutions", err);
-    return { ok: false, hasInstitutions: false, count: 0 };
+    return { ok: false, hasInstitutions: false, count: 0, reason: "error" };
   }
 }
 
@@ -306,6 +329,23 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   console.log(
     `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} branches=${branches}`
   );
+
+  // Publishable/anon + RLS: select boş dönebilir; SoT güvenilir sayılmaz.
+  const key = String(process.env.SUPABASE_KEY || "");
+  const looksLikePublishableOrAnon =
+    key.startsWith("sb_publishable_") ||
+    key.includes("anon") ||
+    key.includes("publishable");
+  if (institutionsOk && institutions === 0 && looksLikePublishableOrAnon) {
+    return {
+      ok: false,
+      institutions,
+      adjustments,
+      branches,
+      reason: "publishable_key_rls_mask",
+    };
+  }
+
   return { ok: institutionsOk, institutions, adjustments, branches };
 }
 

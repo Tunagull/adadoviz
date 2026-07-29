@@ -19,26 +19,16 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-/** Görüntülenen pencere boyutu (Piyasa Özeti meta / yüzde hesabı) */
-const VIEW_SPAN_HOURS = {
-  Saatlik: 24,
-  Günlük: 24,
-  Haftalık: 24 * 7,
-  Aylık: 24 * 30,
-  Yıllık: 24 * 365,
-};
-
-/** İşletme grafik fetch pencereleri (önceki davranış korunur) */
-const PERIOD_HOURS = {
-  Saatlik: 24,
-  Günlük: 24 * 7,
-  Haftalık: 24 * 30,
-  Aylık: 24 * 365,
-  Yıllık: 24 * 365 * 5,
-};
-
-/** Tüm periyotlarda geçmişe gezebilmek için her zaman tam arşiv çekilir */
-const FULL_HISTORY_HOURS = 24 * 365 * 6;
+const {
+  resolvePeriodSpec,
+  MARKET_ARCHIVE_HOURS,
+} = require("../periodSpec");
+const {
+  toSupabaseMarginHistoryRow,
+  fromSupabaseMarginHistoryRow,
+  enforceSellGteBuy,
+  normalizeKind,
+} = require("../marginSchema");
 
 function bucketByHour(rawRows) {
   const byHour = new Map();
@@ -132,9 +122,11 @@ async function insertHistoricalRate(currency, buy_rate, sell_rate, recorded_at) 
  * yıllar geriye gidilebilir (Yıllık ile aynı UX).
  */
 async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
-  const viewHours = VIEW_SPAN_HOURS[period] || VIEW_SPAN_HOURS.Günlük;
-  const cutoffTime = new Date(Date.now() - FULL_HISTORY_HOURS * 60 * 60 * 1000).toISOString();
-  const viewCutoffTime = new Date(Date.now() - viewHours * 60 * 60 * 1000).toISOString();
+  const spec = resolvePeriodSpec(period);
+  const viewHours = spec.viewHours;
+  const pctHours = spec.pctHours;
+  const cutoffTime = new Date(Date.now() - MARKET_ARCHIVE_HOURS * 60 * 60 * 1000).toISOString();
+  const viewCutoffTime = new Date(Date.now() - pctHours * 60 * 60 * 1000).toISOString();
 
   const rawRows = await fetchAllPages((from, to) =>
     supabase
@@ -146,12 +138,9 @@ async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
       .range(from, to)
   );
 
-  // Saatlik / Günlük → saatlik kova (24s pencerede ara değerler)
-  // Haftalık / Aylık / Yıllık → günlük kova
+  // Agregasyon: PERIOD_SPEC.bucket (hour | day)
   const rows =
-    period === "Saatlik" || period === "Günlük"
-      ? bucketByHour(rawRows)
-      : bucketByDay(rawRows);
+    spec.bucket === "hour" ? bucketByHour(rawRows) : bucketByDay(rawRows);
 
   const { data: earliestRows, error: earliestError } = await supabase
     .from("historical_rates")
@@ -231,19 +220,19 @@ function marginValueAt(sortedHistoryRows, currentAdjustment, tsMs) {
   const found = lastRowAtOrBefore(sortedHistoryRows, tsMs);
   if (found) {
     return {
-      margin_type: found.margin_type === "percent" ? "percent" : "fixed",
+      margin_type: normalizeKind(found.margin_type),
       margin_value: Number(found.margin_value) || 0,
     };
   }
   if (sortedHistoryRows.length > 0) {
     const first = sortedHistoryRows[0];
     return {
-      margin_type: first.margin_type === "percent" ? "percent" : "fixed",
+      margin_type: normalizeKind(first.margin_type),
       margin_value: Number(first.margin_value) || 0,
     };
   }
   return {
-    margin_type: currentAdjustment?.margin_type === "percent" ? "percent" : "fixed",
+    margin_type: normalizeKind(currentAdjustment?.margin_type),
     margin_value: Math.max(0, Number(currentAdjustment?.margin_value) || 0),
   };
 }
@@ -252,7 +241,7 @@ function applyMarginToRate(rawRate, marginType, marginValue) {
   const base = Number(rawRate);
   const m = Math.max(0, Number(marginValue) || 0);
   if (!Number.isFinite(base)) return null;
-  if (marginType === "percent") return base + (base * m) / 100;
+  if (normalizeKind(marginType) === "percent") return base + (base * m) / 100;
   return base + m;
 }
 
@@ -273,7 +262,8 @@ function applyMarginToRate(rawRate, marginType, marginValue) {
  * @param {object} [extras.currentSellAdj]
  */
 async function getBusinessRateHistory(institutionId, currency, period, extras = {}) {
-  const hoursBack = PERIOD_HOURS[period] || PERIOD_HOURS.Günlük;
+  const spec = resolvePeriodSpec(period);
+  const hoursBack = spec.fetchHours;
   const nowMs = Date.now();
   const windowStartMs = nowMs - hoursBack * 60 * 60 * 1000;
   const inceptionMs = Number(extras.inceptionMs) || 0;
@@ -351,6 +341,7 @@ async function getBusinessRateHistory(institutionId, currency, period, extras = 
     );
     if (finalBuy == null || finalSell == null) continue;
 
+    const ordered = enforceSellGteBuy(finalBuy, finalSell);
     rows.push({
       recorded_at: new Date(tsMs).toISOString(),
       timeMs: tsMs,
@@ -360,8 +351,8 @@ async function getBusinessRateHistory(institutionId, currency, period, extras = 
       margin_buy_value: buyMargin.margin_value,
       margin_sell_type: sellMargin.margin_type,
       margin_sell_value: sellMargin.margin_value,
-      final_buy: Math.round(finalBuy * 10000) / 10000,
-      final_sell: Math.round(finalSell * 10000) / 10000,
+      final_buy: Math.round(ordered.buy * 10000) / 10000,
+      final_sell: Math.round(ordered.sell * 10000) / 10000,
     });
   }
 
@@ -379,16 +370,25 @@ async function getBusinessRateHistory(institutionId, currency, period, extras = 
 
 /** Marj değişimini Supabase margin_history'ye yaz (kalıcı birikim) */
 async function insertMarginHistory(entry) {
-  const { error } = await supabase.from("margin_history").insert([
-    {
-      institution_id: String(entry.institution_id),
+  // Kanonik → Supabase kolon eşlemesi (marginSchema.js):
+  //   entry.type / entry.side → margin_type (buy|sell)
+  //   entry.margin_type / entry.kind → margin_type_value (fixed|percent)
+  let payload;
+  try {
+    payload = toSupabaseMarginHistoryRow({
+      institution_id: entry.institution_id,
       currency: entry.currency,
-      margin_type: entry.type, // buy | sell
-      margin_type_value: entry.margin_type || "fixed",
-      margin_value: Number(entry.margin_value) || 0,
-      recorded_at: entry.recorded_at || new Date().toISOString(),
-    },
-  ]);
+      side: entry.side || entry.type,
+      kind: entry.kind || entry.margin_type,
+      margin_value: entry.margin_value,
+      recorded_at: entry.recorded_at,
+    });
+  } catch (err) {
+    console.warn("[Supabase] margin_history insert (schema):", err.message);
+    return false;
+  }
+
+  const { error } = await supabase.from("margin_history").insert([payload]);
 
   if (error) {
     // Tablo yoksa sessizce geç — SQLite yedek olarak kalır
@@ -407,15 +407,18 @@ async function fetchMarginHistory(institutionId, currency, type) {
         .select("margin_type_value, margin_value, recorded_at, margin_type")
         .eq("institution_id", String(institutionId))
         .eq("currency", currency)
-        .eq("margin_type", type)
+        .eq("margin_type", type) // Supabase: side (buy|sell)
         .order("recorded_at", { ascending: true })
         .range(from, to)
     );
-    return (data || []).map((row) => ({
-      margin_type: row.margin_type_value || "fixed",
-      margin_value: Number(row.margin_value) || 0,
-      recorded_at: row.recorded_at,
-    }));
+    return (data || []).map((row) => {
+      const canonical = fromSupabaseMarginHistoryRow(row);
+      return {
+        margin_type: canonical.kind, // kanonik: kind (fixed|percent)
+        margin_value: canonical.margin_value,
+        recorded_at: canonical.recorded_at,
+      };
+    });
   } catch (err) {
     console.warn("[Supabase] margin_history fetch:", err.message);
     return [];
