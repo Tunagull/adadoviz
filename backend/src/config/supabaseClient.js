@@ -11,6 +11,16 @@ const SUPABASE_KEY = "sb_publishable_F8p7KYsAxwxGM-1MX9OF0g_1kaY_di1";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+/** Görüntülenen pencere boyutu (Piyasa Özeti meta / yüzde hesabı) */
+const VIEW_SPAN_HOURS = {
+  Saatlik: 24,
+  Günlük: 24,
+  Haftalık: 24 * 7,
+  Aylık: 24 * 30,
+  Yıllık: 24 * 365,
+};
+
+/** İşletme grafik fetch pencereleri (önceki davranış korunur) */
 const PERIOD_HOURS = {
   Saatlik: 24,
   Günlük: 24 * 7,
@@ -18,6 +28,53 @@ const PERIOD_HOURS = {
   Aylık: 24 * 365,
   Yıllık: 24 * 365 * 5,
 };
+
+/** Tüm periyotlarda geçmişe gezebilmek için her zaman tam arşiv çekilir */
+const FULL_HISTORY_HOURS = 24 * 365 * 6;
+
+function bucketByHour(rawRows) {
+  const byHour = new Map();
+  for (const row of rawRows) {
+    const d = new Date(row.recorded_at);
+    if (Number.isNaN(d.getTime())) continue;
+    d.setMinutes(0, 0, 0);
+    const key = d.toISOString();
+    const existing = byHour.get(key);
+    if (!existing || new Date(existing.recorded_at).getTime() < new Date(row.recorded_at).getTime()) {
+      byHour.set(key, {
+        currency: row.currency,
+        buy_rate: Number(row.buy_rate),
+        sell_rate: Number(row.sell_rate),
+        recorded_at: row.recorded_at,
+      });
+    }
+  }
+  return Array.from(byHour.values()).sort(
+    (a, b) => new Date(a.recorded_at) - new Date(b.recorded_at)
+  );
+}
+
+function bucketByDay(rawRows) {
+  const byDay = new Map();
+  for (const row of rawRows) {
+    const dayKey = String(row.recorded_at).slice(0, 10);
+    const existing = byDay.get(dayKey);
+    if (
+      !existing ||
+      new Date(row.recorded_at).getTime() > new Date(existing.recorded_at).getTime()
+    ) {
+      byDay.set(dayKey, {
+        currency: row.currency,
+        buy_rate: Number(row.buy_rate),
+        sell_rate: Number(row.sell_rate),
+        recorded_at: row.recorded_at,
+      });
+    }
+  }
+  return Array.from(byDay.values()).sort(
+    (a, b) => new Date(a.recorded_at) - new Date(b.recorded_at)
+  );
+}
 
 /**
  * Supabase PostgREST varsayılan limiti 1000 satır.
@@ -61,14 +118,16 @@ async function insertHistoricalRate(currency, buy_rate, sell_rate, recorded_at) 
 }
 
 /**
- * Piyasa Özeti grafikleri için — SQLite getHistoricalRates ile aynı shape.
- * Response: { rows, exactPercentageChange, isLimitedByAvailableData, actualSpanDays, requestedSpanDays }
+ * Piyasa Özeti grafikleri.
+ * period yalnızca agregasyon yoğunluğunu belirler; veri derinliği her zaman
+ * tam arşivdir — böylece Saatlik/Günlük/Haftalık/Aylık'te de soldaki ok ile
+ * yıllar geriye gidilebilir (Yıllık ile aynı UX).
  */
 async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
-  const hoursBack = PERIOD_HOURS[period] || PERIOD_HOURS.Günlük;
-  const cutoffTime = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString();
+  const viewHours = VIEW_SPAN_HOURS[period] || VIEW_SPAN_HOURS.Günlük;
+  const cutoffTime = new Date(Date.now() - FULL_HISTORY_HOURS * 60 * 60 * 1000).toISOString();
+  const viewCutoffTime = new Date(Date.now() - viewHours * 60 * 60 * 1000).toISOString();
 
-  // Cutoff sonrası tüm ham noktalar (pagination ile)
   const rawRows = await fetchAllPages((from, to) =>
     supabase
       .from("historical_rates")
@@ -79,33 +138,13 @@ async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
       .range(from, to)
   );
 
-  // Saatlik: ham noktalar; diğerleri: günde 1 (günün son kaydı)
-  let rows;
-  if (period === "Saatlik") {
-    rows = rawRows;
-  } else {
-    const byDay = new Map();
-    for (const row of rawRows) {
-      const dayKey = String(row.recorded_at).slice(0, 10); // YYYY-MM-DD
-      const existing = byDay.get(dayKey);
-      if (
-        !existing ||
-        new Date(row.recorded_at).getTime() > new Date(existing.recorded_at).getTime()
-      ) {
-        byDay.set(dayKey, {
-          currency: row.currency,
-          buy_rate: Number(row.buy_rate),
-          sell_rate: Number(row.sell_rate),
-          recorded_at: row.recorded_at,
-        });
-      }
-    }
-    rows = Array.from(byDay.values()).sort(
-      (a, b) => new Date(a.recorded_at) - new Date(b.recorded_at)
-    );
-  }
+  // Saatlik / Günlük → saatlik kova (24s pencerede ara değerler)
+  // Haftalık / Aylık / Yıllık → günlük kova
+  const rows =
+    period === "Saatlik" || period === "Günlük"
+      ? bucketByHour(rawRows)
+      : bucketByDay(rawRows);
 
-  // En eski kayıt → veri derinliği
   const { data: earliestRows, error: earliestError } = await supabase
     .from("historical_rates")
     .select("recorded_at")
@@ -121,14 +160,13 @@ async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
   const actualSpanHours = earliest
     ? (Date.now() - new Date(earliest).getTime()) / 3600000
     : 0;
-  const isLimitedByAvailableData = actualSpanHours < hoursBack;
+  const isLimitedByAvailableData = actualSpanHours < viewHours;
 
-  // Yüzde değişim: cutoff'taki en yakın geçmiş vs en güncel
   const { data: pastRows } = await supabase
     .from("historical_rates")
     .select("buy_rate, sell_rate")
     .eq("currency", currency)
-    .lte("recorded_at", cutoffTime)
+    .lte("recorded_at", viewCutoffTime)
     .order("recorded_at", { ascending: false })
     .limit(1);
 
@@ -161,7 +199,7 @@ async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
     exactPercentageChange,
     isLimitedByAvailableData,
     actualSpanDays: Math.floor(actualSpanHours / 24),
-    requestedSpanDays: Math.floor(hoursBack / 24),
+    requestedSpanDays: Math.max(1, Math.floor(viewHours / 24)),
   };
 }
 

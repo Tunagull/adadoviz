@@ -164,7 +164,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     const windowEnd = Math.max(actualStart, actualEnd);
     const span = Math.max(windowEnd - windowStart, 1);
 
-    // Ham serideki en eski veri — sol ok sadece buraya kadar kaydırılabilir
+    // Ham serideki en eski veri — sol ok arşiv bitene kadar açık (Yıllık ile aynı)
     const oldestDataTime = chartData.length > 0 ? chartData[0].timeMs : Date.now();
     const isLeftDisabled = windowStart <= oldestDataTime;
 
@@ -199,92 +199,69 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   );
   const todayStr = formatForInput(Date.now());
 
-  // ✅ Pencere filtresi + Saatlik yoğun forward-fill (24 eşit nokta) / diğerlerinde boundary fill
+  // ✅ Pencere filtresi + tüm periyotlarda yoğun forward-fill (ara değer / kopukluk giderilir)
   const displayChartData = useMemo(() => {
     const { windowStart, windowEnd } = timeWindow;
     if (!chartData.length) return [];
 
     const sortedRates = [...chartData].sort((a, b) => a.timeMs - b.timeMs);
-    let processedData = [];
+    const endCap = Math.min(windowEnd, Date.now());
 
-    if (period === "Saatlik") {
-      // Saatlik: her 1 saatte bir nokta — bilinen son kuru enjekte et (eğri/gradient tam yayılsın)
-      const stepMs = 60 * 60 * 1000;
-      const startAligned = Math.floor(windowStart / stepMs) * stepMs;
-      const endCap = Math.min(windowEnd, Date.now());
+    // Periyoda göre adım: Günlük/Saatlik → 1 saat; Haftalık → 6 saat; Aylık/Yıllık → 1 gün
+    const stepMs =
+      period === "Saatlik" || period === "Günlük"
+        ? 60 * 60 * 1000
+        : period === "Haftalık"
+          ? 6 * 60 * 60 * 1000
+          : 24 * 60 * 60 * 1000;
 
-      for (let t = startAligned; t <= endCap; t += stepMs) {
-        if (t < windowStart) continue;
-        const pastRates = sortedRates.filter((r) => r.timeMs <= t);
-        const closestRate =
-          pastRates.length > 0 ? pastRates[pastRates.length - 1] : sortedRates[0];
-        if (closestRate) {
-          processedData.push({
-            ...closestRate,
-            recorded_at: new Date(t).toISOString(),
-            timeMs: t,
-            buy: closestRate.buy ?? closestRate.buy_rate,
-            sell: closestRate.sell ?? closestRate.sell_rate,
-            mid:
-              ((closestRate.buy ?? closestRate.buy_rate) +
-                (closestRate.sell ?? closestRate.sell_rate)) /
-              2,
-            is_padded: true,
-          });
-        }
-      }
+    const startAligned = Math.floor(windowStart / stepMs) * stepMs;
+    const processedData = [];
+    let cursor = 0;
 
-      // Pencere sonuna kadar uzat (son saat dilimi ile end arasında boşluk kalmasın)
-      if (processedData.length > 0) {
-        const last = processedData[processedData.length - 1];
-        if (last.timeMs < endCap) {
-          processedData.push({
-            ...last,
-            recorded_at: new Date(endCap).toISOString(),
-            timeMs: endCap,
-            is_padded: true,
-          });
-        }
-      }
-    } else {
-      processedData = sortedRates.filter(
-        (r) => r.timeMs >= windowStart && r.timeMs <= windowEnd
-      );
-
-      const priorData = sortedRates.filter((d) => d.timeMs <= windowStart);
-      const lastKnownPoint = priorData.length > 0 ? priorData[priorData.length - 1] : null;
-
-      if (
-        lastKnownPoint &&
-        (processedData.length === 0 || processedData[0].timeMs > windowStart)
-      ) {
-        processedData = [
-          { ...lastKnownPoint, timeMs: windowStart, is_padded: true },
-          ...processedData,
-        ];
-      }
-
-      if (processedData.length > 0) {
-        const lastPoint = processedData[processedData.length - 1];
-        const capTime = Math.min(windowEnd, Date.now());
-        if (lastPoint.timeMs < capTime) {
-          processedData = [
-            ...processedData,
-            { ...lastPoint, timeMs: capTime, is_padded: true },
-          ];
-        }
+    // İleri taşıma için pencere öncesi son bilinen nokta
+    let lastKnown = null;
+    for (let i = 0; i < sortedRates.length; i++) {
+      if (sortedRates[i].timeMs <= windowStart) {
+        lastKnown = sortedRates[i];
+        cursor = i;
+      } else {
+        break;
       }
     }
 
-    return processedData.map((rate) => ({
-      timeMs: rate.timeMs ?? new Date(rate.recorded_at).getTime(),
-      buy: rate.buy ?? rate.buy_rate,
-      sell: rate.sell ?? rate.sell_rate,
-      mid:
-        rate.mid ??
-        ((rate.buy ?? rate.buy_rate) + (rate.sell ?? rate.sell_rate)) / 2,
-      is_padded: rate.is_padded || false,
-    }));
+    for (let t = startAligned; t <= endCap; t += stepMs) {
+      if (t < windowStart) continue;
+      while (cursor < sortedRates.length && sortedRates[cursor].timeMs <= t) {
+        lastKnown = sortedRates[cursor];
+        cursor += 1;
+      }
+      const source = lastKnown || sortedRates[0];
+      if (!source) continue;
+      processedData.push({
+        timeMs: t,
+        buy: source.buy ?? source.buy_rate,
+        sell: source.sell ?? source.sell_rate,
+        mid:
+          source.mid ??
+          ((source.buy ?? source.buy_rate) + (source.sell ?? source.sell_rate)) / 2,
+        is_padded: source.timeMs !== t,
+      });
+    }
+
+    // Son noktayı pencere sonuna sabitle
+    if (processedData.length > 0) {
+      const last = processedData[processedData.length - 1];
+      if (last.timeMs < endCap) {
+        processedData.push({
+          ...last,
+          timeMs: endCap,
+          is_padded: true,
+        });
+      }
+    }
+
+    return processedData;
   }, [chartData, timeWindow, period]);
 
   // ✅ Yüzde: pencerenin gerçek ilk/son noktası (tüm periyotlar)
