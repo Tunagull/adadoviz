@@ -210,8 +210,38 @@ async function syncSiteStats(totalVisitors) {
 }
 
 /**
+ * Boot sırasında Supabase'te (superadmin hariç) hiç kurum olup olmadığını sorar.
+ * Bu, server.js'in "gerçek ilk kurulum mu, yoksa Supabase zaten kalıcı veri
+ * içeriyor mu" ayrımını yapabilmesi için kullanılır (bkz. project_audit_report.md, 1.1).
+ *
+ * @returns {{ ok: boolean, hasInstitutions: boolean, count: number }}
+ *   ok=false ise Supabase'e ULAŞILAMADI demektir (network/auth hatası) — bu
+ *   durumda "boş" ile "ulaşılamadı" birbirine KARIŞTIRILMAMALI, çağıran taraf
+ *   seed/bootstrap kararını buna göre güvenli tarafta (seed yapma) vermelidir.
+ */
+async function checkSupabaseHasInstitutions() {
+  try {
+    const { count, error } = await supabase
+      .from("institutions")
+      .select("id", { count: "exact", head: true })
+      .neq("role", "superadmin");
+    if (error) throw error;
+    const total = count || 0;
+    return { ok: true, hasInstitutions: total > 0, count: total };
+  } catch (err) {
+    logErr("check.institutions", err);
+    return { ok: false, hasInstitutions: false, count: 0 };
+  }
+}
+
+/**
  * Render ephemeral SQLite sıfırlandığında Supabase'teki kalıcı admin verisini geri yükler.
  * seed'den SONRA çağrılmalı — mevcut satırları institution_id üzerinden günceller.
+ *
+ * @returns {{ ok: boolean, institutions: number, adjustments: number, branches: number }}
+ *   ok=false ise en kritik sorgu (institutions) başarısız olmuştur; çağıran taraf
+ *   bu durumda bootstrap'ı (SQLite → Supabase) ÇALIŞTIRMAMALIDIR, aksi halde
+ *   eksik/seed'lenmiş yerel veri kalıcı Supabase verisinin üzerine yazılabilir.
  */
 async function hydrateAdminDataFromSupabase(applyFns = {}) {
   const {
@@ -225,6 +255,7 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   let institutions = 0;
   let adjustments = 0;
   let branches = 0;
+  let institutionsOk = true;
 
   try {
     const { data: instRows, error: instErr } = await supabase
@@ -240,6 +271,7 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
       }
     }
   } catch (err) {
+    institutionsOk = false;
     logErr("hydrate.institutions", err);
   }
 
@@ -272,9 +304,9 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   }
 
   console.log(
-    `[SUPABASE-SYNC] Hydrate bitti — institutions=${institutions} adjustments=${adjustments} branches=${branches}`
+    `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} branches=${branches}`
   );
-  return { institutions, adjustments, branches };
+  return { ok: institutionsOk, institutions, adjustments, branches };
 }
 
 /**
@@ -326,6 +358,7 @@ module.exports = {
   syncPasswordReset,
   syncVisitorSession,
   syncSiteStats,
+  checkSupabaseHasInstitutions,
   hydrateAdminDataFromSupabase,
   bootstrapAdminDataToSupabase,
 };

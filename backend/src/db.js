@@ -38,7 +38,13 @@ function columnExists(table, column) {
   return rows.some((row) => row.name === column);
 }
 
-function initDb() {
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.skipBusinessSeed] - true ise katalog/varsayılan işletme
+ *   seed'i atlanır (bkz. yukarıdaki açıklama). server.js, Supabase'te kurum olup
+ *   olmadığını kontrol ettikten sonra bu değeri belirler.
+ */
+function initDb({ skipBusinessSeed = false } = {}) {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
@@ -262,11 +268,26 @@ function initDb() {
   }
 
   migrateBankAdminsToInstitutions();
-  seedAdminsIfNeeded();
-  seedCatalogInstitutionsIfNeeded();
+
+  // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
+  // seedAdminsIfNeeded / seedCatalogInstitutionsIfNeeded, ephemeral SQLite disk
+  // sıfırlandığında (Render redeploy) varsayılan şifreli ("123") satırları
+  // INSERT OR IGNORE ile geri ekliyordu. Supabase henüz hydrate edilmeden bu
+  // seed'ler çalışırsa, sonrasında çalışan bootstrap bu geçici/varsayılan veriyi
+  // Supabase'e YAZARAK gerçek (kalıcı) veriyi ezebiliyordu.
+  //
+  // Çözüm: Katalog/varsayılan işletme seed'i artık burada OTOMATİK çalışmaz.
+  // server.js → startServer() bu seed'i yalnızca Supabase'te HİÇ kurum
+  // olmadığı doğrulandığında (gerçek ilk kurulum) tetikler; aksi halde
+  // hydrateAdminDataFromSupabase() tek veri kaynağıdır.
+  if (skipBusinessSeed !== true) {
+    seedAdminsIfNeeded();
+    seedCatalogInstitutionsIfNeeded();
+    seedAdjustmentsIfNeeded();
+  }
+
   seedSuperAdminIfNeeded();
   backfillSubscriptionFieldsIfNeeded();
-  seedAdjustmentsIfNeeded();
   // ✅ KALDIRANDI: resetAllMarginsToZero();  // Var olan marjları silmemelidir!
   migrateAkbankMargins();
   console.log(`[DB] SQLite hazır: ${DB_PATH}`);
@@ -1155,6 +1176,11 @@ function upsertAdjustments(institutionId, adjustments) {
 
   const trimmedInstitutionId = institutionId.trim().toLowerCase();
 
+  // Supabase margin_history dual-write'ında da AYNI baseline mantığının
+  // uygulanabilmesi için (bkz. project_audit_report.md, 1.2), bu SQLite
+  // tarafında yazılan baseline/yeni-değer çiftlerini çağırana geri döndürüyoruz.
+  const historyWrites = [];
+
   runInTransaction(() => {
     for (const key in adjustments) {
       const item = adjustments[key];
@@ -1227,25 +1253,36 @@ function upsertAdjustments(institutionId, adjustments) {
           SELECT id FROM margin_history WHERE institution_id = ? AND currency = ? AND type = ? LIMIT 1
         `).get(trimmedInstitutionId, currency, type);
 
+        let baselineWrite = null;
         if (!hasPriorHistory) {
           const baselineType = previousMarginType || "fixed";
           const baselineValue = previousMarginValue != null ? previousMarginValue : 0;
+          const baselineRecordedAt = new Date(Date.now() - 10 * 365 * 24 * 60 * 60 * 1000).toISOString();
           db.prepare(`
             INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
             VALUES (?, ?, ?, ?, ?, datetime('now', '-10 years'))
           `).run(trimmedInstitutionId, currency, type, baselineType, baselineValue);
+          baselineWrite = { margin_type: baselineType, margin_value: baselineValue, recorded_at: baselineRecordedAt };
         }
 
+        const newRecordedAt = new Date().toISOString();
         db.prepare(`
           INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
           VALUES (?, ?, ?, ?, ?, datetime('now'))
         `).run(trimmedInstitutionId, currency, type, marginType, marginValue);
         console.log(`[DB] 🕒 Marj tarihçesi kaydedildi: ${trimmedInstitutionId}/${currency}/${type} = ${marginValue} (${marginType})`);
+
+        historyWrites.push({
+          currency,
+          type,
+          baseline: baselineWrite,
+          current: { margin_type: marginType, margin_value: marginValue, recorded_at: newRecordedAt },
+        });
       }
     }
   });
 
-  return getAdjustmentsForInstitution(trimmedInstitutionId);
+  return { adjustments: getAdjustmentsForInstitution(trimmedInstitutionId), historyWrites };
 }
 
 /**
@@ -2029,6 +2066,9 @@ function applySupabaseBranchRow(row) {
 
 module.exports = {
   initDb,
+  seedAdminsIfNeeded,
+  seedCatalogInstitutionsIfNeeded,
+  seedAdjustmentsIfNeeded,
   getDb,
   findAdminByUsername,
   listBusinesses,

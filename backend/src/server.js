@@ -9,6 +9,9 @@ const https = require("https");
 const { buildBanksFromCentralRates, emptyPayloadForServerError, BANK_DEFINITIONS } = require("./scraper");
 const {
   initDb,
+  seedAdminsIfNeeded,
+  seedCatalogInstitutionsIfNeeded,
+  seedAdjustmentsIfNeeded,
   getDb,
   findAdminByUsername,
   listBusinesses,
@@ -77,6 +80,7 @@ const {
   syncPasswordReset,
   syncVisitorSession,
   syncSiteStats,
+  checkSupabaseHasInstitutions,
   hydrateAdminDataFromSupabase,
   bootstrapAdminDataToSupabase,
 } = require("./config/supabaseSync");
@@ -1125,21 +1129,39 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
       };
     }
 
-    upsertAdjustments(institution_id, adjustments);
+    const { historyWrites } = upsertAdjustments(institution_id, adjustments);
     syncRateAdjustmentsMap(institution_id, adjustments);
 
-    // Kalıcı marj geçmişi → Supabase (Render ephemeral SQLite'a ek)
-    const nowIso = new Date().toISOString();
-    for (const [key, adj] of Object.entries(adjustments)) {
-      const [currency, type] = key.split("_");
-      if (!currency || !type) continue;
+    // Kalıcı marj geçmişi → Supabase (Render ephemeral SQLite'a ek).
+    // ⚠️ MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.2 Kâr marjı geçmiş
+    // boşluğu): Önceden yalnızca YENİ değer Supabase'e yazılıyordu. SQLite
+    // tarafında ilk değişiklikte bir "baseline" (eski değer, ~10 yıl öncesine
+    // damgalı) satırı da yazılıyordu ama bu Supabase'e hiç yansımıyordu.
+    // Redeploy sonrası SQLite sıfırlanıp Supabase'ten hydrate edildiğinde,
+    // baseline eksik olduğu için grafik "güncel marjı tüm geçmişe uygula"
+    // davranışına düşüyordu. Şimdi SQLite'ta yazılan baseline+current çiftini
+    // BİREBİR Supabase'e de yazıyoruz (sırasıyla: varsa baseline, sonra current).
+    for (const write of historyWrites) {
+      const { currency, type, baseline, current } = write;
+      if (baseline) {
+        insertMarginHistory({
+          institution_id,
+          currency,
+          type,
+          margin_type: baseline.margin_type,
+          margin_value: baseline.margin_value,
+          recorded_at: baseline.recorded_at,
+        }).catch((err) => {
+          console.warn("[SUPABASE] margin baseline sync:", err.message);
+        });
+      }
       insertMarginHistory({
         institution_id,
         currency,
         type,
-        margin_type: adj.margin_type,
-        margin_value: adj.margin_value,
-        recorded_at: nowIso,
+        margin_type: current.margin_type,
+        margin_value: current.margin_value,
+        recorded_at: current.recorded_at,
       }).catch((err) => {
         console.warn("[SUPABASE] margin sync:", err.message);
       });
@@ -1535,11 +1557,44 @@ async function refreshRatesCacheWithChangeDetection() {
 }
 
 async function startServer() {
-  initDb();
+  // ⚠️ MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1 Çift yazım / dual-write):
+  // Önceki akış her boot'ta önce SQLite'a varsayılan katalog/işletme verisini
+  // (şifre "123") seed ediyor, SONRA Supabase'ten hydrate ediyor, SONRA da
+  // SQLite'ı Supabase'e geri yazıyordu. Hydrate ağ hatasıyla başarısız olursa
+  // ya da yarım kalırsa, geçici seed verisi bootstrap ile kalıcı Supabase
+  // verisinin ÜZERİNE yazılabiliyordu.
+  //
+  // Yeni akış:
+  //   1) Şemayı kur, katalog/işletme seed'ini ERTELE (skipBusinessSeed).
+  //   2) Supabase'te (superadmin hariç) gerçekten hiç kurum var mı diye SOR.
+  //   3) Hiç yoksa (gerçek ilk kurulum) → seed'i şimdi çalıştır.
+  //      Varsa VEYA Supabase'e ulaşılamadıysa → seed'i ATLA (var olana güven).
+  //   4) Supabase → SQLite hydrate et.
+  //   5) Bootstrap'ı (SQLite → Supabase) SADECE ilk kurulumda YA DA hydrate
+  //      gerçekten başarılı olduysa çalıştır. Aksi halde eksik/boş SQLite
+  //      durumu kalıcı Supabase verisini ezebilir.
+  initDb({ skipBusinessSeed: true });
 
-  // 1) Supabase'teki kalıcı admin verisini SQLite'a geri yükle (deploy sonrası)
+  const supabaseState = await checkSupabaseHasInstitutions();
+  const isFreshInstall = supabaseState.ok && !supabaseState.hasInstitutions;
+
+  if (isFreshInstall) {
+    console.log("[BOOT] Supabase'te kurum bulunamadı — gerçek ilk kurulum, katalog seed'i çalıştırılıyor.");
+    seedAdminsIfNeeded();
+    seedCatalogInstitutionsIfNeeded();
+    seedAdjustmentsIfNeeded();
+  } else if (!supabaseState.ok) {
+    console.warn(
+      "[BOOT] ⚠️ Supabase'e ulaşılamadı — güvenlik için katalog seed'i ATLANDI (mevcut kalıcı veri korunur)."
+    );
+  } else {
+    console.log(`[BOOT] Supabase'te ${supabaseState.count} kurum bulundu — seed atlanıyor, hydrate'e güveniliyor.`);
+  }
+
+  // Supabase'teki kalıcı admin verisini SQLite'a geri yükle (deploy sonrası)
+  let hydrateResult = { ok: false, institutions: 0, adjustments: 0, branches: 0 };
   try {
-    await hydrateAdminDataFromSupabase({
+    hydrateResult = await hydrateAdminDataFromSupabase({
       upsertInstitutionRow: applySupabaseInstitutionRow,
       upsertAdjustmentRow: applySupabaseAdjustmentRow,
       upsertBranchRow: applySupabaseBranchRow,
@@ -1548,14 +1603,20 @@ async function startServer() {
     console.warn("[SUPABASE-SYNC] Hydrate hatası:", err.message);
   }
 
-  // 2) Güncel SQLite durumunu Supabase'e yansıt
-  bootstrapAdminDataToSupabase({
-    institutions: listAllInstitutionsForSync(),
-    branches: listAllBranchesForSync(),
-    adjustments: listAllAdjustmentsForSync(),
-  }).catch((err) => {
-    console.warn("[SUPABASE-SYNC] Bootstrap hatası:", err.message);
-  });
+  // Güncel SQLite durumunu Supabase'e yansıt — YALNIZCA güvenli olduğunda
+  if (isFreshInstall || hydrateResult.ok) {
+    bootstrapAdminDataToSupabase({
+      institutions: listAllInstitutionsForSync(),
+      branches: listAllBranchesForSync(),
+      adjustments: listAllAdjustmentsForSync(),
+    }).catch((err) => {
+      console.warn("[SUPABASE-SYNC] Bootstrap hatası:", err.message);
+    });
+  } else {
+    console.warn(
+      "[SUPABASE-SYNC] Bootstrap ATLANDI — hydrate başarısız oldu, yerel veri kalıcı Supabase verisinin üzerine yazılmayacak."
+    );
+  }
   
   // ✅ ADIM 1: İlk yüklemede kurları çek ve SSE'ye hazırla
   await refreshRatesCacheWithChangeDetection();
