@@ -8,6 +8,7 @@ import { fetchAdminRates, saveAdminRates, changeBusinessPassword, fetchBusinessP
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
 import { DualRangeSlider } from "../components/DualRangeSlider";
+import { SearchableSelect } from "../components/SearchableSelect";
 
 // Granüler 6-kalem yapısı
 const MARGIN_ITEMS = [
@@ -764,7 +765,7 @@ export function InstitutionAdminPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-2 rounded-lg border border-red-500 bg-transparent px-3 py-2 text-sm text-red-600 transition-all duration-300 hover:bg-red-500/10 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:text-red-400 dark:hover:border-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+              className="inline-flex items-center gap-2 rounded-lg border border-[rgb(255,0,0)] bg-transparent px-3 py-2 text-sm text-[rgb(255,0,0)] transition-all duration-300 hover:bg-[rgb(255,0,0)]/5 hover:shadow-[0_0_15px_rgba(255,0,0,0.6)]"
             >
               <LogOut className="size-4" />
               {t("logoutShort")}
@@ -772,21 +773,21 @@ export function InstitutionAdminPage() {
             <div
               className={`rounded-xl border px-3 py-2 text-sm ${
                 expired || nearExpiry
-                  ? "border-rose-500/40 bg-rose-500/10"
-                  : "border-teal-500/30 bg-teal-500/10"
+                  ? "border-[rgb(255,0,0)]/50 bg-[rgb(255,0,0)]/5"
+                  : "border-[rgb(0,255,255)]/40 bg-[rgb(0,255,255)]/5"
               }`}
             >
-              <p className="text-[10px] uppercase tracking-wide opacity-80 text-slate-600 dark:text-slate-300">
+              <p className="text-[10px] uppercase tracking-wide font-bold text-white">
                 {t("subscriptionStatus")}
               </p>
               <p
-                className={
+                className={`font-semibold ${
                   days == null
-                    ? "font-semibold text-slate-600 dark:text-slate-300"
-                    : nearExpiry
-                      ? "text-rose-600 font-bold dark:text-rose-500"
-                      : "text-teal-700 font-semibold dark:text-teal-400"
-                }
+                    ? "text-white"
+                    : days > 30
+                      ? "text-[rgb(0,255,255)]"
+                      : "text-[rgb(255,0,0)]"
+                }`}
               >
                 {days == null
                   ? `${t("remainingSubscription")}: —`
@@ -853,7 +854,7 @@ export function InstitutionAdminPage() {
         <form onSubmit={handleSave} className="space-y-6">
           {/* ALIŞ KURLAR */}
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-cyan-700 dark:text-cyan-400">{t("buyRates")}</h3>
+            <h3 className="mb-3 text-sm font-semibold text-[rgb(0,255,255)]">{t("buyRates")}</h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'buy').map((item) => {
               const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
@@ -866,7 +867,7 @@ export function InstitutionAdminPage() {
                   key={`${item.currency}-${item.type}`}
                   className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-white/20"
                 >
-                  <h4 className="mb-3 text-sm font-bold text-cyan-700 dark:text-cyan-300">{itemLabel}</h4>
+                  <h4 className="mb-3 text-sm font-bold text-[rgb(0,255,255)]">{itemLabel}</h4>
 
                   {/* Merkez Bankası KUR */}
                   <div className="mb-3">
@@ -884,17 +885,18 @@ export function InstitutionAdminPage() {
                   {/* Kâr Tipi Selectbox */}
                   <div className="mb-3">
                     <label className="text-xs text-slate-500 dark:text-slate-400">{t("profitType")}</label>
-                    <select
+                    <SearchableSelect
                       value={cfg.type}
-                      disabled={isExpired}
-                      onChange={(e) =>
-                        handleMarginChange(item.currency, item.type, "type", e.target.value)
+                      onChange={(val) =>
+                        handleMarginChange(item.currency, item.type, "type", val)
                       }
-                      className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-teal-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    >
-                      <option value="fixed">{t("fixedPrice")}</option>
-                      <option value="percent">{t("percentPrice")}</option>
-                    </select>
+                      disabled={isExpired}
+                      options={[
+                        { value: "fixed", label: t("fixedPrice") },
+                        { value: "percent", label: t("percentPrice") },
+                      ]}
+                      placeholder={t("profitType")}
+                    />
                   </div>
 
                   {/* Kâr Marjı */}
@@ -916,12 +918,12 @@ export function InstitutionAdminPage() {
                   </div>
 
                   {/* Final Kur & Kâr */}
-                  <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-2 py-2 text-center">
-                    <p className="text-xs font-semibold text-cyan-700 dark:text-cyan-300">
-                      {t("finalRate")}: <span className="font-bold text-cyan-800 dark:text-cyan-200">{formatNum(final)}</span>
+                  <div className="rounded-lg border-2 border-[rgb(0,255,255)]/80 bg-slate-950/50 px-3 py-2.5 text-center shadow-[0_0_15px_rgba(0,255,255,0.5)]">
+                    <p className="text-sm font-bold">
+                      <span className="text-white">{t("finalRate")}:</span> <span className="font-mono text-[rgb(0,255,255)] text-base">{formatNum(final)}</span>
                       {(() => {
                         const kar = final && kur ? final - kur : 0;
-                        return kar > 0 ? ` / +${formatNum(kar)} ${t("profitTl")}` : '';
+                        return kar > 0 ? <span className="ml-2 text-xs font-semibold text-emerald-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
                       })()}
                     </p>
                   </div>
@@ -933,7 +935,7 @@ export function InstitutionAdminPage() {
 
           {/* SATIŞ KURLAR */}
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-red-600 dark:text-red-400">{t("sellRates")}</h3>
+            <h3 className="mb-3 text-sm font-semibold text-[rgb(255,0,0)]">{t("sellRates")}</h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
                 const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
@@ -946,7 +948,7 @@ export function InstitutionAdminPage() {
                     key={`${item.currency}-${item.type}`}
                     className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-white/20"
                   >
-                    <h4 className="mb-3 text-sm font-bold text-rose-600 dark:text-rose-300">{itemLabel}</h4>
+                    <h4 className="mb-3 text-sm font-bold text-[rgb(255,0,0)]">{itemLabel}</h4>
 
                     {/* Merkez Bankası KUR */}
                     <div className="mb-3">
@@ -964,17 +966,18 @@ export function InstitutionAdminPage() {
                     {/* Kâr Tipi Selectbox */}
                     <div className="mb-3">
                       <label className="text-xs text-slate-500 dark:text-slate-400">{t("profitType")}</label>
-                      <select
+                      <SearchableSelect
                         value={cfg.type}
-                        disabled={isExpired}
-                        onChange={(e) =>
-                          handleMarginChange(item.currency, item.type, "type", e.target.value)
+                        onChange={(val) =>
+                          handleMarginChange(item.currency, item.type, "type", val)
                         }
-                        className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-teal-400 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                      >
-                        <option value="fixed">{t("fixedPrice")}</option>
-                        <option value="percent">{t("percentPrice")}</option>
-                      </select>
+                        disabled={isExpired}
+                        options={[
+                          { value: "fixed", label: t("fixedPrice") },
+                          { value: "percent", label: t("percentPrice") },
+                        ]}
+                        placeholder={t("profitType")}
+                      />
                     </div>
 
                     {/* Kâr Değeri */}
@@ -996,12 +999,12 @@ export function InstitutionAdminPage() {
                     </div>
 
                     {/* Final Kur & Kâr */}
-                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-2 text-center">
-                      <p className="text-xs font-semibold text-red-700 dark:text-red-300">
-                        {t("finalRate")}: <span className="font-bold text-red-800 dark:text-red-200">{formatNum(final)}</span>
+                    <div className="rounded-lg border-2 border-[rgb(255,0,0)]/80 bg-slate-950/50 px-3 py-2.5 text-center shadow-[0_0_15px_rgba(255,0,0,0.5)]">
+                      <p className="text-sm font-bold">
+                        <span className="text-white">{t("finalRate")}:</span> <span className="font-mono text-[rgb(255,0,0)] text-base">{formatNum(final)}</span>
                         {(() => {
                           const kar = final && kur ? final - kur : 0;
-                          return kar > 0 ? ` / +${formatNum(kar)} ${t("profitTl")}` : '';
+                          return kar > 0 ? <span className="ml-2 text-xs font-semibold text-emerald-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
                         })()}
                       </p>
                     </div>

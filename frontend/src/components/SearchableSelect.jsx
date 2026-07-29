@@ -235,7 +235,7 @@ export function SearchableSelect({
                       }}
                       className={`cursor-pointer px-3 py-2 text-sm transition ${
                         hi
-                          ? "bg-teal-500/15 text-teal-800 dark:text-teal-200"
+                          ? "bg-slate-950 border-l-2 border-l-cyan-400 text-cyan-300 dark:bg-slate-950 dark:text-cyan-300"
                           : active
                             ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white"
                             : "text-slate-700 dark:text-slate-200"

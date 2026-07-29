@@ -194,7 +194,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder={t("usernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                     required
                   />
                 </div>
@@ -216,7 +216,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="••••••••"
-                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                     required
                   />
                 </div>
@@ -310,7 +310,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder={t("emailOrUsernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-slate-700 bg-slate-950 pl-10 pr-3 text-sm text-slate-100 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20"
+                    className="h-11 w-full rounded-lg border border-slate-700 bg-slate-950 pl-10 pr-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                     required
                     disabled={forgotLoading}
                   />
