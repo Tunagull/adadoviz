@@ -480,13 +480,13 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     return new Date(ms).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
-  // ✅ X ekseni: Saatlik/Günlük → saat; Yıllık → ay-yıl; diğerleri → gün-ay
+  // ✅ X ekseni: Saatlik/Günlük → saat (küsüratsız); Yıllık → ay-yıl; diğerleri → gün-ay
   const formatXAxis = (ms) => {
     if (!ms) return "";
     const d = new Date(ms);
     if (isNaN(d.getTime())) return "";
     if (period === 'Saatlik' || period === 'Günlük') {
-      return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/:\d{2}$/, ':00');
     }
     if (period === 'Yıllık') {
       return d.toLocaleDateString('tr-TR', { month: 'short', year: 'numeric' });
@@ -603,6 +603,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
     return (
       <div className={`relative w-full ${isExpanded ? 'h-full' : ''}`}>
+        {/* Sol Ok - Grafiğin İçinde Solda, Margin'in Sınırında */}
         <button
           type="button"
           onClick={() => {
@@ -610,13 +611,14 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
           }}
           disabled={timeWindow.isLeftDisabled}
-          className={`absolute left-2 md:left-4 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute left-3 md:left-5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeWindow.isLeftDisabled ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Önceki dönem"
         >
           <ChevronLeft size={chevronSize} />
         </button>
+        {/* Sağ Ok - Grafiğin İçinde Sağda, Margin'in Sınırında */}
         <button
           type="button"
           onClick={() => {
@@ -624,7 +626,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.max(0, prev - 1));
           }}
           disabled={timeOffset === 0}
-          className={`absolute right-2 md:right-4 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute right-3 md:right-5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeOffset === 0 ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Sonraki dönem"
@@ -632,9 +634,9 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           <ChevronRight size={chevronSize} />
         </button>
 
-        {/* px-12: oklar grafiğe binmesin */}
+        {/* Grafik Container: Oklar için boşluk bırakarak marjin ayarı */}
         <div
-          className={`w-full px-12 ${isExpanded ? 'h-full' : ''}`}
+          className={`w-full px-14 sm:px-16 md:px-20 ${isExpanded ? 'h-full' : ''}`}
           style={isExpanded ? { height: '100%' } : { height: 200 }}
         >
           <ResponsiveContainer width="100%" height={isExpanded ? 400 : 200}>
