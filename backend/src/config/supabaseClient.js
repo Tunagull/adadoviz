@@ -1,13 +1,21 @@
 /**
  * Supabase client — CommonJS (backend server.js ile uyumlu)
  *
- * TODO: URL/KEY'i process.env'e taşı
+ * URL/KEY process.env üzerinden okunur (bkz. backend/.env, backend/.env.example).
+ * Bu modül bağımsız script'lerden de import edilebildiği için (örn. migrateToSupabase.js)
+ * dotenv burada da güvenli şekilde yüklenir (zaten yüklenmişse tekrar yükleme no-op'tur).
  */
-
+require("dotenv").config();
 const { createClient } = require("@supabase/supabase-js");
 
-const SUPABASE_URL = "https://njwzjqwidcavohojjlty.supabase.co";
-const SUPABASE_KEY = "sb_publishable_F8p7KYsAxwxGM-1MX9OF0g_1kaY_di1";
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  throw new Error(
+    "[Supabase] SUPABASE_URL / SUPABASE_KEY tanımlı değil. backend/.env dosyasını backend/.env.example'a göre oluşturun."
+  );
+}
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 

@@ -1,6 +1,27 @@
+require("dotenv").config();
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 
-const JWT_SECRET = process.env.JWT_SECRET || "finsight-dev-secret-change-me";
+const isProduction = process.env.NODE_ENV === "production";
+
+let JWT_SECRET = process.env.JWT_SECRET;
+
+if (!JWT_SECRET) {
+  if (isProduction) {
+    // Prod'da zayıf/varsayılan secret ile açılmasına asla izin verme.
+    throw new Error(
+      "[Auth] JWT_SECRET tanımlı değil. Production ortamında güçlü bir JWT_SECRET zorunludur (bkz. backend/.env.example)."
+    );
+  }
+  // Yalnızca local geliştirme: her process başlangıcında rastgele üret (öngörülemez,
+  // ama restart'ta değişir — bu yüzden dev dışında asla kullanılmamalı).
+  JWT_SECRET = crypto.randomBytes(48).toString("hex");
+  console.warn(
+    "[Auth] UYARI: JWT_SECRET env değişkeni tanımlı değil. Geliştirme için geçici, rastgele bir secret üretildi. " +
+      "Kalıcı bir secret için backend/.env dosyasına JWT_SECRET ekleyin."
+  );
+}
+
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
 
 function signToken(payload) {

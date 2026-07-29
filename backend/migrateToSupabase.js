@@ -5,19 +5,26 @@
  *   cd backend
  *   node migrateToSupabase.js
  *
- * Not: Supabase'de DELETE (veya TRUNCATE) yetkisi gerekir.
- * SQL Editor'da bir kez çalıştır:
- *   TRUNCATE public.historical_rates RESTART IDENTITY;
- *   CREATE POLICY "Allow backend delete" ON public.historical_rates
- *     FOR DELETE USING (true);
+ * Not: SUPABASE_KEY olarak service_role key kullanıldığından (bkz. backend/.env,
+ * backend/supabase_rls_lockdown.sql) DELETE/INSERT için ayrıca bir RLS politikası
+ * OLUŞTURMANIZA gerek yoktur — service_role RLS'i bypass eder.
  */
 
+require("dotenv").config();
 const { DatabaseSync } = require("node:sqlite");
 const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 
-const SUPABASE_URL = "https://njwzjqwidcavohojjlty.supabase.co";
-const SUPABASE_KEY = "sb_publishable_F8p7KYsAxwxGM-1MX9OF0g_1kaY_di1";
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_KEY) {
+  console.error(
+    "[Migration] SUPABASE_URL / SUPABASE_KEY tanımlı değil. backend/.env dosyasını backend/.env.example'a göre oluşturun."
+  );
+  process.exit(1);
+}
+
 const BATCH_SIZE = 500;
 const VALID_CURRENCIES = new Set(["USD", "EUR", "GBP"]);
 

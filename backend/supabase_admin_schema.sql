@@ -103,7 +103,13 @@ CREATE TABLE IF NOT EXISTS public.site_stats (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- RLS: backend publishable key ile yazabilsin (şimdilik açık; sonra service_role'a geçin)
+-- RLS: SADECE backend (service_role) erişebilir.
+-- ⚠️ GÜVENLİK GÜNCELLEMESİ: Bu tablolar için ARTIK "USING (true)" gibi herkese
+-- açık politika OLUŞTURULMAZ. RLS aktif + policy yoksa anon/publishable key
+-- ile hiçbir okuma/yazma yapılamaz; yalnızca backend'in kullandığı
+-- service_role key RLS'i bypass ederek normal çalışmaya devam eder.
+-- Detaylı açıklama ve mevcut (varsa) açık politikaların temizlenmesi için
+-- backend/supabase_rls_lockdown.sql dosyasını çalıştırın.
 ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rate_adjustments ENABLE ROW LEVEL SECURITY;
@@ -113,34 +119,5 @@ ALTER TABLE public.password_resets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.visitor_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_stats ENABLE ROW LEVEL SECURITY;
 
-DO $$ BEGIN
-  CREATE POLICY "institutions_all" ON public.institutions FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "branches_all" ON public.branches FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "rate_adjustments_all" ON public.rate_adjustments FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "margin_history_all" ON public.margin_history FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "partnership_all" ON public.partnership_applications FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "password_resets_all" ON public.password_resets FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "visitor_sessions_all" ON public.visitor_sessions FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE POLICY "site_stats_all" ON public.site_stats FOR ALL USING (true) WITH CHECK (true);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+-- NOT: Bilinçli olarak burada CREATE POLICY ... USING (true) YOK.
+-- Backend, .env → SUPABASE_KEY altında service_role key kullanmalıdır.
