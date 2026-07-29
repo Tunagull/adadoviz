@@ -1654,9 +1654,10 @@ export function V0FinancialDashboard() {
               <input
                 type="number"
                 min="0"
+                disabled={!exchangeCurrency}
                 value={exchangeAmountTl}
                 onChange={(e) => setExchangeAmountTl(e.target.value)}
-                className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                 placeholder="Tutar giriniz"
               />
               {exchangeAmountTl !== "0" && (!exchangeCurrency || !calculatorBank) && (
