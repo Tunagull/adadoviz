@@ -602,44 +602,11 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     );
 
     return (
-      <div className={`relative w-full overflow-hidden ${isExpanded ? 'h-full' : ''}`}>
-        {/* Sol Ok - Dış çerçevenin kenarına çok yakın, chart'tan uzak */}
-        <button
-          type="button"
-          onClick={() => {
-            setCustomDateRange({ start: null, end: null });
-            setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
-          }}
-          disabled={timeWindow.isLeftDisabled}
-          className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
-            timeWindow.isLeftDisabled ? chartNavBtnDisabled : chartNavBtnActive
-          }`}
-          style={{ left: '6px' }}
-          aria-label="Önceki dönem"
-        >
-          <ChevronLeft size={chevronSize} />
-        </button>
-        {/* Sağ Ok - Dış çerçevenin kenarına çok yakın, chart'tan uzak */}
-        <button
-          type="button"
-          onClick={() => {
-            setCustomDateRange({ start: null, end: null });
-            setTimeOffset((prev) => Math.max(0, prev - 1));
-          }}
-          disabled={timeOffset === 0}
-          className={`absolute top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
-            timeOffset === 0 ? chartNavBtnDisabled : chartNavBtnActive
-          }`}
-          style={{ right: '6px' }}
-          aria-label="Sonraki dönem"
-        >
-          <ChevronRight size={chevronSize} />
-        </button>
-
-        {/* Chart Container: Okları kaplamayan padding ile geniş grafik */}
+      <div className={`relative w-full ${isExpanded ? 'h-full' : ''}`}>
+        {/* Chart Container: Oklar kartın seviyesinde konumlandırıldığı için minimal padding yeterli */}
         <div
           className={`w-full ${isExpanded ? 'h-full' : ''}`}
-          style={isExpanded ? { height: '100%', paddingLeft: '64px', paddingRight: '64px' } : { height: 200, paddingLeft: '64px', paddingRight: '64px' }}
+          style={isExpanded ? { height: '100%', paddingLeft: '20px', paddingRight: '20px' } : { height: 200, paddingLeft: '20px', paddingRight: '20px' }}
         >
           <ResponsiveContainer width="100%" height={isExpanded ? 400 : 200}>
             {chartInner}
@@ -651,7 +618,45 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
   return (
     <>
-      <div className="rounded-xl border border-slate-200 bg-white p-4 relative dark:border-slate-800 dark:bg-slate-900">
+      <div className="rounded-xl border border-slate-200 bg-white p-4 relative overflow-hidden dark:border-slate-800 dark:bg-slate-900">
+        {/* Sol Ok - Kartın sol kenarına yakın (border'dan ~8px uzak) */}
+        <button
+          type="button"
+          onClick={() => {
+            setCustomDateRange({ start: null, end: null });
+            setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
+          }}
+          disabled={timeWindow.isLeftDisabled}
+          className={`absolute top-1/2 z-20 -translate-y-1/2 rounded-full transition-all border ${
+            timeWindow.isLeftDisabled 
+              ? "text-slate-600 opacity-40 cursor-not-allowed border-white/10 bg-slate-900/90 dark:text-slate-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-slate-900/90"
+              : "text-slate-300 hover:bg-slate-800 hover:text-white border-white/10 bg-slate-900/90 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white dark:border-white/10 dark:bg-slate-900/90"
+          }`}
+          style={{ left: '8px' }}
+          aria-label="Önceki dönem"
+        >
+          <div className="p-1.5"><ChevronLeft size={16} /></div>
+        </button>
+
+        {/* Sağ Ok - Kartın sağ kenarına yakın (border'dan ~8px uzak) */}
+        <button
+          type="button"
+          onClick={() => {
+            setCustomDateRange({ start: null, end: null });
+            setTimeOffset((prev) => Math.max(0, prev - 1));
+          }}
+          disabled={timeOffset === 0}
+          className={`absolute top-1/2 z-20 -translate-y-1/2 rounded-full transition-all border ${
+            timeOffset === 0 
+              ? "text-slate-600 opacity-40 cursor-not-allowed border-white/10 bg-slate-900/90 dark:text-slate-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-slate-900/90"
+              : "text-slate-300 hover:bg-slate-800 hover:text-white border-white/10 bg-slate-900/90 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white dark:border-white/10 dark:bg-slate-900/90"
+          }`}
+          style={{ right: '8px' }}
+          aria-label="Sonraki dönem"
+        >
+          <div className="p-1.5"><ChevronRight size={16} /></div>
+        </button>
+
         {/* Merkez Kısım: Tarih Aralığı ve Büyüteç İkonu */}
         <div className="absolute top-3 left-1/2 -translate-x-1/2 flex flex-col items-center justify-center gap-1 z-10">
           <span className="text-[10px] text-slate-500 font-medium whitespace-nowrap dark:text-slate-400">
