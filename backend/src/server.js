@@ -47,7 +47,11 @@ const { applyAdjustmentsToBanksPayload, applyMarginToValue } = require("./rateMa
 const { getRates: getCentralBankRates } = require("./services/ratesService");
 const { sendPartnershipEmail, sendPasswordResetEmail } = require("./email");
 const crypto = require("crypto");
-const { insertHistoricalRate, getBusinessRateHistory: getSupabaseBusinessRateHistory } = require("./config/supabaseClient");
+const {
+  insertHistoricalRate,
+  getMarketHistoricalRates,
+  getBusinessRateHistory: getSupabaseBusinessRateHistory,
+} = require("./config/supabaseClient");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -1086,40 +1090,42 @@ app.post("/api/partnership-apply", async (req, res) => {
  * Query: ?period=Günlük&currency=USD
  * Period: 'Günlük', 'Haftalık', 'Aylık'
  */
-app.get("/api/historical-rates", (req, res) => {
+app.get("/api/historical-rates", async (req, res) => {
   try {
-    const { period = 'Günlük', currency = 'USD' } = req.query;
-    
-    // ✅ DÜZELTME: Saatlik periyod da dahil et
-    if (!['Saatlik', 'Günlük', 'Haftalık', 'Aylık', 'Yıllık'].includes(period)) {
-      return res.status(400).json({ error: "Geçersiz periyod. 'Saatlik', 'Günlük', 'Haftalık', 'Aylık', 'Yıllık' olabilir." });
+    const { period = "Günlük", currency = "USD" } = req.query;
+
+    if (!["Saatlik", "Günlük", "Haftalık", "Aylık", "Yıllık"].includes(period)) {
+      return res.status(400).json({
+        error: "Geçersiz periyod. 'Saatlik', 'Günlük', 'Haftalık', 'Aylık', 'Yıllık' olabilir.",
+      });
     }
-    
-    // Geçerli para birimleri
-    if (!['USD', 'EUR', 'GBP'].includes(currency)) {
+
+    if (!["USD", "EUR", "GBP"].includes(currency)) {
       return res.status(400).json({ error: "Geçersiz para birimi. 'USD', 'EUR', 'GBP' olabilir." });
     }
 
-    const result = getHistoricalRates(period, currency);
+    // Kalıcı kaynak: Supabase (Render ephemeral SQLite DEĞİL)
+    const result = await getMarketHistoricalRates(period, currency);
 
     if (result.rows.length === 0) {
-      // Henüz veri yok ama hata değil - grafik boş çizilecek
-      console.log(`[HISTORICAL] ${period} periyodu için ${currency} verisi henüz biriktirilmemiş.`);
+      console.log(`[HISTORICAL] ${period} / ${currency}: Supabase'de veri yok.`);
     }
 
-    res.json({
+    return res.json({
       period,
       currency,
       count: result.rows.length,
       rates: result.rows,
       exactPercentageChange: result.exactPercentageChange,
-      message: result.rows.length === 0
-        ? "Henüz yeterli veri biriktirilmemiş. Sistem kurlarını otomatik olarak kaydeder."
-        : undefined,
+      message:
+        result.rows.length === 0
+          ? "Henüz yeterli veri biriktirilmemiş. Sistem kurlarını otomatik olarak kaydeder."
+          : undefined,
       meta: {
         isLimitedByAvailableData: result.isLimitedByAvailableData,
         actualSpanDays: result.actualSpanDays,
         requestedSpanDays: result.requestedSpanDays,
+        source: "supabase",
       },
     });
   } catch (error) {

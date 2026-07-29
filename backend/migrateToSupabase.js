@@ -1,166 +1,213 @@
 /**
- * Migration Script: SQLite → Supabase
- * Lokal SQLite veritabanından Supabase'e 6 yıllık kur verilerini göç eder
- * 
- * Kullanım: node migrateToSupabase.js
+ * Migration Script: SQLite → Supabase (tam göç)
+ *
+ * Kullanım:
+ *   cd backend
+ *   node migrateToSupabase.js
+ *
+ * Not: Supabase'de DELETE (veya TRUNCATE) yetkisi gerekir.
+ * SQL Editor'da bir kez çalıştır:
+ *   TRUNCATE public.historical_rates RESTART IDENTITY;
+ *   CREATE POLICY "Allow backend delete" ON public.historical_rates
+ *     FOR DELETE USING (true);
  */
 
 const { DatabaseSync } = require("node:sqlite");
 const path = require("path");
-const { supabase } = require("./src/config/supabaseClient");
+const { createClient } = require("@supabase/supabase-js");
 
-// SQLite veritabanını aç
+const SUPABASE_URL = "https://njwzjqwidcavohojjlty.supabase.co";
+const SUPABASE_KEY = "sb_publishable_F8p7KYsAxwxGM-1MX9OF0g_1kaY_di1";
+const BATCH_SIZE = 500;
+const VALID_CURRENCIES = new Set(["USD", "EUR", "GBP"]);
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const dbPath = path.join(__dirname, "data", "finsight.db");
 const db = new DatabaseSync(dbPath);
 
-// Migration ayarları
-const BATCH_SIZE = 500; // Her seferde Supabase'e gönderilecek satır sayısı
+async function countSupabaseRows() {
+  const { count, error } = await supabase
+    .from("historical_rates")
+    .select("*", { count: "exact", head: true });
 
-/**
- * SQLite'dan tüm geçmiş kur verilerini oku
- */
-function fetchAllHistoricalRatesFromSQLite() {
-  console.log("[MIGRATION] 📂 SQLite'dan geçmiş kur verileri okunuyor...");
-  
-  try {
-    const stmt = db.prepare(`
-      SELECT 
-        currency,
-        buy_rate,
-        sell_rate,
-        recorded_at
-      FROM historical_rates
-      ORDER BY recorded_at ASC
-    `);
-    
-    const rows = stmt.all();
-    console.log(`[MIGRATION] ✅ Toplam ${rows.length} satır SQLite'dan okundu.`);
-    
-    return rows || [];
-  } catch (error) {
-    console.error("[MIGRATION] ❌ SQLite okuma hatası:", error.message);
-    throw error;
+  if (error) {
+    throw new Error(`Supabase satır sayımı hatası: ${error.message}`);
   }
+  return count || 0;
+}
+
+/** 1. Adım: Supabase historical_rates tablosunu tamamen boşalt */
+async function clearSupabaseTable() {
+  const before = await countSupabaseRows();
+  console.log(`   (temizlik öncesi Supabase satır: ${before})`);
+
+  // PostgREST filtre zorunluluğu → her zaman true koşul
+  const { error } = await supabase
+    .from("historical_rates")
+    .delete()
+    .gte("id", 0);
+
+  if (error) {
+    throw new Error(`Supabase temizleme hatası: ${error.message}`);
+  }
+
+  const after = await countSupabaseRows();
+  if (after > 0) {
+    throw new Error(
+      `Supabase temizlenemedi (${after} satır kaldı). ` +
+        `Muhtemelen DELETE RLS policy yok. Supabase SQL Editor'da şunu çalıştır:\n\n` +
+        `  TRUNCATE public.historical_rates RESTART IDENTITY;\n` +
+        `  CREATE POLICY "Allow backend delete" ON public.historical_rates\n` +
+        `    FOR DELETE USING (true);\n\n` +
+        `Sonra scripti tekrar çalıştır.`
+    );
+  }
+
+  console.log("1. Adım: Supabase temizlendi");
+}
+
+/** SQLite'dan LIMIT olmadan TÜM satırları çek */
+function fetchAllFromSQLite() {
+  const stmt = db.prepare(`
+    SELECT currency, buy_rate, sell_rate, recorded_at
+    FROM historical_rates
+    ORDER BY recorded_at ASC
+  `);
+  return stmt.all() || [];
 }
 
 /**
- * Veri şemasını dönüştür ve format et
+ * currency + "_" + recorded_at anahtarıyla Map tekilleştirme.
+ * Geçersiz currency / tarih / sayı satırları atılır.
  */
-function transformDataToSupabaseSchema(sqliteRows) {
-  console.log("[MIGRATION] 🔄 Veri şeması dönüştürülüyor...");
-  
-  return sqliteRows.map((row) => ({
-    currency: row.currency.trim().toUpperCase(),
-    buy_rate: parseFloat(row.buy_rate),
-    sell_rate: parseFloat(row.sell_rate),
-    recorded_at: new Date(row.recorded_at).toISOString(), // ISO format
-  }));
+function deduplicateRows(sqliteRows) {
+  const map = new Map();
+  let skippedInvalid = 0;
+  let skippedDuplicate = 0;
+
+  for (const row of sqliteRows) {
+    const currency = String(row.currency || "")
+      .trim()
+      .toUpperCase();
+
+    if (!VALID_CURRENCIES.has(currency)) {
+      skippedInvalid += 1;
+      continue;
+    }
+
+    const buyRate = Number(row.buy_rate);
+    const sellRate = Number(row.sell_rate);
+    if (!Number.isFinite(buyRate) || !Number.isFinite(sellRate)) {
+      skippedInvalid += 1;
+      continue;
+    }
+
+    const recordedAtDate = new Date(row.recorded_at);
+    if (Number.isNaN(recordedAtDate.getTime())) {
+      skippedInvalid += 1;
+      continue;
+    }
+
+    const recorded_at = recordedAtDate.toISOString();
+    const key = `${currency}_${recorded_at}`;
+
+    if (map.has(key)) {
+      skippedDuplicate += 1;
+      continue;
+    }
+
+    map.set(key, {
+      currency,
+      buy_rate: buyRate,
+      sell_rate: sellRate,
+      recorded_at,
+    });
+  }
+
+  return {
+    uniqueRows: Array.from(map.values()),
+    skippedInvalid,
+    skippedDuplicate,
+  };
 }
 
-/**
- * Verileri batch'ler halinde Supabase'e yükle
- */
-async function uploadBatchesToSupabase(transformedData) {
-  const totalBatches = Math.ceil(transformedData.length / BATCH_SIZE);
-  console.log(`[MIGRATION] 📦 ${totalBatches} batch'e bölünüyor (${BATCH_SIZE}/batch)...`);
-  
+/** 500'erli batch insert (upsert yok — tablo sıfırlandı) */
+async function insertBatches(rows) {
+  const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
+  console.log(
+    `3. Adım: Batch'ler yükleniyor... (${totalBatches} paket, ${BATCH_SIZE}/paket)`
+  );
+
   let successCount = 0;
-  let errorCount = 0;
-  let duplicateCount = 0;
 
   for (let i = 0; i < totalBatches; i++) {
     const start = i * BATCH_SIZE;
-    const end = Math.min(start + BATCH_SIZE, transformedData.length);
-    const batch = transformedData.slice(start, end);
+    const batch = rows.slice(start, start + BATCH_SIZE);
 
-    try {
-      // Supabase'e batch insert (upsert ile duplicate handling)
-      const { data, error } = await supabase
-        .from("historical_rates")
-        .upsert(batch, {
-          onConflict: "currency,recorded_at", // Unique constraint
-        });
+    const { error } = await supabase.from("historical_rates").insert(batch);
 
-      if (error) {
-        console.error(
-          `[MIGRATION] ❌ Batch ${i + 1}/${totalBatches} hatası:`,
-          error.message
-        );
-        errorCount++;
-      } else {
-        successCount += batch.length;
-        console.log(
-          `[MIGRATION] ✅ Batch ${i + 1}/${totalBatches} yüklendi (${batch.length} satır, toplam: ${successCount})`
-        );
-      }
-    } catch (err) {
-      console.error(
-        `[MIGRATION] ❌ Batch ${i + 1}/${totalBatches} exception:`,
-        err.message
+    if (error) {
+      throw new Error(
+        `Batch ${i + 1}/${totalBatches} insert hatası: ${error.message}`
       );
-      errorCount++;
     }
 
-    // Rate limiting: Her batch'in arası biraz bekle (Supabase API quota'sından kaçın)
+    successCount += batch.length;
+    console.log(
+      `   ✅ Batch ${i + 1}/${totalBatches} yüklendi (${batch.length} satır, toplam: ${successCount})`
+    );
+
     if (i < totalBatches - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
   }
 
-  return { successCount, errorCount, totalBatches };
+  return successCount;
 }
 
-/**
- * Ana migration fonksiyonu
- */
 async function migrate() {
   console.log("\n========================================");
-  console.log("🚀 SQLite → Supabase Migration Başlıyor");
+  console.log("🚀 SQLite → Supabase Tam Migration");
   console.log("========================================\n");
 
   try {
-    // Adım 1: SQLite'dan veri oku
-    const sqliteData = fetchAllHistoricalRatesFromSQLite();
+    await clearSupabaseTable();
 
-    if (sqliteData.length === 0) {
-      console.log("[MIGRATION] ⚠️  SQLite'da geçmiş kur verisi bulunamadı.");
-      console.log("[MIGRATION] İşlem iptal edildi.");
+    const sqliteRows = fetchAllFromSQLite();
+    const { uniqueRows, skippedInvalid, skippedDuplicate } =
+      deduplicateRows(sqliteRows);
+
+    console.log(
+      `2. Adım: SQLite'dan ${sqliteRows.length} satır çekildi, tekilleştirme sonrası ${uniqueRows.length} satır kaldı` +
+        ` (duplicate atılan: ${skippedDuplicate}, geçersiz: ${skippedInvalid})`
+    );
+
+    if (uniqueRows.length === 0) {
+      console.log("⚠️  Yüklenecek satır yok. Migration iptal.");
       process.exit(0);
     }
 
-    // Adım 2: Şemayı dönüştür
-    const transformedData = transformDataToSupabaseSchema(sqliteData);
+    const inserted = await insertBatches(uniqueRows);
+    const finalCount = await countSupabaseRows();
 
-    // Adım 3: Batch'ler halinde yükle
-    console.log("\n[MIGRATION] 📤 Supabase'e yükleniyorum...\n");
-    const result = await uploadBatchesToSupabase(transformedData);
-
-    // Sonuç
     console.log("\n========================================");
-    console.log("✅ MIGRATION TÜRESEİ BAŞARILI");
-    console.log("========================================");
-    console.log(`📊 Başarılı satırlar: ${result.successCount}`);
-    console.log(`❌ Hata sayısı: ${result.errorCount}`);
-    console.log(`📦 İşlenen batch'ler: ${result.totalBatches}`);
-    console.log(`📅 Tarih: ${new Date().toISOString()}`);
+    console.log("✅ Migration başarıyla tamamlandı");
+    console.log(`📊 Yazılan satır: ${inserted}`);
+    console.log(`📊 Supabase doğrulama count: ${finalCount}`);
+    console.log(`📅 ${new Date().toISOString()}`);
     console.log("========================================\n");
 
     process.exit(0);
   } catch (error) {
     console.error("\n❌ Migration başarısız:", error.message);
-    console.error("Stack:", error.stack);
     process.exit(1);
   } finally {
-    // Database bağlantısını kapat
     try {
-      if (db) {
-        db.close();
-      }
-    } catch (e) {
-      // Sessizce kapat
+      db.close();
+    } catch (_e) {
+      // ignore
     }
   }
 }
 
-// Migration başlat
 migrate();
