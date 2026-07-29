@@ -8,6 +8,7 @@ const https = require("https");
 const { buildBanksFromCentralRates, emptyPayloadForServerError, BANK_DEFINITIONS } = require("./scraper");
 const {
   initDb,
+  getDb,
   findAdminByUsername,
   listBusinesses,
   createBusiness,
@@ -23,6 +24,12 @@ const {
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
+  getInstitutionFullById,
+  getInstitutionFullBySlug,
+  updateInstitutionProfile,
+  listAllInstitutionsForSync,
+  listAllBranchesForSync,
+  listAllAdjustmentsForSync,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,
@@ -56,6 +63,18 @@ const {
   insertMarginHistory,
   fetchMarginHistory,
 } = require("./config/supabaseClient");
+const {
+  syncInstitutionUpsert,
+  syncInstitutionDelete,
+  syncBranchUpsert,
+  syncBranchDelete,
+  syncRateAdjustmentsMap,
+  syncPartnershipApplication,
+  syncPasswordReset,
+  syncVisitorSession,
+  syncSiteStats,
+  bootstrapAdminDataToSupabase,
+} = require("./config/supabaseSync");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -497,6 +516,14 @@ app.post("/api/forgot-password", async (req, res) => {
       token,
       expiresAt,
     });
+    syncPasswordReset({
+      institution_id: institution.id,
+      institution_slug: institution.institution_id,
+      email: destination,
+      token,
+      expires_at: expiresAt,
+      used: false,
+    });
 
     const frontendBase = (
       process.env.FRONTEND_URL || "http://localhost:5173"
@@ -544,6 +571,17 @@ app.post("/api/reset-password", (req, res) => {
     const passwordHash = bcrypt.hashSync(newPassword, 10);
     updateInstitutionPassword(resetRow.institution_id, passwordHash);
     markPasswordResetUsed(resetRow.id);
+
+    const full = getInstitutionFullById(resetRow.institution_id);
+    if (full) syncInstitutionUpsert(full);
+    syncPasswordReset({
+      institution_id: resetRow.institution_id,
+      institution_slug: full?.institution_id || null,
+      email: resetRow.email,
+      token: resetRow.token,
+      expires_at: resetRow.expires_at,
+      used: true,
+    });
 
     return res.json({
       success: true,
@@ -600,11 +638,64 @@ app.put("/api/business/change-password", requireAuth, (req, res) => {
 
     const passwordHash = bcrypt.hashSync(newPassword, 10);
     updateInstitutionPassword(admin.id, passwordHash);
+    const full = getInstitutionFullById(admin.id);
+    if (full) syncInstitutionUpsert(full);
 
     return res.json({ success: true, message: "Şifre başarıyla değiştirildi." });
   } catch (err) {
     console.error("[AUTH] change-password:", err.message);
     return res.status(500).json({ error: err.message || "Şifre değiştirilemedi." });
+  }
+});
+
+/** İşletme kendi profilini okur (logo, telefon, çalışma saatleri) */
+app.get("/api/business/profile", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const row = getInstitutionFullBySlug(req.user.institution_id);
+    if (!row) return res.status(404).json({ error: "İşletme bulunamadı." });
+    return res.json({
+      profile: {
+        institution_id: row.institution_id,
+        institution_name: row.institution_name,
+        logo_url: row.logo_url || null,
+        phone: row.phone || null,
+        email: row.email || null,
+        working_hours: row.working_hours
+          ? (() => {
+              try {
+                return JSON.parse(row.working_hours);
+              } catch (_e) {
+                return null;
+              }
+            })()
+          : null,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Profil alınamadı." });
+  }
+});
+
+/** İşletme profil güncelle (logo / telefon / çalışma saatleri) → SQLite + Supabase */
+app.put("/api/business/profile", requireAuth, async (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const business = updateInstitutionProfile(req.user.institution_id, {
+      logo_url: req.body?.logo_url,
+      phone: req.body?.phone,
+      working_hours: req.body?.working_hours,
+    });
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (full) await syncInstitutionUpsert(full);
+    return res.json({ ok: true, business });
+  } catch (err) {
+    const status = err.message === "İşletme bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Profil güncellenemedi." });
   }
 });
 
@@ -639,6 +730,8 @@ app.post("/api/admin/businesses", requireSuperAdmin, (req, res) => {
       is_active: isActive,
       logo_url: req.body?.logo_url,
     });
+    const full = getInstitutionFullById(business.id);
+    if (full) syncInstitutionUpsert(full);
     return res.status(201).json({ business });
   } catch (err) {
     return res.status(400).json({ error: err.message || "İşletme oluşturulamadı." });
@@ -660,6 +753,8 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
       is_active: req.body?.is_active,
       logo_url: req.body?.logo_url,
     });
+    const full = getInstitutionFullById(id);
+    if (full) syncInstitutionUpsert(full);
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -674,6 +769,8 @@ app.put("/api/admin/businesses/:id/reset-subscription", requireSuperAdmin, (req,
       return res.status(400).json({ error: "Geçersiz işletme ID." });
     }
     const business = resetBusinessSubscription(id);
+    const full = getInstitutionFullById(id);
+    if (full) syncInstitutionUpsert(full);
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -691,6 +788,8 @@ app.put("/api/admin/businesses/:id/status", requireSuperAdmin, (req, res) => {
       return res.status(400).json({ error: "is_active zorunludur." });
     }
     const business = updateBusinessStatus(id, req.body.is_active);
+    const full = getInstitutionFullById(id);
+    if (full) syncInstitutionUpsert(full);
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -704,7 +803,9 @@ app.delete("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
     if (!Number.isFinite(id)) {
       return res.status(400).json({ error: "Geçersiz işletme ID." });
     }
+    const full = getInstitutionFullById(id);
     const result = deleteBusiness(id);
+    if (full?.institution_id) syncInstitutionDelete(full.institution_id);
     return res.json(result);
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -754,6 +855,7 @@ app.get("/api/branches", (_req, res) => {
 app.post("/api/track-visitor", (_req, res) => {
   try {
     const stats = incrementVisitorCount();
+    syncSiteStats(stats.total_visitors);
     return res.json({ ok: true, ...stats });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Ziyaretçi kaydı başarısız." });
@@ -810,6 +912,7 @@ app.post("/api/analytics/start", async (req, res) => {
       (req.body?.location && String(req.body.location).trim()) ||
       (await resolveApproxLocation(ip));
     const session = startVisitorSession({ session_id, location });
+    syncVisitorSession(session);
     return res.status(201).json({ ok: true, session });
   } catch (err) {
     return res.status(400).json({ error: err.message || "Oturum başlatılamadı." });
@@ -829,6 +932,7 @@ app.put("/api/analytics/update", (req, res) => {
       business: req.body?.business,
       currency: req.body?.currency,
     });
+    syncVisitorSession(session);
     return res.json({ ok: true, session });
   } catch (err) {
     const status = err.message === "Oturum bulunamadı." ? 404 : 400;
@@ -864,6 +968,8 @@ app.post("/api/admin/branches", requireSuperAdmin, (req, res) => {
       lat: req.body?.lat,
       lng: req.body?.lng,
     });
+    const biz = getInstitutionFullById(branch.business_id);
+    if (biz) syncBranchUpsert(branch, biz.institution_id);
     return res.status(201).json({ branch });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -884,6 +990,8 @@ app.put("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
       lat: req.body?.lat,
       lng: req.body?.lng,
     });
+    const biz = getInstitutionFullById(branch.business_id);
+    if (biz) syncBranchUpsert(branch, biz.institution_id);
     return res.json({ branch });
   } catch (err) {
     const status = err.message === "Şube bulunamadı." ? 404 : 400;
@@ -897,7 +1005,15 @@ app.delete("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
     if (!Number.isFinite(id)) {
       return res.status(400).json({ error: "Geçersiz şube ID." });
     }
-    return res.json(deleteBranch(id));
+    const before = getDb()
+      .prepare(
+        `SELECT b.*, i.institution_id FROM branches b
+         JOIN institutions i ON i.id = b.business_id WHERE b.id = ?`
+      )
+      .get(id);
+    const result = deleteBranch(id);
+    if (before) syncBranchDelete(before, before.institution_id);
+    return res.json(result);
   } catch (err) {
     const status = err.message === "Şube bulunamadı." ? 404 : 400;
     return res.status(status).json({ error: err.message || "Şube silinemedi." });
@@ -1034,6 +1150,7 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
     }
 
     upsertAdjustments(institution_id, adjustments);
+    syncRateAdjustmentsMap(institution_id, adjustments);
 
     // Kalıcı marj geçmişi → Supabase (Render ephemeral SQLite'a ek)
     const nowIso = new Date().toISOString();
@@ -1084,12 +1201,18 @@ app.post("/api/partnership-apply", async (req, res) => {
 
     // Veritabanına kaydet (opsiyonel)
     try {
-      const { getDb } = require("./db");
       const db = getDb();
       db.prepare(`
         INSERT INTO partnership_applications (institution_name, contact_person, email, phone, message)
         VALUES (?, ?, ?, ?, ?)
       `).run(institution_name, contact_person, email, phone, message || null);
+      syncPartnershipApplication({
+        institution_name,
+        contact_person,
+        email,
+        phone,
+        message,
+      });
     } catch (dbError) {
       console.warn("[PARTNERSHIP] Veritabanına kaydetme başarısız (e-posta gönderildi):", dbError.message);
     }
@@ -1406,6 +1529,15 @@ async function refreshRatesCacheWithChangeDetection() {
 
 async function startServer() {
   initDb();
+
+  // Mevcut SQLite admin verisini Supabase'e yansıt (kalıcılık)
+  bootstrapAdminDataToSupabase({
+    institutions: listAllInstitutionsForSync(),
+    branches: listAllBranchesForSync(),
+    adjustments: listAllAdjustmentsForSync(),
+  }).catch((err) => {
+    console.warn("[SUPABASE-SYNC] Bootstrap hatası:", err.message);
+  });
   
   // ✅ ADIM 1: İlk yüklemede kurları çek ve SSE'ye hazırla
   await refreshRatesCacheWithChangeDetection();

@@ -4,7 +4,7 @@ import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone
 import Cropper from "react-easy-crop";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
-import { fetchAdminRates, saveAdminRates, changeBusinessPassword } from "../lib/auth";
+import { fetchAdminRates, saveAdminRates, changeBusinessPassword, fetchBusinessProfile, updateBusinessProfile } from "../lib/auth";
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
 import { DualRangeSlider } from "../components/DualRangeSlider";
@@ -126,7 +126,8 @@ export function InstitutionAdminPage() {
   
   // ✅ İşletme Bilgileri Modal
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [currentBusinessPhone, setCurrentBusinessPhone] = useState("+90 (505) 123 4567"); // Mock: mevcut telefon
+  const [currentBusinessPhone, setCurrentBusinessPhone] = useState("—");
+  const [profileLogoUrl, setProfileLogoUrl] = useState(null);
   const [infoStep, setInfoStep] = useState(0); // 0: kapalı, 1: telefon, 2: onay, 3: kod
   const [rawPhone, setRawPhone] = useState(""); // Sadece rakamlar: "5051234567"
   const [verificationCode, setVerificationCode] = useState("");
@@ -175,6 +176,28 @@ export function InstitutionAdminPage() {
       navigate("/super-admin", { replace: true });
     }
   }, [bootstrapping, isAuthenticated, auth?.role, navigate]);
+
+  useEffect(() => {
+    if (bootstrapping || !auth?.token) return;
+
+    let mounted = true;
+    (async () => {
+      try {
+        const profile = await fetchBusinessProfile(auth.token);
+        if (!mounted || !profile) return;
+        if (profile.phone) setCurrentBusinessPhone(profile.phone);
+        if (profile.logo_url) setProfileLogoUrl(profile.logo_url);
+        if (profile.working_hours && typeof profile.working_hours === "object") {
+          setBusinessHours((prev) => ({ ...prev, ...profile.working_hours }));
+        }
+      } catch (err) {
+        console.warn("[PROFILE] Yüklenemedi:", err.message);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [bootstrapping, auth?.token]);
 
   useEffect(() => {
     if (bootstrapping || !auth?.token) return;
@@ -475,16 +498,20 @@ export function InstitutionAdminPage() {
     setLogoCroppedArea(croppedAreaPixels);
   };
 
-  // ✅ Kırpılmış logoyu kaydet
+  // ✅ Kırpılmış logoyu kaydet → SQLite + Supabase
   const handleSaveCroppedLogo = async () => {
     if (!logoPreviewUrl || !logoCroppedArea || !auth?.token) return;
     setLogoLoading(true);
     try {
       const blob = await getCroppedImage(logoPreviewUrl, logoCroppedArea);
-      console.log("[LOGO] Kırpılmış logo blob oluşturuldu:", blob);
-      // Mock API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      console.log("[LOGO] Logo başarıyla yüklendi!");
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      await updateBusinessProfile(auth.token, { logo_url: dataUrl });
+      setProfileLogoUrl(dataUrl);
       setShowLogoModal(false);
       setLogoFile(null);
       setLogoPreviewUrl(null);
@@ -492,6 +519,7 @@ export function InstitutionAdminPage() {
       setLogoCroppedArea(null);
     } catch (err) {
       console.error("[LOGO] Yükleme hatası:", err);
+      alert(err.message || "Logo kaydedilemedi.");
     } finally {
       setLogoLoading(false);
     }
@@ -558,30 +586,46 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ Kod doğrulama ve telefon güncelleme
+  // ✅ Kod doğrulama ve telefon + çalışma saatleri kaydı
   const handleVerifyCode = async () => {
     if (verificationCode.length !== 6 || !/^\d+$/.test(verificationCode)) {
       setInfoError("Lütfen 6 haneli doğrulama kodunu girin.");
       return;
     }
+    if (!auth?.token) return;
     setInfoError("");
     setInfoLoading(true);
     try {
-      // Mock: Kod doğrulama API çağrısı
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      // Mock başarı
-      if (verificationCode === "000000" || verificationCode !== "") {
-        // Formatted phone number: +90 (XXX) XXX XXXX
-        const formattedPhone = `+90 ${formatPhoneDisplay(rawPhone)}`;
-        setCurrentBusinessPhone(formattedPhone);
-        setInfoSuccess("Telefon numarası başarıyla güncellendi!");
-        setTimeout(() => {
-          closeInfoModal();
-          setInfoSuccess("");
-        }, 1500);
-      }
+      // OTP şu an mock; doğrulama sonrası kalıcı kayıt
+      const formattedPhone = `+90 ${formatPhoneDisplay(rawPhone)}`;
+      await updateBusinessProfile(auth.token, {
+        phone: formattedPhone,
+        working_hours: businessHours,
+      });
+      setCurrentBusinessPhone(formattedPhone);
+      setInfoSuccess("Telefon ve çalışma saatleri kaydedildi!");
+      setTimeout(() => {
+        closeInfoModal();
+        setInfoSuccess("");
+      }, 1500);
     } catch (err) {
-      setInfoError("Kod doğrulanamadı.");
+      setInfoError(err.message || "Kaydedilemedi.");
+    } finally {
+      setInfoLoading(false);
+    }
+  };
+
+  /** Sadece çalışma saatlerini kaydet (telefon değiştirmeden) */
+  const handleSaveWorkingHours = async () => {
+    if (!auth?.token) return;
+    setInfoLoading(true);
+    setInfoError("");
+    try {
+      await updateBusinessProfile(auth.token, { working_hours: businessHours });
+      setInfoSuccess("Çalışma saatleri kaydedildi!");
+      setTimeout(() => setInfoSuccess(""), 2000);
+    } catch (err) {
+      setInfoError(err.message || "Çalışma saatleri kaydedilemedi.");
     } finally {
       setInfoLoading(false);
     }
@@ -674,9 +718,15 @@ export function InstitutionAdminPage() {
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="group relative flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-white transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+              className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
             >
-              {auth?.institution_id ? (
+              {profileLogoUrl ? (
+                <img
+                  src={profileLogoUrl}
+                  alt={auth?.institution_name || "Logo"}
+                  className="h-full w-full object-cover group-hover:opacity-70 transition-opacity"
+                />
+              ) : auth?.institution_id ? (
                 <img
                   src={`/logos/${auth.institution_id}.png`}
                   alt={auth.institution_name}
@@ -688,7 +738,7 @@ export function InstitutionAdminPage() {
               ) : (
                 <Building2 className="size-8 text-slate-400" />
               )}
-              <Camera className="absolute size-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              <Camera className="absolute size-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
             </button>
 
             {/* İşletme Bilgisi */}
@@ -1342,7 +1392,13 @@ export function InstitutionAdminPage() {
                     </div>
                   ) : null}
 
-                  <div className="flex gap-3 pt-2">
+                  {infoSuccess ? (
+                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
+                      {infoSuccess}
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-col gap-3 pt-2 sm:flex-row">
                     <button
                       type="button"
                       onClick={closeInfoModal}
@@ -1350,6 +1406,14 @@ export function InstitutionAdminPage() {
                       className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
                     >
                       {t("cancel")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveWorkingHours}
+                      disabled={infoLoading}
+                      className="flex-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:opacity-50 dark:text-cyan-300"
+                    >
+                      {infoLoading ? "Kaydediliyor..." : "Saatleri Kaydet"}
                     </button>
                     <button
                       type="button"

@@ -246,6 +246,12 @@ function initDb() {
   if (!columnExists("institutions", "email")) {
     db.exec(`ALTER TABLE institutions ADD COLUMN email TEXT`);
   }
+  if (!columnExists("institutions", "phone")) {
+    db.exec(`ALTER TABLE institutions ADD COLUMN phone TEXT`);
+  }
+  if (!columnExists("institutions", "working_hours")) {
+    db.exec(`ALTER TABLE institutions ADD COLUMN working_hours TEXT`);
+  }
   if (!columnExists("institutions", "created_at")) {
     db.exec(`ALTER TABLE institutions ADD COLUMN created_at TEXT`);
     db.exec(
@@ -483,11 +489,24 @@ function mapBusinessRow(row) {
   if (!row) return null;
   const synced = deactivateIfExpired(row);
   const days_remaining = daysRemainingFrom(synced.subscription_end_date);
+  let working_hours = null;
+  if (synced.working_hours) {
+    try {
+      working_hours =
+        typeof synced.working_hours === "string"
+          ? JSON.parse(synced.working_hours)
+          : synced.working_hours;
+    } catch (_e) {
+      working_hours = null;
+    }
+  }
   return {
     ...synced,
     is_active: synced.is_active === 0 || synced.is_active === false ? false : true,
     subscription_type: synced.subscription_type || "Test",
     logo_url: synced.logo_url || null,
+    phone: synced.phone || null,
+    working_hours,
     days_remaining,
   };
 }
@@ -1727,6 +1746,120 @@ function updateInstitutionPassword(institutionId, passwordHash) {
   );
 }
 
+/** Sync / profil için tam satır (password_hash dahil) */
+function getInstitutionFullById(id) {
+  return (
+    db
+      .prepare(
+        `SELECT id, username, password_hash, institution_id, institution_name,
+                COALESCE(role, 'business') AS role,
+                COALESCE(subscription, 'Test') AS subscription,
+                COALESCE(subscription_type, 'Test') AS subscription_type,
+                subscription_end_date,
+                COALESCE(is_active, 1) AS is_active,
+                logo_url, email, phone, working_hours, created_at
+         FROM institutions WHERE id = ?`
+      )
+      .get(id) || null
+  );
+}
+
+function getInstitutionFullBySlug(institutionId) {
+  const id = String(institutionId || "").trim().toLowerCase();
+  if (!id) return null;
+  return (
+    db
+      .prepare(
+        `SELECT id, username, password_hash, institution_id, institution_name,
+                COALESCE(role, 'business') AS role,
+                COALESCE(subscription, 'Test') AS subscription,
+                COALESCE(subscription_type, 'Test') AS subscription_type,
+                subscription_end_date,
+                COALESCE(is_active, 1) AS is_active,
+                logo_url, email, phone, working_hours, created_at
+         FROM institutions
+         WHERE lower(institution_id) = ? AND COALESCE(role, 'business') != 'superadmin'
+         LIMIT 1`
+      )
+      .get(id) || null
+  );
+}
+
+/**
+ * İşletme kendi profilini günceller (logo / telefon / çalışma saatleri).
+ */
+function updateInstitutionProfile(institutionSlug, { logo_url, phone, working_hours } = {}) {
+  const row = getInstitutionFullBySlug(institutionSlug);
+  if (!row) throw new Error("İşletme bulunamadı.");
+
+  let nextLogo = row.logo_url;
+  if (logo_url !== undefined) {
+    nextLogo = sanitizeLogoUrl(logo_url);
+  }
+
+  let nextPhone = row.phone;
+  if (phone !== undefined) {
+    nextPhone = phone === null || phone === "" ? null : String(phone).trim();
+  }
+
+  let nextHours = row.working_hours;
+  if (working_hours !== undefined) {
+    if (working_hours === null) {
+      nextHours = null;
+    } else {
+      nextHours =
+        typeof working_hours === "string"
+          ? working_hours
+          : JSON.stringify(working_hours);
+    }
+  }
+
+  db.prepare(
+    `UPDATE institutions
+     SET logo_url = ?, phone = ?, working_hours = ?
+     WHERE id = ?`
+  ).run(nextLogo, nextPhone, nextHours, row.id);
+
+  return mapBusinessRow(getInstitutionFullById(row.id));
+}
+
+/** Bootstrap sync için tüm satırlar */
+function listAllInstitutionsForSync() {
+  return db
+    .prepare(
+      `SELECT id, username, password_hash, institution_id, institution_name,
+              COALESCE(role, 'business') AS role,
+              COALESCE(subscription, 'Test') AS subscription,
+              COALESCE(subscription_type, 'Test') AS subscription_type,
+              subscription_end_date,
+              COALESCE(is_active, 1) AS is_active,
+              logo_url, email, phone, working_hours, created_at
+       FROM institutions
+       WHERE COALESCE(role, 'business') != 'superadmin'`
+    )
+    .all();
+}
+
+function listAllBranchesForSync() {
+  return db
+    .prepare(
+      `SELECT b.id, b.business_id, b.name, b.phone, b.address, b.lat, b.lng,
+              b.created_at, b.updated_at, i.institution_id
+       FROM branches b
+       JOIN institutions i ON i.id = b.business_id`
+    )
+    .all();
+}
+
+function listAllAdjustmentsForSync() {
+  return db
+    .prepare(
+      `SELECT institution_id, currency, type, margin_type, margin_value, updated_at
+       FROM rate_adjustments`
+    )
+    .all();
+}
+
 module.exports = {
   initDb,
   getDb,
@@ -1746,6 +1879,12 @@ module.exports = {
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
+  getInstitutionFullById,
+  getInstitutionFullBySlug,
+  updateInstitutionProfile,
+  listAllInstitutionsForSync,
+  listAllBranchesForSync,
+  listAllAdjustmentsForSync,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,

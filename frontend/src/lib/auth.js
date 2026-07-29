@@ -99,6 +99,33 @@ export async function changeBusinessPassword(token, { oldPassword, newPassword }
   return data;
 }
 
+export async function fetchBusinessProfile(token) {
+  const response = await fetch(apiUrl("/api/business/profile"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Profil alınamadı.");
+  }
+  return data.profile || null;
+}
+
+export async function updateBusinessProfile(token, payload) {
+  const response = await fetch(apiUrl("/api/business/profile"), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Profil güncellenemedi.");
+  }
+  return data;
+}
+
 export async function fetchAdminBusinesses(token) {
   const response = await fetch(apiUrl("/api/admin/businesses"), {
     headers: authHeaders(token),
