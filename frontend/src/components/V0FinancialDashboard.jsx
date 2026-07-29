@@ -602,8 +602,8 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     );
 
     return (
-      <div className={`relative w-full ${isExpanded ? 'h-full' : ''}`}>
-        {/* Sol Ok - Chart kenarına yakın, temas etmeyecek */}
+      <div className={`relative w-full overflow-hidden ${isExpanded ? 'h-full' : ''}`}>
+        {/* Sol Ok - Kartın en dış kenarına yakın (8-10px boşluk) */}
         <button
           type="button"
           onClick={() => {
@@ -611,14 +611,14 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
           }}
           disabled={timeWindow.isLeftDisabled}
-          className={`absolute left-1.5 md:left-2 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute left-2 md:left-2.5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeWindow.isLeftDisabled ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Önceki dönem"
         >
           <ChevronLeft size={chevronSize} />
         </button>
-        {/* Sağ Ok - Chart kenarına yakın, temas etmeyecek */}
+        {/* Sağ Ok - Kartın en dış kenarına yakın (8-10px boşluk) */}
         <button
           type="button"
           onClick={() => {
@@ -626,7 +626,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.max(0, prev - 1));
           }}
           disabled={timeOffset === 0}
-          className={`absolute right-1.5 md:right-2 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
+          className={`absolute right-2 md:right-2.5 top-1/2 z-10 -translate-y-1/2 rounded-full ${btnPad} transition-all border ${
             timeOffset === 0 ? chartNavBtnDisabled : chartNavBtnActive
           }`}
           aria-label="Sonraki dönem"
@@ -634,10 +634,10 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           <ChevronRight size={chevronSize} />
         </button>
 
-        {/* Grafik Container: Minimal padding ile geniş grafik alanı */}
+        {/* Chart Container: Minimal padding ile maksimum grafik alanı */}
         <div
-          className={`w-full px-10 sm:px-12 md:px-14 ${isExpanded ? 'h-full' : ''}`}
-          style={isExpanded ? { height: '100%' } : { height: 200 }}
+          className={`w-full ${isExpanded ? 'h-full' : ''}`}
+          style={isExpanded ? { height: '100%', paddingLeft: '48px', paddingRight: '48px' } : { height: 200, paddingLeft: '48px', paddingRight: '48px' }}
         >
           <ResponsiveContainer width="100%" height={isExpanded ? 400 : 200}>
             {chartInner}
