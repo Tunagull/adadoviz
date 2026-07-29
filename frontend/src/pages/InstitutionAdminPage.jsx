@@ -674,7 +674,7 @@ export function InstitutionAdminPage() {
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="group relative flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-white transition hover:border-teal-500/40 dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-teal-500/40"
+              className="group relative flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-white transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
             >
               {auth?.institution_id ? (
                 <img
@@ -1468,7 +1468,7 @@ export function InstitutionAdminPage() {
                     onChange={(e) => setOldPassword(e.target.value)}
                     required
                     disabled={passwordLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-teal-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:ring-cyan-500/20"
                   />
                 </div>
 
@@ -1488,7 +1488,7 @@ export function InstitutionAdminPage() {
                     required
                     minLength={4}
                     disabled={passwordLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-teal-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:ring-cyan-500/20"
                   />
                 </div>
 
@@ -1508,7 +1508,7 @@ export function InstitutionAdminPage() {
                     required
                     minLength={4}
                     disabled={passwordLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-teal-400 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:ring-cyan-500/20"
                   />
                 </div>
 
@@ -1529,14 +1529,14 @@ export function InstitutionAdminPage() {
                     type="button"
                     onClick={closePasswordModal}
                     disabled={passwordLoading}
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition-all duration-300 hover:border-red-500 hover:text-red-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-red-500 dark:hover:text-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
                   >
                     {t("cancel")}
                   </button>
                   <button
                     type="submit"
                     disabled={passwordLoading}
-                    className="flex-1 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-50"
+                    className="flex-1 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition-all duration-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:brightness-110 disabled:opacity-50 dark:from-cyan-500 dark:to-blue-600"
                   >
                     {passwordLoading ? t("saving") : t("confirmPasswordAction")}
                   </button>

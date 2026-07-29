@@ -1447,7 +1447,7 @@ export function V0FinancialDashboard() {
         <BrandLogo className="shrink-0" compact={headerCompact} />
         <div className={`flex shrink-0 items-center transition-all duration-300 ${headerCompact ? "gap-1.5 sm:gap-2" : "gap-2 sm:gap-3"}`}>
           <div
-            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 font-medium text-emerald-700 transition-all duration-300 dark:text-emerald-300 ${
+            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 font-medium text-cyan-700 transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:text-cyan-300 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >
