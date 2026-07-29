@@ -591,9 +591,20 @@ function PartnershipForm() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
 
+  const partnershipInputClass =
+    "h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400";
+
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    let next = value;
+    if (name === "contact_person") {
+      // Harf, boşluk ve Türkçe karakterler; sayı yok
+      next = value.replace(/[0-9]/g, "");
+    } else if (name === "phone") {
+      // Sadece rakam, +, boşluk, parantez
+      next = value.replace(/[^\d+\s()]/g, "");
+    }
+    setFormData((prev) => ({ ...prev, [name]: next }));
   };
 
   const handleSubmit = async (e) => {
@@ -659,7 +670,7 @@ function PartnershipForm() {
                   value={formData.institution_name}
                   onChange={handleChange}
                   required
-                  className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-teal-400/70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  className={partnershipInputClass}
                 />
               </div>
               <div className="flex flex-col gap-1">
@@ -670,8 +681,10 @@ function PartnershipForm() {
                   placeholder={t("contactPersonPlaceholder")}
                   value={formData.contact_person}
                   onChange={handleChange}
+                  inputMode="text"
+                  autoComplete="name"
                   required
-                  className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-teal-400/70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  className={partnershipInputClass}
                 />
               </div>
             </div>
@@ -685,7 +698,7 @@ function PartnershipForm() {
                   value={formData.email}
                   onChange={handleChange}
                   required
-                  className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-teal-400/70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  className={partnershipInputClass}
                 />
               </div>
               <div className="flex flex-col gap-1">
@@ -696,8 +709,10 @@ function PartnershipForm() {
                   placeholder={t("phonePlaceholder")}
                   value={formData.phone}
                   onChange={handleChange}
+                  inputMode="tel"
+                  autoComplete="tel"
                   required
-                  className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-teal-400/70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  className={partnershipInputClass}
                 />
               </div>
             </div>
@@ -709,13 +724,13 @@ function PartnershipForm() {
                 placeholder={t("messagePlaceholder")}
                 value={formData.message}
                 onChange={handleChange}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-400/70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-60"
+              className="rounded-lg border border-transparent bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:brightness-110 disabled:opacity-60"
             >
               {loading ? t("submitting") : t("submitApplication")}
             </button>
@@ -1851,13 +1866,13 @@ export function V0FinancialDashboard() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
             <input
               type="search"
               placeholder={t("searchBanks")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400"
             />
           </div>
 
@@ -1877,19 +1892,19 @@ export function V0FinancialDashboard() {
             role="switch"
             aria-checked={openNowOnly}
             onClick={() => setOpenNowOnly((v) => !v)}
-            className={`inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition ${
+            className={`inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-all duration-300 ${
               openNowOnly
-                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                : "border-slate-300 bg-white text-slate-600 hover:border-teal-500/40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                ? "border-cyan-400 bg-gradient-to-r from-cyan-500/15 to-indigo-500/20 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                : "border-slate-300 bg-white text-slate-600 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400"
             }`}
             title={t("openNow")}
           >
-            <Clock className="size-4 shrink-0" />
+            <Clock className={`size-4 shrink-0 transition-colors duration-300 ${openNowOnly ? "text-cyan-400" : ""}`} />
             <span className="whitespace-nowrap">{t("openNow")}</span>
             <span
-              className={`relative ml-1 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition ${
+              className={`relative ml-1 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-all duration-300 ${
                 openNowOnly
-                  ? "border-emerald-500/50 bg-emerald-500/80"
+                  ? "border-cyan-400/60 bg-gradient-to-r from-cyan-500 to-indigo-500 shadow-[0_0_10px_rgba(34,211,238,0.55)]"
                   : "border-slate-400 bg-slate-300 dark:border-slate-600 dark:bg-slate-700"
               }`}
             >
