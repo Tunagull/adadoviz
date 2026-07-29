@@ -362,8 +362,11 @@ export function BusinessDetailModal({ business, onClose }) {
                     {error}
                   </div>
                 ) : finalChartData.length === 0 ? (
-                  <div className="flex h-full min-h-[280px] items-center justify-center px-4 text-center text-sm text-slate-400">
-                    Bu aralık için henüz yeterli veri birikmemiş.
+                  <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-1 px-4 text-center text-sm text-slate-400">
+                    <span>Bu işletme için henüz yeterli veri birikmemiş.</span>
+                    <span className="text-xs text-slate-500">
+                      Kurlar kaydedildikçe grafik otomatik olarak oluşacaktır.
+                    </span>
                   </div>
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
