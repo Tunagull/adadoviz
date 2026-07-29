@@ -604,6 +604,34 @@ function getInstitutionsMetaById() {
   return map;
 }
 
+/** İşletme oluşturulma zamanı (ms). Yoksa null. */
+function getInstitutionCreatedAtMs(institutionId) {
+  const id = String(institutionId || "").trim().toLowerCase();
+  if (!id) return null;
+  const row = db
+    .prepare(
+      `SELECT created_at FROM institutions
+       WHERE lower(institution_id) = ? AND COALESCE(role, 'business') != 'superadmin'
+       LIMIT 1`
+    )
+    .get(id);
+  if (!row?.created_at) return null;
+  const ms = new Date(row.created_at).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** SQLite margin_history satırları (buy|sell) */
+function getMarginHistoryForInstitution(institutionId, currency, type) {
+  const id = String(institutionId || "").trim().toLowerCase();
+  return db
+    .prepare(
+      `SELECT margin_type, margin_value, recorded_at FROM margin_history
+       WHERE institution_id = ? AND currency = ? AND type = ?
+       ORDER BY recorded_at ASC`
+    )
+    .all(id, currency, type);
+}
+
 function createBusiness({
   username,
   password,
@@ -1716,6 +1744,8 @@ module.exports = {
   updateBranch,
   deleteBranch,
   getInstitutionsMetaById,
+  getInstitutionCreatedAtMs,
+  getMarginHistoryForInstitution,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,

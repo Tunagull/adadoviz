@@ -21,6 +21,8 @@ const {
   updateBranch,
   deleteBranch,
   getInstitutionsMetaById,
+  getInstitutionCreatedAtMs,
+  getMarginHistoryForInstitution,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,
@@ -51,6 +53,8 @@ const {
   insertHistoricalRate,
   getMarketHistoricalRates,
   getBusinessRateHistory: getSupabaseBusinessRateHistory,
+  insertMarginHistory,
+  fetchMarginHistory,
 } = require("./config/supabaseClient");
 
 const app = express();
@@ -1031,6 +1035,23 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
 
     upsertAdjustments(institution_id, adjustments);
 
+    // Kalıcı marj geçmişi → Supabase (Render ephemeral SQLite'a ek)
+    const nowIso = new Date().toISOString();
+    for (const [key, adj] of Object.entries(adjustments)) {
+      const [currency, type] = key.split("_");
+      if (!currency || !type) continue;
+      insertMarginHistory({
+        institution_id,
+        currency,
+        type,
+        margin_type: adj.margin_type,
+        margin_value: adj.margin_value,
+        recorded_at: nowIso,
+      }).catch((err) => {
+        console.warn("[SUPABASE] margin sync:", err.message);
+      });
+    }
+
     return res.json({
       ok: true,
       institution_id,
@@ -1158,40 +1179,55 @@ app.get("/api/business-rate-history", async (req, res) => {
       return res.status(400).json({ error: "Geçersiz para birimi." });
     }
 
-    // Calculate date range based on period
-    const endDate = new Date();
-    const startDate = new Date();
-    
-    const periodDays = {
-      "Saatlik": 1,
-      "Günlük": 7,
-      "Haftalık": 30,
-      "Aylık": 90,
-      "Yıllık": 365,
-    };
-    
-    startDate.setDate(startDate.getDate() - periodDays[period]);
+    const institutionId = institution_id.trim().toLowerCase();
 
-    // Fetch data from Supabase
+    // Yeni işletme: created_at'ten önceki MB geçmişi gösterilmez → grafik sıfırdan birikir
+    const inceptionMs = getInstitutionCreatedAtMs(institutionId);
+
+    // Marj geçmişi: önce Supabase, yoksa SQLite
+    let buyHistory = await fetchMarginHistory(institutionId, currency, "buy");
+    let sellHistory = await fetchMarginHistory(institutionId, currency, "sell");
+    if (!buyHistory.length) {
+      buyHistory = getMarginHistoryForInstitution(institutionId, currency, "buy");
+    }
+    if (!sellHistory.length) {
+      sellHistory = getMarginHistoryForInstitution(institutionId, currency, "sell");
+    }
+
+    const currentAdjustments = getAdjustmentsForInstitution(institutionId);
+
     const result = await getSupabaseBusinessRateHistory(
-      parseInt(institution_id),
+      institutionId,
       currency,
-      startDate,
-      endDate
+      period,
+      {
+        inceptionMs: inceptionMs || 0,
+        buyHistory,
+        sellHistory,
+        currentBuyAdj: currentAdjustments[`${currency}_buy`],
+        currentSellAdj: currentAdjustments[`${currency}_sell`],
+      }
     );
 
+    const rates = result.rows || [];
+
     return res.json({
-      institution_id,
+      institution_id: institutionId,
       period,
       currency,
-      count: result.length,
-      rows: result,
-      message: result.length === 0
-        ? "Henüz yeterli veri biriktirilmemiş."
-        : undefined,
+      count: rates.length,
+      // Frontend BusinessDetailModal `rates` bekler
+      rates,
+      rows: rates,
+      message:
+        rates.length === 0
+          ? "Bu işletme için henüz yeterli veri birikmemiş. Kurlar kaydedildikçe grafik oluşacaktır."
+          : undefined,
       meta: {
-        hasAnyData: result.length > 0,
-        requestedSpanDays: periodDays[period],
+        hasAnyData: rates.length > 0,
+        requestedSpanDays: result.requestedSpanDays,
+        inceptionMs: inceptionMs || null,
+        source: "supabase",
       },
     });
   } catch (error) {

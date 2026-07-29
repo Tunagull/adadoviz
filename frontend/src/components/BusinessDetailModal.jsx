@@ -150,7 +150,13 @@ export function BusinessDetailModal({ business, onClose }) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (cancelled) return;
-        setChartRows(Array.isArray(data.rates) ? data.rates : []);
+        // Backend `rates` döner; eski `rows` yanıtına da tolerans
+        const rows = Array.isArray(data.rates)
+          ? data.rates
+          : Array.isArray(data.rows)
+            ? data.rows
+            : [];
+        setChartRows(rows);
       } catch (err) {
         console.error("[BusinessDetailModal] Business rate history:", err);
         if (!cancelled) {

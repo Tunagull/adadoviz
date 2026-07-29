@@ -165,84 +165,215 @@ async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
   };
 }
 
+function lastRowAtOrBefore(sortedRows, tsMs, tsKey = "recorded_at") {
+  let result = null;
+  for (const row of sortedRows) {
+    const rowMs = new Date(row[tsKey]).getTime();
+    if (rowMs <= tsMs) result = row;
+    else break;
+  }
+  return result;
+}
+
+function mbRateValueAt(sortedMbRows, tsMs) {
+  const found = lastRowAtOrBefore(sortedMbRows, tsMs);
+  if (found) return found;
+  return sortedMbRows.length > 0 ? sortedMbRows[0] : null;
+}
+
+function marginValueAt(sortedHistoryRows, currentAdjustment, tsMs) {
+  const found = lastRowAtOrBefore(sortedHistoryRows, tsMs);
+  if (found) {
+    return {
+      margin_type: found.margin_type === "percent" ? "percent" : "fixed",
+      margin_value: Number(found.margin_value) || 0,
+    };
+  }
+  if (sortedHistoryRows.length > 0) {
+    const first = sortedHistoryRows[0];
+    return {
+      margin_type: first.margin_type === "percent" ? "percent" : "fixed",
+      margin_value: Number(first.margin_value) || 0,
+    };
+  }
+  return {
+    margin_type: currentAdjustment?.margin_type === "percent" ? "percent" : "fixed",
+    margin_value: Math.max(0, Number(currentAdjustment?.margin_value) || 0),
+  };
+}
+
+function applyMarginToRate(rawRate, marginType, marginValue) {
+  const base = Number(rawRate);
+  const m = Math.max(0, Number(marginValue) || 0);
+  if (!Number.isFinite(base)) return null;
+  if (marginType === "percent") return base + (base * m) / 100;
+  return base + m;
+}
+
 /**
- * İşletme detay grafiği — MB + marj birleşik seri
+ * İşletme detay grafiği — Supabase MB kurları + işletme marj geçmişi.
+ *
+ * Yeni işletmeler: extras.inceptionMs ile geçmiş kesilir; o tarihten itibaren
+ * MB değişimleri biriktikçe grafik yavaş yavaş dolmaya başlar.
+ *
+ * @param {string} institutionId - slug (örn. "akbank"), ASLA parseInt etme
+ * @param {string} currency
+ * @param {string} period - Saatlik|Günlük|...
+ * @param {object} extras
+ * @param {number} [extras.inceptionMs] - işletme oluşturulma zamanı
+ * @param {Array} [extras.buyHistory]
+ * @param {Array} [extras.sellHistory]
+ * @param {object} [extras.currentBuyAdj]
+ * @param {object} [extras.currentSellAdj]
  */
-async function getBusinessRateHistory(institutionId, currency, startDate, endDate) {
-  const mbRates = await fetchAllPages((from, to) =>
+async function getBusinessRateHistory(institutionId, currency, period, extras = {}) {
+  const hoursBack = PERIOD_HOURS[period] || PERIOD_HOURS.Günlük;
+  const nowMs = Date.now();
+  const windowStartMs = nowMs - hoursBack * 60 * 60 * 1000;
+  const inceptionMs = Number(extras.inceptionMs) || 0;
+  // Yeni işletme: sadece oluşturulduktan sonraki veriler
+  const effectiveStartMs = Math.max(windowStartMs, inceptionMs);
+
+  // MB kurları: carry-forward için effectiveStart'tan biraz öncesini de al
+  const fetchFromIso = new Date(
+    Math.max(0, effectiveStartMs - 7 * 24 * 60 * 60 * 1000)
+  ).toISOString();
+
+  const allMbRows = await fetchAllPages((from, to) =>
     supabase
       .from("historical_rates")
-      .select("*")
+      .select("buy_rate, sell_rate, recorded_at")
       .eq("currency", currency)
-      .gte("recorded_at", startDate.toISOString())
-      .lte("recorded_at", endDate.toISOString())
+      .gte("recorded_at", fetchFromIso)
       .order("recorded_at", { ascending: true })
       .range(from, to)
   );
 
-  let margins = [];
-  try {
-    margins = await fetchAllPages((from, to) =>
-      supabase
-        .from("margin_history")
-        .select("*")
-        .eq("institution_id", institutionId)
-        .eq("currency", currency)
-        .gte("recorded_at", startDate.toISOString())
-        .lte("recorded_at", endDate.toISOString())
-        .order("recorded_at", { ascending: true })
-        .range(from, to)
-    );
-  } catch (err) {
-    // margin_history yoksa veya boşsa sadece MB kurları ile devam
-    console.warn("[Supabase] margin_history okunamadı:", err.message);
-    margins = [];
+  if (!allMbRows.length) {
+    return {
+      rows: [],
+      hasAnyData: false,
+      requestedSpanDays: Math.floor(hoursBack / 24),
+      meta: { institutionId, effectiveStartMs, source: "supabase" },
+    };
   }
 
-  const combinedData = [];
-  let currentMarginBuy = { type: "fixed", value: 0 };
-  let currentMarginSell = { type: "fixed", value: 0 };
-  let marginIdx = 0;
+  const buyHistory = Array.isArray(extras.buyHistory) ? extras.buyHistory : [];
+  const sellHistory = Array.isArray(extras.sellHistory) ? extras.sellHistory : [];
 
-  for (const rate of mbRates) {
-    const rateTime = new Date(rate.recorded_at).getTime();
-
-    while (
-      marginIdx < margins.length &&
-      new Date(margins[marginIdx].recorded_at).getTime() <= rateTime
-    ) {
-      const margin = margins[marginIdx];
-      const typeVal = margin.margin_type_value || margin.margin_type || "fixed";
-      const side = margin.margin_type || margin.type;
-      if (side === "buy") {
-        currentMarginBuy = { type: typeVal, value: Number(margin.margin_value) || 0 };
-      } else {
-        currentMarginSell = { type: typeVal, value: Number(margin.margin_value) || 0 };
-      }
-      marginIdx += 1;
+  const eventTimestamps = new Set([effectiveStartMs, nowMs]);
+  for (const row of allMbRows) {
+    const t = new Date(row.recorded_at).getTime();
+    if (Number.isFinite(t) && t >= effectiveStartMs && t <= nowMs) {
+      eventTimestamps.add(t);
     }
+  }
+  for (const row of buyHistory) {
+    const t = new Date(row.recorded_at).getTime();
+    if (Number.isFinite(t) && t >= effectiveStartMs && t <= nowMs) {
+      eventTimestamps.add(t);
+    }
+  }
+  for (const row of sellHistory) {
+    const t = new Date(row.recorded_at).getTime();
+    if (Number.isFinite(t) && t >= effectiveStartMs && t <= nowMs) {
+      eventTimestamps.add(t);
+    }
+  }
 
-    combinedData.push({
-      timeMs: rateTime,
-      recorded_at: rate.recorded_at,
-      buy_rate: Number(rate.buy_rate),
-      sell_rate: Number(rate.sell_rate),
-      final_buy: applyMargin(rate.buy_rate, currentMarginBuy),
-      final_sell: applyMargin(rate.sell_rate, currentMarginSell),
+  const sortedTimestamps = Array.from(eventTimestamps).sort((a, b) => a - b);
+  const rows = [];
+
+  for (const tsMs of sortedTimestamps) {
+    const mbRow = mbRateValueAt(allMbRows, tsMs);
+    if (!mbRow) continue;
+    const buyRate = Number(mbRow.buy_rate);
+    const sellRate = Number(mbRow.sell_rate);
+    if (!(buyRate > 0) || !(sellRate > 0)) continue;
+
+    const buyMargin = marginValueAt(buyHistory, extras.currentBuyAdj, tsMs);
+    const sellMargin = marginValueAt(sellHistory, extras.currentSellAdj, tsMs);
+    const finalBuy = applyMarginToRate(
+      buyRate,
+      buyMargin.margin_type,
+      buyMargin.margin_value
+    );
+    const finalSell = applyMarginToRate(
+      sellRate,
+      sellMargin.margin_type,
+      sellMargin.margin_value
+    );
+    if (finalBuy == null || finalSell == null) continue;
+
+    rows.push({
+      recorded_at: new Date(tsMs).toISOString(),
+      timeMs: tsMs,
+      buy_rate: buyRate,
+      sell_rate: sellRate,
+      margin_buy_type: buyMargin.margin_type,
+      margin_buy_value: buyMargin.margin_value,
+      margin_sell_type: sellMargin.margin_type,
+      margin_sell_value: sellMargin.margin_value,
+      final_buy: Math.round(finalBuy * 10000) / 10000,
+      final_sell: Math.round(finalSell * 10000) / 10000,
     });
   }
 
-  return combinedData;
+  console.log(
+    `[SUPABASE] business-rate ${institutionId}/${currency}/${period}: ${rows.length} nokta (inception=${inceptionMs || "yok"})`
+  );
+
+  return {
+    rows,
+    hasAnyData: rows.length > 0,
+    requestedSpanDays: Math.floor(hoursBack / 24),
+    meta: { institutionId, effectiveStartMs, source: "supabase" },
+  };
 }
 
-function applyMargin(baseRate, margin) {
-  if (!margin || baseRate == null) return Number(baseRate) || 0;
-  const base = Number(baseRate);
-  const value = Number(margin.value) || 0;
-  if (margin.type === "percent") {
-    return base + (base * value) / 100;
+/** Marj değişimini Supabase margin_history'ye yaz (kalıcı birikim) */
+async function insertMarginHistory(entry) {
+  const { error } = await supabase.from("margin_history").insert([
+    {
+      institution_id: String(entry.institution_id),
+      currency: entry.currency,
+      margin_type: entry.type, // buy | sell
+      margin_type_value: entry.margin_type || "fixed",
+      margin_value: Number(entry.margin_value) || 0,
+      recorded_at: entry.recorded_at || new Date().toISOString(),
+    },
+  ]);
+
+  if (error) {
+    // Tablo yoksa sessizce geç — SQLite yedek olarak kalır
+    console.warn("[Supabase] margin_history insert:", error.message);
+    return false;
   }
-  return base + value;
+  return true;
+}
+
+/** Supabase'den işletme marj geçmişini oku */
+async function fetchMarginHistory(institutionId, currency, type) {
+  try {
+    const data = await fetchAllPages((from, to) =>
+      supabase
+        .from("margin_history")
+        .select("margin_type_value, margin_value, recorded_at, margin_type")
+        .eq("institution_id", String(institutionId))
+        .eq("currency", currency)
+        .eq("margin_type", type)
+        .order("recorded_at", { ascending: true })
+        .range(from, to)
+    );
+    return (data || []).map((row) => ({
+      margin_type: row.margin_type_value || "fixed",
+      margin_value: Number(row.margin_value) || 0,
+      recorded_at: row.recorded_at,
+    }));
+  } catch (err) {
+    console.warn("[Supabase] margin_history fetch:", err.message);
+    return [];
+  }
 }
 
 module.exports = {
@@ -250,4 +381,6 @@ module.exports = {
   insertHistoricalRate,
   getMarketHistoricalRates,
   getBusinessRateHistory,
+  insertMarginHistory,
+  fetchMarginHistory,
 };
