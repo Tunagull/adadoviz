@@ -473,10 +473,10 @@ export function BusinessDetailModal({ business, onClose }) {
                           <button
                             type="button"
                             onClick={() => setSelectedBranch(branch)}
-                            className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-medium transition-all duration-300 ${
+                            className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-all duration-300 ${
                               selected
-                                ? "border-emerald-500 bg-emerald-500/20 text-emerald-100"
-                                : "border-slate-300 bg-white/5 text-slate-300 hover:border-cyan-400 hover:text-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-600 dark:hover:border-cyan-400"
+                                ? "border-cyan-400 text-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] bg-slate-950/60"
+                                : "border-white/10 bg-slate-950/60 text-slate-200 hover:border-cyan-400 hover:text-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                             }`}
                           >
                             {branch.name}

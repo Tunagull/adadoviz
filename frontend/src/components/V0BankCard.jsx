@@ -108,16 +108,18 @@ export function V0BankCard({ bank, mode, liveRates, onSelect }) {
   }, [liveRates, mode, bank.institutionId]);
 
   // ✅ ADIM 3: Tailwind Flash Effect - Dinamik sınıflar + Smooth Fade
+  // Hover glow = Admin Paneli butonuyla birebir aynı:
+  // hover:border-cyan-400 + hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]
   const getCardClasses = () => {
     const baseClasses =
-      "overflow-hidden rounded-2xl backdrop-blur-lg transition-all duration-700 ease-out hover:-translate-y-1 cursor-pointer";
+      "group overflow-hidden rounded-2xl backdrop-blur-lg transition-all duration-300 cursor-pointer";
 
     if (flashColor === "green") {
       return `${baseClasses} border-emerald-500/80 bg-emerald-500/20 shadow-lg shadow-emerald-500/30 border`;
     } else if (flashColor === "red") {
       return `${baseClasses} border-rose-500/80 bg-rose-500/20 shadow-lg shadow-rose-500/30 border`;
     } else {
-      return `${baseClasses} border border-slate-200 bg-white/90 shadow-xl hover:border-teal-500/40 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-teal-500/30`;
+      return `${baseClasses} border border-slate-200 bg-white/90 shadow-xl dark:border-white/10 dark:bg-slate-900/60 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]`;
     }
   };
 
@@ -145,7 +147,7 @@ export function V0BankCard({ bank, mode, liveRates, onSelect }) {
       tabIndex={0}
       aria-label={`${displayName || bank.name} analizini aç`}
     >
-      <div className="group flex items-center gap-3 px-1 pb-4">
+      <div className="flex items-center gap-3 px-1 pb-4">
         <img
           src={
             bank.logo_url ||
@@ -156,12 +158,12 @@ export function V0BankCard({ bank, mode, liveRates, onSelect }) {
         />
         <div className="flex items-center gap-2 min-w-0">
           <h3
-            className={`text-base font-semibold leading-tight transition-colors duration-700 ease-out truncate ${
+            className={`text-base font-semibold leading-tight transition-all duration-300 truncate ${
               flashColor === "green"
-                ? "text-emerald-700 group-hover:text-emerald-600 dark:text-emerald-200 dark:group-hover:text-emerald-300"
+                ? "text-emerald-700 dark:text-emerald-200"
                 : flashColor === "red"
-                  ? "text-rose-700 group-hover:text-rose-600 dark:text-rose-200 dark:group-hover:text-rose-300"
-                  : "text-slate-800 group-hover:text-teal-700 dark:text-slate-100 dark:group-hover:text-teal-300"
+                  ? "text-rose-700 dark:text-rose-200"
+                  : "text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400"
             }`}
           >
             {displayName || bank.name}
