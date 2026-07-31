@@ -25,6 +25,12 @@ const {
   createBranch,
   updateBranch,
   deleteBranch,
+  createBranchRequest,
+  listBranchRequests,
+  countUnreadBranchRequests,
+  markBranchRequestsRead,
+  getBranchRequestById,
+  updateBranchRequestStatus,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -343,6 +349,7 @@ app.get("/api/kurlar", (_req, res) => {
           subscription_type: biz.subscription_type || null,
           subscription_end_date: biz.subscription_end_date || null,
           logo_url: biz.logo_url || null,
+          working_hours: biz.working_hours || null,
           is_active: true,
         };
       });
@@ -715,6 +722,154 @@ app.put("/api/business/profile", requireAuth, async (req, res) => {
   }
 });
 
+/** İşletme kendi şubelerini listeler */
+app.get("/api/business/branches", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    return res.json({ branches: listBranchesByBusiness(full.id) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Şubeler alınamadı." });
+  }
+});
+
+/** İşletme kendi şubesinin telefon/whatsapp/konum bilgisini günceller */
+app.put("/api/business/branches/:id", requireAuth, async (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "Geçersiz şube ID." });
+    }
+
+    const existing = listBranchesByBusiness(full.id).find((b) => b.id === id);
+    if (!existing) {
+      return res.status(404).json({ error: "Şube bulunamadı veya bu işletmeye ait değil." });
+    }
+
+    const branch = updateBranch(id, {
+      name: req.body?.name !== undefined ? req.body.name : existing.name,
+      phone: req.body?.phone !== undefined ? req.body.phone : existing.phone,
+      whatsapp: req.body?.whatsapp !== undefined ? req.body.whatsapp : existing.whatsapp,
+      address: req.body?.address !== undefined ? req.body.address : existing.address,
+      lat: req.body?.lat !== undefined ? req.body.lat : existing.lat,
+      lng: req.body?.lng !== undefined ? req.body.lng : existing.lng,
+    });
+    await syncBranchUpsert(branch, full.institution_id);
+    return res.json({ branch });
+  } catch (err) {
+    const status = err.message === "Şube bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Şube güncellenemedi." });
+  }
+});
+
+/** İşletme yeni şube talebi oluşturur */
+app.post("/api/business/branch-requests", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+
+    const request = createBranchRequest({
+      business_id: full.id,
+      institution_id: full.institution_id,
+      business_name: full.institution_name,
+      branch_name: req.body?.branch_name || req.body?.name,
+      phone: req.body?.phone,
+      address: req.body?.address,
+      lat: req.body?.lat,
+      lng: req.body?.lng,
+    });
+    return res.status(201).json({ request });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Talep oluşturulamadı." });
+  }
+});
+
+/** Super Admin: şube talepleri */
+app.get("/api/admin/branch-requests", requireSuperAdmin, (req, res) => {
+  try {
+    const status = req.query?.status || undefined;
+    return res.json({
+      requests: listBranchRequests({ status }),
+      unread: countUnreadBranchRequests(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Talepler alınamadı." });
+  }
+});
+
+app.get("/api/admin/branch-requests/unread-count", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({ unread: countUnreadBranchRequests() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Bildirim sayısı alınamadı." });
+  }
+});
+
+app.post("/api/admin/branch-requests/mark-read", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json(markBranchRequestsRead());
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Okundu işaretlenemedi." });
+  }
+});
+
+app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "Geçersiz talep ID." });
+    }
+
+    const existing = getBranchRequestById(id);
+    if (!existing) return res.status(404).json({ error: "Talep bulunamadı." });
+
+    const nextStatus = String(req.body?.status || "").trim();
+    let createdBranch = null;
+
+    if (nextStatus === "approved") {
+      createdBranch = createBranch({
+        business_id: existing.business_id,
+        name: existing.branch_name,
+        phone: existing.phone,
+        address: existing.address,
+        lat: existing.lat,
+        lng: existing.lng,
+      });
+      const biz = getInstitutionFullById(existing.business_id);
+      if (biz) await syncBranchUpsert(createdBranch, biz.institution_id);
+    }
+
+    const request = updateBranchRequestStatus(id, {
+      status: nextStatus,
+      admin_note: req.body?.admin_note,
+    });
+
+    return res.json({ request, branch: createdBranch });
+  } catch (err) {
+    const status =
+      err.statusCode ||
+      (err.message === "Talep bulunamadı." || err.message === "İşletme bulunamadı."
+        ? 404
+        : 400);
+    return res.status(status).json({
+      error: err.message || "Talep güncellenemedi.",
+      code: err.code || undefined,
+    });
+  }
+});
+
 app.get("/api/admin/businesses", requireSuperAdmin, (_req, res) => {
   try {
     return res.json({ businesses: listBusinesses() });
@@ -737,14 +892,10 @@ app.post("/api/admin/businesses", requireSuperAdmin, (req, res) => {
       password: req.body?.password,
       institution_name: req.body?.institution_name,
       subscription_type: req.body?.subscription_type || "Test",
-      remaining_days:
-        req.body?.remaining_days != null
-          ? req.body.remaining_days
-          : req.body?.subscription_type === "Test" || !req.body?.subscription_type
-            ? 14
-            : undefined,
+      remaining_days: req.body?.remaining_days,
       is_active: isActive,
       logo_url: req.body?.logo_url,
+      branch_limit: req.body?.branch_limit,
     });
     const full = getInstitutionFullById(business.id);
     if (full) syncInstitutionUpsert(full);
@@ -768,6 +919,7 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
       remaining_days: req.body?.remaining_days,
       is_active: req.body?.is_active,
       logo_url: req.body?.logo_url,
+      branch_limit: req.body?.branch_limit,
     });
     const full = getInstitutionFullById(id);
     if (full) syncInstitutionUpsert(full);
@@ -980,16 +1132,26 @@ app.post("/api/admin/branches", requireSuperAdmin, (req, res) => {
       business_id: req.body?.business_id,
       name: req.body?.name,
       phone: req.body?.phone,
+      whatsapp: req.body?.whatsapp,
       address: req.body?.address,
       lat: req.body?.lat,
       lng: req.body?.lng,
+      subscription_type: req.body?.subscription_type,
+      subscription_start_date: req.body?.subscription_start_date,
+      subscription_end_date: req.body?.subscription_end_date,
+      remaining_days: req.body?.remaining_days,
     });
     const biz = getInstitutionFullById(branch.business_id);
     if (biz) syncBranchUpsert(branch, biz.institution_id);
     return res.status(201).json({ branch });
   } catch (err) {
-    const status = err.message === "İşletme bulunamadı." ? 404 : 400;
-    return res.status(status).json({ error: err.message || "Şube oluşturulamadı." });
+    const status =
+      err.statusCode ||
+      (err.message === "İşletme bulunamadı." ? 404 : 400);
+    return res.status(status).json({
+      error: err.message || "Şube oluşturulamadı.",
+      code: err.code || undefined,
+    });
   }
 });
 
@@ -1002,9 +1164,14 @@ app.put("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
     const branch = updateBranch(id, {
       name: req.body?.name,
       phone: req.body?.phone,
+      whatsapp: req.body?.whatsapp,
       address: req.body?.address,
       lat: req.body?.lat,
       lng: req.body?.lng,
+      subscription_type: req.body?.subscription_type,
+      subscription_start_date: req.body?.subscription_start_date,
+      subscription_end_date: req.body?.subscription_end_date,
+      remaining_days: req.body?.remaining_days,
     });
     const biz = getInstitutionFullById(branch.business_id);
     if (biz) syncBranchUpsert(branch, biz.institution_id);

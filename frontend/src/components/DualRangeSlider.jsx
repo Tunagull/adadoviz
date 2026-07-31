@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from "react";
  * Props:
  *   - min: minimum value (0)
  *   - max: maximum value (1440)
- *   - step: adım (30)
+ *   - step: adım (15)
  *   - minValue: mevcut minimum (dakika)
  *   - maxValue: mevcut maximum (dakika)
  *   - onRangeChange: (min, max) callback
@@ -14,7 +14,7 @@ import { useState, useRef, useEffect } from "react";
 export function DualRangeSlider({
   min = 0,
   max = 1440,
-  step = 30,
+  step = 15,
   minValue = 480,
   maxValue = 1020,
   onRangeChange = () => {},

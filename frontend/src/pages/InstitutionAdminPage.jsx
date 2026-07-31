@@ -1,14 +1,56 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone } from "lucide-react";
+import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus } from "lucide-react";
 import Cropper from "react-easy-crop";
+import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
+import L from "leaflet";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
-import { fetchAdminRates, saveAdminRates, changeBusinessPassword, fetchBusinessProfile, updateBusinessProfile } from "../lib/auth";
+import { fetchAdminRates, saveAdminRates, changeBusinessPassword, fetchBusinessProfile, updateBusinessProfile, fetchBusinessBranches, updateBusinessBranch, createBusinessBranchRequest } from "../lib/auth";
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
 import { DualRangeSlider } from "../components/DualRangeSlider";
 import { SearchableSelect } from "../components/SearchableSelect";
+import "leaflet/dist/leaflet.css";
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
+
+const KKTC_MAP_CENTER = [35.2281, 33.5136];
+
+function BranchMapClickHandler({ onPick, disabled }) {
+  useMapEvents({
+    click(event) {
+      if (disabled) return;
+      onPick(event.latlng.lat, event.latlng.lng);
+    },
+  });
+  return null;
+}
+
+async function reverseGeocodeAddress(lat, lng) {
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+    { headers: { Accept: "application/json" } }
+  );
+  if (!response.ok) throw new Error("Adres servisi yanıt vermedi.");
+  const data = await response.json();
+  if (!data?.address) {
+    return data?.display_name || "";
+  }
+  const { road, suburb, neighbourhood, city, town, village } = data.address;
+  const formatted = [road || "", suburb || neighbourhood || "", city || town || village || ""]
+    .filter(Boolean)
+    .join(", ");
+  return formatted || data.display_name || "";
+}
 
 // Granüler 6-kalem yapısı
 const MARGIN_ITEMS = [
@@ -58,6 +100,37 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatDateShort(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("tr-TR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+}
+
+function branchRemainingDays(branch) {
+  if (!branch || branch.subscription_type === "Test") return null;
+  if (branch.days_remaining != null && Number.isFinite(Number(branch.days_remaining))) {
+    return Number(branch.days_remaining);
+  }
+  if (!branch.subscription_end_date) return null;
+  const end = new Date(branch.subscription_end_date).getTime();
+  if (!Number.isFinite(end)) return null;
+  return Math.ceil((end - Date.now()) / (24 * 60 * 60 * 1000));
+}
+
+function formatBranchRemainingLabel(branch, t) {
+  if (!branch) return "—";
+  if (branch.subscription_type === "Test") return t("unlimitedSubscription");
+  const days = branchRemainingDays(branch);
+  if (days == null) return "—";
+  if (days <= 0) return t("subscriptionExpired");
+  return `${days} ${t("daysUnit")}`;
 }
 
 function applyGranularMargin(kur, marginType, marginValue) {
@@ -127,11 +200,37 @@ export function InstitutionAdminPage() {
   
   // ✅ İşletme Bilgileri Modal
   const [showInfoModal, setShowInfoModal] = useState(false);
-  const [currentBusinessPhone, setCurrentBusinessPhone] = useState("—");
   const [profileLogoUrl, setProfileLogoUrl] = useState(null);
-  const [infoStep, setInfoStep] = useState(0); // 0: kapalı, 1: telefon, 2: onay, 3: kod
-  const [rawPhone, setRawPhone] = useState(""); // Sadece rakamlar: "5051234567"
-  const [verificationCode, setVerificationCode] = useState("");
+  const [businessBranches, setBusinessBranches] = useState([]);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [rawBranchPhone, setRawBranchPhone] = useState("5");
+  const [rawWhatsappPhone, setRawWhatsappPhone] = useState("5");
+  const branchPhoneFormattedRef = useRef("0(5");
+  const whatsappPhoneFormattedRef = useRef("0(5");
+  const branchPhoneInputRef = useRef(null);
+  const whatsappPhoneInputRef = useRef(null);
+  const [branchAddress, setBranchAddress] = useState("");
+  const [branchLat, setBranchLat] = useState(null);
+  const [branchLng, setBranchLng] = useState(null);
+  const [branchName, setBranchName] = useState("");
+  const [locationGeocoding, setLocationGeocoding] = useState(false);
+  const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(false);
+  const [subscriptionBranches, setSubscriptionBranches] = useState([]);
+  const [subscriptionPanelLoading, setSubscriptionPanelLoading] = useState(false);
+  const subscriptionPanelRef = useRef(null);
+  const [showBranchRequestModal, setShowBranchRequestModal] = useState(false);
+  const [showBranchRequestConfirm, setShowBranchRequestConfirm] = useState(false);
+  const [branchRequestLoading, setBranchRequestLoading] = useState(false);
+  const [branchRequestError, setBranchRequestError] = useState("");
+  const [branchRequestSuccess, setBranchRequestSuccess] = useState("");
+  const [branchRequestGeocoding, setBranchRequestGeocoding] = useState(false);
+  const [branchRequestForm, setBranchRequestForm] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    lat: null,
+    lng: null,
+  });
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState("");
   const [infoSuccess, setInfoSuccess] = useState("");
@@ -186,7 +285,6 @@ export function InstitutionAdminPage() {
       try {
         const profile = await fetchBusinessProfile(auth.token);
         if (!mounted || !profile) return;
-        if (profile.phone) setCurrentBusinessPhone(profile.phone);
         if (profile.logo_url) setProfileLogoUrl(profile.logo_url);
         if (profile.working_hours && typeof profile.working_hours === "object") {
           setBusinessHours((prev) => ({ ...prev, ...profile.working_hours }));
@@ -306,14 +404,162 @@ export function InstitutionAdminPage() {
   };
 
   const kalanAbonelikSuresi = useMemo(() => {
+    if (auth?.subscription_type === "Test") return null;
     const end = auth?.subscription_end_date
       ? new Date(auth.subscription_end_date).getTime()
       : null;
     if (!end || !Number.isFinite(end)) return null;
     return Math.ceil((end - Date.now()) / (24 * 60 * 60 * 1000));
-  }, [auth?.subscription_end_date]);
+  }, [auth?.subscription_end_date, auth?.subscription_type]);
 
-  const isExpired = kalanAbonelikSuresi != null && kalanAbonelikSuresi <= 0;
+  const isExpired =
+    auth?.subscription_type !== "Test" &&
+    kalanAbonelikSuresi != null &&
+    kalanAbonelikSuresi <= 0;
+
+  const subscriptionWarningDays = useMemo(() => {
+    let min = Infinity;
+    for (const branch of subscriptionBranches) {
+      const days = branchRemainingDays(branch);
+      if (days == null) continue;
+      if (days < 14) min = Math.min(min, days);
+    }
+    if (min === Infinity) return null;
+    return Math.max(0, min);
+  }, [subscriptionBranches]);
+
+  useEffect(() => {
+    if (bootstrapping || !auth?.token) return;
+    let mounted = true;
+    (async () => {
+      try {
+        const rows = await fetchBusinessBranches(auth.token);
+        if (mounted) setSubscriptionBranches(rows);
+      } catch (err) {
+        console.warn("[BRANCH-SUB] Şubeler yüklenemedi:", err.message);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [bootstrapping, auth?.token]);
+
+  const toggleSubscriptionPanel = async () => {
+    const next = !showSubscriptionPanel;
+    setShowSubscriptionPanel(next);
+    if (!next || !auth?.token) return;
+    setSubscriptionPanelLoading(true);
+    try {
+      const rows = await fetchBusinessBranches(auth.token);
+      setSubscriptionBranches(rows);
+    } catch (err) {
+      console.warn("[SUBSCRIPTION-PANEL] Şubeler yüklenemedi:", err.message);
+      setSubscriptionBranches([]);
+    } finally {
+      setSubscriptionPanelLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!showSubscriptionPanel) return undefined;
+    const onDocClick = (event) => {
+      if (!subscriptionPanelRef.current) return;
+      if (!subscriptionPanelRef.current.contains(event.target)) {
+        setShowSubscriptionPanel(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [showSubscriptionPanel]);
+
+  const resetBranchRequestForm = () => {
+    setBranchRequestForm({ name: "", phone: "", address: "", lat: null, lng: null });
+    setBranchRequestError("");
+    setBranchRequestSuccess("");
+    setBranchRequestGeocoding(false);
+    setShowBranchRequestConfirm(false);
+  };
+
+  const openBranchRequestModal = () => {
+    resetBranchRequestForm();
+    setShowSubscriptionPanel(false);
+    setShowBranchRequestModal(true);
+  };
+
+  const closeBranchRequestModal = () => {
+    if (branchRequestLoading) return;
+    setShowBranchRequestModal(false);
+    resetBranchRequestForm();
+  };
+
+  const handleBranchRequestMapPick = async (lat, lng) => {
+    if (branchRequestLoading) return;
+    setBranchRequestForm((prev) => ({ ...prev, lat, lng }));
+    setBranchRequestGeocoding(true);
+    try {
+      const address = await reverseGeocodeAddress(lat, lng);
+      setBranchRequestForm((prev) => ({ ...prev, address, lat, lng }));
+    } catch {
+      // manuel adres
+    } finally {
+      setBranchRequestGeocoding(false);
+    }
+  };
+
+  const handleBranchRequestSubmitClick = () => {
+    setBranchRequestError("");
+    const name = String(branchRequestForm.name || "").trim();
+    const phone = String(branchRequestForm.phone || "").trim();
+    const address = String(branchRequestForm.address || "").trim();
+    if (!name) {
+      setBranchRequestError("Şube adı zorunludur.");
+      return;
+    }
+    if (!phone) {
+      setBranchRequestError("Telefon numarası zorunludur.");
+      return;
+    }
+    if (!address) {
+      setBranchRequestError("Adres zorunludur.");
+      return;
+    }
+    if (
+      branchRequestForm.lat == null ||
+      branchRequestForm.lng == null ||
+      !Number.isFinite(Number(branchRequestForm.lat)) ||
+      !Number.isFinite(Number(branchRequestForm.lng))
+    ) {
+      setBranchRequestError("Haritadan konum seçilmesi zorunludur.");
+      return;
+    }
+    setShowBranchRequestConfirm(true);
+  };
+
+  const handleBranchRequestConfirm = async () => {
+    if (!auth?.token) return;
+    setBranchRequestLoading(true);
+    setBranchRequestError("");
+    try {
+      await createBusinessBranchRequest(auth.token, {
+        branch_name: String(branchRequestForm.name || "").trim(),
+        phone: String(branchRequestForm.phone || "").trim(),
+        address: String(branchRequestForm.address || "").trim(),
+        lat: branchRequestForm.lat,
+        lng: branchRequestForm.lng,
+      });
+      setShowBranchRequestConfirm(false);
+      setBranchRequestSuccess(t("newBranchRequestSuccess"));
+      setTimeout(() => {
+        setShowBranchRequestModal(false);
+        resetBranchRequestForm();
+      }, 1200);
+    } catch (err) {
+      setShowBranchRequestConfirm(false);
+      setBranchRequestError(err.message || "Talep oluşturulamadı.");
+    } finally {
+      setBranchRequestLoading(false);
+    }
+  };
 
   const handleSave = async (event) => {
     event.preventDefault();
@@ -526,29 +772,36 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ Telefon Formatı Yardımcı (Kusursuz Masking Algoritması)
+  // Tam maske (placeholder ghost) — input değeri X içermez, altta gri olarak kalır
+  const PHONE_MASK_TEMPLATE = "0(5XX) XXX XXXX";
+
+  // ✅ Telefon Formatı: +90 0(5XX) XXX XXXX — ilk hane her zaman 5, minimum görünen "0(5"
   const formatPhoneDisplay = (rawDigits) => {
-    // rawDigits: "5051234567" gibi sadece rakamlar
-    // Template: "(XXX) XXX XXXX"
-    // Output: Her X'i sırasıyla rakamla değiştir
-    let template = "(XXX) XXX XXXX";
-    let digitIndex = 0;
-    
-    let result = "";
-    for (let i = 0; i < template.length; i++) {
-      if (template[i] === "X") {
-        if (digitIndex < rawDigits.length) {
-          result += rawDigits[digitIndex];
-          digitIndex++;
-        } else {
-          result += "X";
-        }
-      } else {
-        result += template[i];
-      }
-    }
-    
-    return result;
+    let d = String(rawDigits || "").replace(/\D/g, "").slice(0, 10);
+    if (!d.startsWith("5")) d = `5${d.replace(/^5*/, "")}`.slice(0, 10);
+    if (!d) d = "5";
+    let out = "0(";
+    out += d.slice(0, Math.min(3, d.length));
+    if (d.length >= 3) out += ")";
+    if (d.length > 3) out += ` ${d.slice(3, Math.min(6, d.length))}`;
+    if (d.length > 6) out += ` ${d.slice(6, Math.min(10, d.length))}`;
+    return out;
+  };
+
+  const buildPhoneMaskGhost = (rawDigits) => {
+    const typed = formatPhoneDisplay(rawDigits);
+    return PHONE_MASK_TEMPLATE.split("")
+      .map((ch, i) => (i < typed.length ? "\u00A0" : ch))
+      .join("");
+  };
+
+  const parseStoredPhoneToRaw = (stored) => {
+    let digits = String(stored || "").replace(/\D/g, "");
+    if (digits.startsWith("90") && digits.length >= 12) digits = digits.slice(2);
+    if (digits.startsWith("0")) digits = digits.slice(1);
+    digits = digits.slice(0, 10);
+    if (!digits.startsWith("5")) digits = `5${digits.replace(/^5*/, "")}`.slice(0, 10);
+    return digits || "5";
   };
 
   // ✅ Saat formatı yardımcı
@@ -559,65 +812,308 @@ export function InstitutionAdminPage() {
     return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
   };
 
-  // ✅ Telefon Input Change Handler
-  const handlePhoneInputChange = (e) => {
-    const inputValue = e.target.value;
-    // Sadece rakamları ayıkla ve max 10 hane olacak şekilde sınırla
-    const digitsOnly = inputValue.replace(/\D/g, "").slice(0, 10);
-    setRawPhone(digitsOnly);
+  // Input'tan ham 10 haneyi çıkar; ilk hane her zaman 5 kalır
+  const extractRawPhoneDigits = (value) => {
+    let digits = String(value || "").replace(/\D/g, "");
+    if (digits.startsWith("0")) digits = digits.slice(1);
+    digits = digits.slice(0, 10);
+    if (!digits.startsWith("5")) {
+      digits = `5${digits.replace(/^5*/, "")}`.slice(0, 10);
+    }
+    return digits || "5";
   };
 
-  // ✅ Telefon step 1: Yeni numara girilip onaya hazırlanma
-  const handlePhoneSubmit = async () => {
-    if (rawPhone.length !== 10) {
-      setInfoError("Lütfen geçerli bir telefon numarası girin (10 rakam).");
+  const getPhoneFieldState = (field) => {
+    if (field === "whatsapp") {
+      return {
+        raw: rawWhatsappPhone,
+        setRaw: setRawWhatsappPhone,
+        formattedRef: whatsappPhoneFormattedRef,
+      };
+    }
+    return {
+      raw: rawBranchPhone,
+      setRaw: setRawBranchPhone,
+      formattedRef: branchPhoneFormattedRef,
+    };
+  };
+
+  const syncPhoneField = (field, digits) => {
+    const next = extractRawPhoneDigits(digits);
+    const { setRaw, formattedRef } = getPhoneFieldState(field);
+    setRaw(next);
+    formattedRef.current = formatPhoneDisplay(next);
+    return next;
+  };
+
+  const handlePhoneFieldChange = (field) => (e) => {
+    const { raw, formattedRef } = getPhoneFieldState(field);
+    const inputValue = e.target.value;
+    const prevFormatted = formattedRef.current;
+    let digits = extractRawPhoneDigits(inputValue);
+
+    if (
+      inputValue.length < prevFormatted.length &&
+      digits.length >= raw.length &&
+      raw.length > 1
+    ) {
+      digits = raw.slice(0, -1);
+    }
+
+    syncPhoneField(field, digits);
+  };
+
+  const handlePhoneFieldKeyDown = (field) => (e) => {
+    const { raw } = getPhoneFieldState(field);
+    const input = e.target;
+    const start = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+    const lockedUntil = 3;
+
+    if (
+      (e.key === "Backspace" || e.key === "Delete" || e.key === "ArrowLeft" || e.key === "Home") &&
+      start <= lockedUntil &&
+      start === end
+    ) {
+      if (e.key === "Backspace" || e.key === "Delete" || e.key === "Home") {
+        e.preventDefault();
+        requestAnimationFrame(() => input.setSelectionRange(lockedUntil, lockedUntil));
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        input.setSelectionRange(lockedUntil, lockedUntil);
+        return;
+      }
+    }
+
+    if (e.key !== "Backspace" || start !== end) return;
+    if (raw.length <= 1) {
+      e.preventDefault();
       return;
     }
-    setInfoError("");
-    setInfoLoading(true);
-    try {
-      // Mock: OTP gönderme API çağrısı
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      setInfoStep(3); // Doğrudan kod giriş aşamasına git (mock olarak)
-      setVerificationCode("");
-    } catch (err) {
-      setInfoError("OTP gönderilemedi.");
-    } finally {
-      setInfoLoading(false);
+    const before = input.value[start - 1];
+    if (before && /\D/.test(before)) {
+      e.preventDefault();
+      syncPhoneField(field, raw.slice(0, -1));
     }
   };
 
-  // ✅ Kod doğrulama ve telefon + çalışma saatleri kaydı
-  const handleVerifyCode = async () => {
-    if (verificationCode.length !== 6 || !/^\d+$/.test(verificationCode)) {
-      setInfoError("Lütfen 6 haneli doğrulama kodunu girin.");
+  const handlePhoneFieldFocus = (e) => {
+    const lockedUntil = 3;
+    const input = e.target;
+    requestAnimationFrame(() => {
+      const pos = Math.max(input.selectionStart ?? lockedUntil, lockedUntil);
+      input.setSelectionRange(pos, pos);
+    });
+  };
+
+  const handlePhoneFieldClick = (e) => {
+    const lockedUntil = 3;
+    const input = e.target;
+    if ((input.selectionStart ?? 0) < lockedUntil) {
+      input.setSelectionRange(lockedUntil, lockedUntil);
+    }
+  };
+
+  const resetPhoneFields = () => {
+    setRawBranchPhone("5");
+    setRawWhatsappPhone("5");
+    branchPhoneFormattedRef.current = "0(5";
+    whatsappPhoneFormattedRef.current = "0(5";
+  };
+
+  const resetLocationFields = () => {
+    setBranchAddress("");
+    setBranchLat(null);
+    setBranchLng(null);
+    setBranchName("");
+    setLocationGeocoding(false);
+  };
+
+  const applyBranchPhones = (branch) => {
+    const branchRaw = parseStoredPhoneToRaw(branch?.phone);
+    const whatsappRaw = parseStoredPhoneToRaw(branch?.whatsapp);
+    setRawBranchPhone(branchRaw);
+    setRawWhatsappPhone(whatsappRaw);
+    branchPhoneFormattedRef.current = formatPhoneDisplay(branchRaw);
+    whatsappPhoneFormattedRef.current = formatPhoneDisplay(whatsappRaw);
+  };
+
+  const applyBranchLocation = (branch) => {
+    setBranchAddress(branch?.address || "");
+    setBranchLat(branch?.lat == null ? null : Number(branch.lat));
+    setBranchLng(branch?.lng == null ? null : Number(branch.lng));
+    setBranchName(branch?.name || "");
+  };
+
+  const loadBusinessBranches = async () => {
+    if (!auth?.token) return;
+    try {
+      const rows = await fetchBusinessBranches(auth.token);
+      setBusinessBranches(rows);
+      setSelectedBranchId("");
+      resetPhoneFields();
+      resetLocationFields();
+    } catch (err) {
+      console.warn("[BRANCHES] Yüklenemedi:", err.message);
+      setBusinessBranches([]);
+      setSelectedBranchId("");
+      resetPhoneFields();
+      resetLocationFields();
+    }
+  };
+
+  // Modal açılınca şubeleri yükle
+  useEffect(() => {
+    if (!showInfoModal) return;
+    loadBusinessBranches();
+  }, [showInfoModal]);
+
+  // ✅ Telefon kaydı (seçili şube)
+  const handlePhoneSubmit = async () => {
+    if (!selectedBranchId) {
+      setInfoError("Lütfen önce bir şube seçin.");
+      return;
+    }
+    const trimmedName = String(branchName || "").trim();
+    if (!trimmedName) {
+      setInfoError("Şube adı zorunludur.");
+      return;
+    }
+    if (rawBranchPhone.length !== 10 || rawWhatsappPhone.length !== 10) {
+      setInfoError("Lütfen şube ve WhatsApp numaralarını 10 haneli olarak girin.");
       return;
     }
     if (!auth?.token) return;
     setInfoError("");
     setInfoLoading(true);
     try {
-      // OTP şu an mock; doğrulama sonrası kalıcı kayıt
-      const formattedPhone = `+90 ${formatPhoneDisplay(rawPhone)}`;
-      await updateBusinessProfile(auth.token, {
-        phone: formattedPhone,
-        working_hours: businessHours,
+      const phone = `+90 ${formatPhoneDisplay(rawBranchPhone)}`;
+      const whatsapp = `+90 ${formatPhoneDisplay(rawWhatsappPhone)}`;
+      const branch = await updateBusinessBranch(auth.token, selectedBranchId, {
+        name: trimmedName,
+        phone,
+        whatsapp,
       });
-      setCurrentBusinessPhone(formattedPhone);
-      setInfoSuccess("Telefon ve çalışma saatleri kaydedildi!");
-      setTimeout(() => {
-        closeInfoModal();
-        setInfoSuccess("");
-      }, 1500);
+      setBusinessBranches((prev) =>
+        prev.map((b) =>
+          String(b.id) === String(selectedBranchId)
+            ? { ...b, ...(branch || {}), name: trimmedName, phone, whatsapp }
+            : b
+        )
+      );
+      setBranchName(trimmedName);
+      setInfoSuccess("Şube telefon bilgileri kaydedildi!");
+      setTimeout(() => setInfoSuccess(""), 2000);
     } catch (err) {
-      setInfoError(err.message || "Kaydedilemedi.");
+      setInfoError(err.message || "Telefon bilgileri kaydedilemedi.");
     } finally {
       setInfoLoading(false);
     }
   };
 
+  const handleSaveBranchLocation = async () => {
+    if (!selectedBranchId) {
+      setInfoError("Lütfen önce bir şube seçin.");
+      return;
+    }
+    const trimmedName = String(branchName || "").trim();
+    if (!trimmedName) {
+      setInfoError("Şube adı zorunludur.");
+      return;
+    }
+    if (!auth?.token) return;
+    setInfoError("");
+    setInfoLoading(true);
+    try {
+      const lat =
+        branchLat == null || branchLat === "" || !Number.isFinite(Number(branchLat))
+          ? null
+          : Number(branchLat);
+      const lng =
+        branchLng == null || branchLng === "" || !Number.isFinite(Number(branchLng))
+          ? null
+          : Number(branchLng);
+      const address = String(branchAddress || "").trim();
+      const branch = await updateBusinessBranch(auth.token, selectedBranchId, {
+        name: trimmedName,
+        address,
+        lat,
+        lng,
+      });
+      setBusinessBranches((prev) =>
+        prev.map((b) =>
+          String(b.id) === String(selectedBranchId)
+            ? { ...b, ...branch, name: trimmedName }
+            : b
+        )
+      );
+      applyBranchLocation(branch || { name: trimmedName, address, lat, lng });
+      setInfoSuccess("Şube konumu kaydedildi!");
+      setTimeout(() => setInfoSuccess(""), 2000);
+    } catch (err) {
+      setInfoError(err.message || "Konum kaydedilemedi.");
+    } finally {
+      setInfoLoading(false);
+    }
+  };
+
+  const handleSaveBranchName = async () => {
+    if (!selectedBranchId) {
+      setInfoError("Lütfen önce bir şube seçin.");
+      return;
+    }
+    const trimmedName = String(branchName || "").trim();
+    if (!trimmedName) {
+      setInfoError("Şube adı zorunludur.");
+      return;
+    }
+    if (!auth?.token) return;
+    setInfoError("");
+    setInfoLoading(true);
+    try {
+      const branch = await updateBusinessBranch(auth.token, selectedBranchId, {
+        name: trimmedName,
+      });
+      setBusinessBranches((prev) =>
+        prev.map((b) =>
+          String(b.id) === String(selectedBranchId)
+            ? { ...b, ...(branch || {}), name: trimmedName }
+            : b
+        )
+      );
+      setBranchName(trimmedName);
+      setInfoSuccess("Şube adı güncellendi!");
+      setTimeout(() => setInfoSuccess(""), 2000);
+    } catch (err) {
+      setInfoError(err.message || "Şube adı kaydedilemedi.");
+    } finally {
+      setInfoLoading(false);
+    }
+  };
+
+  const handleBranchMapPick = async (lat, lng) => {
+    if (!selectedBranchId || infoLoading) return;
+    setBranchLat(lat);
+    setBranchLng(lng);
+    setLocationGeocoding(true);
+    try {
+      const address = await reverseGeocodeAddress(lat, lng);
+      setBranchAddress(address);
+    } catch {
+      // Manuel adres girişi mümkün kalsın
+    } finally {
+      setLocationGeocoding(false);
+    }
+  };
+
   /** Sadece çalışma saatlerini kaydet (telefon değiştirmeden) */
   const handleSaveWorkingHours = async () => {
+    if (!selectedBranchId) {
+      setInfoError("Lütfen önce bir şube seçin.");
+      return;
+    }
     if (!auth?.token) return;
     setInfoLoading(true);
     setInfoError("");
@@ -635,11 +1131,69 @@ export function InstitutionAdminPage() {
   // ✅ İşletme Bilgileri Modal Kapatma
   const closeInfoModal = () => {
     setShowInfoModal(false);
-    setInfoStep(0);
-    setRawPhone("");
-    setVerificationCode("");
+    resetPhoneFields();
+    resetLocationFields();
+    setSelectedBranchId("");
     setInfoError("");
     setInfoSuccess("");
+  };
+
+  const branchSelectOptions = useMemo(
+    () => businessBranches.map((b) => ({ value: String(b.id), label: b.name })),
+    [businessBranches]
+  );
+
+  const branchFieldsLocked = !selectedBranchId || infoLoading;
+
+  const hasBranchMarker =
+    branchLat != null &&
+    branchLng != null &&
+    Number.isFinite(Number(branchLat)) &&
+    Number.isFinite(Number(branchLng));
+
+  const handleBranchSelect = (value) => {
+    setSelectedBranchId(value);
+    const branch = businessBranches.find((b) => String(b.id) === String(value));
+    if (branch) {
+      applyBranchPhones(branch);
+      applyBranchLocation(branch);
+    } else {
+      resetPhoneFields();
+      resetLocationFields();
+    }
+    setInfoError("");
+  };
+
+  const renderMaskedPhoneInput = (field, inputRef) => {
+    const raw = field === "whatsapp" ? rawWhatsappPhone : rawBranchPhone;
+    const disabled = infoLoading || !selectedBranchId;
+    return (
+      <div className="relative h-11 flex items-center rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950 focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-500/20 transition">
+        <span className="absolute left-3 z-10 text-sm font-mono font-bold text-slate-800 dark:text-white pointer-events-none">
+          +90
+        </span>
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-slate-400 dark:text-slate-500 select-none"
+        >
+          {buildPhoneMaskGhost(raw)}
+        </span>
+        <input
+          ref={inputRef}
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel-national"
+          value={formatPhoneDisplay(raw)}
+          onChange={handlePhoneFieldChange(field)}
+          onKeyDown={handlePhoneFieldKeyDown(field)}
+          onFocus={handlePhoneFieldFocus}
+          onClick={handlePhoneFieldClick}
+          disabled={disabled}
+          placeholder=""
+          className="relative z-10 h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-slate-800 outline-none caret-cyan-500 disabled:opacity-50 dark:text-slate-100"
+        />
+      </div>
+    );
   };
 
   // ✅ Range Slider Handler
@@ -663,6 +1217,7 @@ export function InstitutionAdminPage() {
 
   // ✅ Günü Kapalı/Açık yap
   const toggleDayOpen = (day) => {
+    if (branchFieldsLocked) return;
     setBusinessHours((prev) => {
       const current = prev[day];
       if (current[0] === null && current[1] === null) {
@@ -760,46 +1315,25 @@ export function InstitutionAdminPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-4">
+          <div className="flex flex-wrap items-center justify-end gap-3 sm:gap-4">
+            {subscriptionWarningDays != null ? (
+              <p className="text-xs sm:text-sm font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                {t("subscriptionExpiringSoon")} : {subscriptionWarningDays} {t("daysUnit")}
+              </p>
+            ) : null}
             <HeaderActions />
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-2 rounded-lg border border-[rgb(255,0,0)] bg-transparent px-3 py-2 text-sm text-[rgb(255,0,0)] transition-all duration-300 hover:bg-[rgb(255,0,0)]/5 hover:shadow-[0_0_15px_rgba(255,0,0,0.6)]"
+              className="inline-flex items-center gap-2 rounded-lg border transition-all duration-300 bg-transparent px-3 py-2 text-sm hover:bg-red-500/5 dark:hover:shadow-[0_0_15px_rgba(255,0,0,0.6)] border-red-600 text-red-600 dark:border-[rgb(255,0,0)] dark:text-[rgb(255,0,0)]"
             >
               <LogOut className="size-4" />
               {t("logoutShort")}
             </button>
-            <div
-              className={`rounded-xl border px-3 py-2 text-sm ${
-                expired || nearExpiry
-                  ? "border-[rgb(255,0,0)]/50 bg-[rgb(255,0,0)]/5"
-                  : "border-[rgb(0,255,255)]/40 bg-[rgb(0,255,255)]/5"
-              }`}
-            >
-              <p className="text-[10px] uppercase tracking-wide font-bold text-white">
-                {t("subscriptionStatus")}
-              </p>
-              <p
-                className={`font-semibold ${
-                  days == null
-                    ? "text-white"
-                    : days > 30
-                      ? "text-[rgb(0,255,255)]"
-                      : "text-[rgb(255,0,0)]"
-                }`}
-              >
-                {days == null
-                  ? `${t("remainingSubscription")}: —`
-                  : expired
-                    ? `${t("remainingSubscription")}: ${t("subscriptionExpired")}`
-                    : `${t("remainingSubscription")}: ${days} ${t("daysUnit")}`}
-              </p>
-            </div>
           </div>
         </div>
 
-        <div className="flex gap-3 flex-wrap">
+        <div className="flex gap-3 flex-wrap items-start">
           <button
             type="button"
             onClick={() => {
@@ -817,14 +1351,91 @@ export function InstitutionAdminPage() {
             onClick={() => {
               setInfoError("");
               setInfoSuccess("");
-              setInfoStep(0);
-              setRawPhone("");
+              resetPhoneFields();
+              resetLocationFields();
+              setSelectedBranchId("");
               setShowInfoModal(true);
             }}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
             <Edit2 className="size-4" />
             İşletme Bilgilerini Güncelle
+          </button>
+
+          <div className="relative" ref={subscriptionPanelRef}>
+            <button
+              type="button"
+              onClick={toggleSubscriptionPanel}
+              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-300 ${
+                expired || nearExpiry
+                  ? "border-red-600/50 bg-red-500/5 text-red-700 hover:border-red-500 dark:border-[rgb(255,0,0)]/50 dark:text-[rgb(255,0,0)]"
+                  : "border-cyan-600/40 bg-cyan-500/5 text-cyan-800 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.35)] dark:border-[rgb(0,255,255)]/40 dark:text-cyan-200 dark:hover:border-cyan-400"
+              }`}
+            >
+              {t("subscriptionStatus")}
+              <ChevronDown
+                className={`size-4 transition ${showSubscriptionPanel ? "rotate-180" : ""}`}
+              />
+            </button>
+
+            {showSubscriptionPanel ? (
+              <div className="absolute left-0 top-full z-50 mt-2 w-[min(100vw-2rem,28rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+                <div className="grid grid-cols-3 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
+                  <span>{t("branchNameLabel")}</span>
+                  <span>{t("subscriptionStartDate")}</span>
+                  <span>{t("remainingSubscription")}</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {subscriptionPanelLoading ? (
+                    <p className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
+                      {t("loadingShort")}
+                    </p>
+                  ) : subscriptionBranches.length === 0 ? (
+                    <p className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
+                      {t("subscriptionListEmpty")}
+                    </p>
+                  ) : (
+                    subscriptionBranches.map((branch) => (
+                      <div
+                        key={branch.id}
+                        className="grid grid-cols-3 gap-2 border-b border-slate-100 px-3 py-2.5 text-sm last:border-b-0 dark:border-slate-800"
+                      >
+                        <span className="truncate font-medium text-slate-800 dark:text-slate-100">
+                          {branch.name || "—"}
+                        </span>
+                        <span className="text-slate-600 dark:text-slate-300">
+                          {formatDateShort(
+                            branch.subscription_start_date || branch.created_at
+                          )}
+                        </span>
+                        <span
+                          className={`font-semibold ${
+                            branch.subscription_type === "Test" ||
+                            (branchRemainingDays(branch) != null &&
+                              branchRemainingDays(branch) > 30)
+                              ? "text-cyan-700 dark:text-cyan-300"
+                              : branchRemainingDays(branch) == null
+                                ? "text-slate-700 dark:text-slate-200"
+                                : "text-red-700 dark:text-red-400"
+                          }`}
+                        >
+                          {formatBranchRemainingLabel(branch, t)}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            onClick={openBranchRequestModal}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          >
+            <Plus className="size-4" />
+            {t("newBranchRequestBtn")}
           </button>
         </div>
 
@@ -854,7 +1465,7 @@ export function InstitutionAdminPage() {
         <form onSubmit={handleSave} className="space-y-6">
           {/* ALIŞ KURLAR */}
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-[rgb(0,255,255)]">{t("buyRates")}</h3>
+            <h3 className="mb-3 text-sm font-semibold text-cyan-700 dark:text-[rgb(0,255,255)]">{t("buyRates")}</h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'buy').map((item) => {
               const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
@@ -867,7 +1478,7 @@ export function InstitutionAdminPage() {
                   key={`${item.currency}-${item.type}`}
                   className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-white/20"
                 >
-                  <h4 className="mb-3 text-sm font-bold text-[rgb(0,255,255)]">{itemLabel}</h4>
+                  <h4 className="mb-3 text-sm font-bold text-cyan-700 dark:text-[rgb(0,255,255)]">{itemLabel}</h4>
 
                   {/* Merkez Bankası KUR */}
                   <div className="mb-3">
@@ -918,9 +1529,9 @@ export function InstitutionAdminPage() {
                   </div>
 
                   {/* Final Kur & Kâr */}
-                  <div className="rounded-lg border-2 border-[rgb(0,255,255)]/80 bg-slate-950/50 px-3 py-2.5 text-center shadow-[0_0_15px_rgba(0,255,255,0.5)]">
+                  <div className="rounded-lg border-2 border-cyan-600 bg-cyan-50 px-3 py-2.5 text-center dark:border-[rgb(0,255,255)]/80 dark:bg-slate-950/50 dark:shadow-[0_0_15px_rgba(0,255,255,0.5)]">
                     <p className="text-sm font-bold">
-                      <span className="text-white">{t("finalRate")}:</span> <span className="font-mono text-[rgb(0,255,255)] text-base">{formatNum(final)}</span>
+                      <span className="text-cyan-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-cyan-700 dark:text-[rgb(0,255,255)] text-base">{formatNum(final)}</span>
                       {(() => {
                         const kar = final && kur ? final - kur : 0;
                         return kar > 0 ? <span className="ml-2 text-xs font-semibold text-emerald-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
@@ -935,7 +1546,7 @@ export function InstitutionAdminPage() {
 
           {/* SATIŞ KURLAR */}
           <div>
-            <h3 className="mb-3 text-sm font-semibold text-[rgb(255,0,0)]">{t("sellRates")}</h3>
+            <h3 className="mb-3 text-sm font-semibold text-red-700 dark:text-[rgb(255,0,0)]">{t("sellRates")}</h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
                 const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
@@ -948,7 +1559,7 @@ export function InstitutionAdminPage() {
                     key={`${item.currency}-${item.type}`}
                     className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-white/20"
                   >
-                    <h4 className="mb-3 text-sm font-bold text-[rgb(255,0,0)]">{itemLabel}</h4>
+                    <h4 className="mb-3 text-sm font-bold text-red-700 dark:text-[rgb(255,0,0)]">{itemLabel}</h4>
 
                     {/* Merkez Bankası KUR */}
                     <div className="mb-3">
@@ -999,9 +1610,9 @@ export function InstitutionAdminPage() {
                     </div>
 
                     {/* Final Kur & Kâr */}
-                    <div className="rounded-lg border-2 border-[rgb(255,0,0)]/80 bg-slate-950/50 px-3 py-2.5 text-center shadow-[0_0_15px_rgba(255,0,0,0.5)]">
+                    <div className="rounded-lg border-2 border-red-600 bg-red-50 px-3 py-2.5 text-center dark:border-[rgb(255,0,0)]/80 dark:bg-slate-950/50 dark:shadow-[0_0_15px_rgba(255,0,0,0.5)]">
                       <p className="text-sm font-bold">
-                        <span className="text-white">{t("finalRate")}:</span> <span className="font-mono text-[rgb(255,0,0)] text-base">{formatNum(final)}</span>
+                        <span className="text-red-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-red-700 dark:text-[rgb(255,0,0)] text-base">{formatNum(final)}</span>
                         {(() => {
                           const kar = final && kur ? final - kur : 0;
                           return kar > 0 ? <span className="ml-2 text-xs font-semibold text-emerald-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
@@ -1034,20 +1645,25 @@ export function InstitutionAdminPage() {
             onClick={() => setShowSuccessModal(false)}  // ✅ Dışarı tıklanınca kapat
           >
             <div 
-              className="relative bg-[#1a1f2e] border border-gray-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all"
+              className="relative bg-white border border-slate-200 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all dark:bg-[#1a1f2e] dark:border-gray-700"
               onClick={(e) => e.stopPropagation()}
             >
-              <X
-                size={24}
-                onClick={() => setShowSuccessModal(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-                aria-label="Kapat"
-              />
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <HeaderActions compact />
+                <button
+                  type="button"
+                  onClick={() => setShowSuccessModal(false)}
+                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                  aria-label="Kapat"
+                >
+                  <X size={22} />
+                </button>
+              </div>
 
               <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
                 <span className="text-emerald-500 text-3xl">✓</span>
               </div>
-              <h3 className="text-white text-xl font-bold">Kurlar başarıyla kaydedildi!</h3>
+              <h3 className="text-slate-900 text-xl font-bold dark:text-white">Kurlar başarıyla kaydedildi!</h3>
             </div>
           </div>
         )}
@@ -1094,17 +1710,22 @@ export function InstitutionAdminPage() {
               className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <X
-                size={24}
-                onClick={() => !logoLoading && setShowLogoModal(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-                aria-label="Kapat"
-              />
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <HeaderActions compact />
+                <button
+                  type="button"
+                  onClick={() => !logoLoading && setShowLogoModal(false)}
+                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                  aria-label="Kapat"
+                >
+                  <X size={22} />
+                </button>
+              </div>
 
               {/* STEP 1: Dosya Seçimi */}
               {!logoCropStep ? (
                 <div className="p-6">
-                  <div className="mb-5 flex items-center gap-3 pr-8">
+                  <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
                     <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
                       <Camera className="size-5" />
                     </div>
@@ -1175,7 +1796,7 @@ export function InstitutionAdminPage() {
               ) : (
                 /* STEP 2: Kırpma */
                 <div className="p-6">
-                  <div className="mb-5 flex items-center gap-3 pr-8">
+                  <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
                     <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
                       <Camera className="size-5" />
                     </div>
@@ -1267,66 +1888,104 @@ export function InstitutionAdminPage() {
               className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <X
-                size={24}
-                onClick={() => !infoLoading && closeInfoModal()}
-                className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-                aria-label="Kapat"
-              />
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <HeaderActions compact />
+                <button
+                  type="button"
+                  onClick={() => !infoLoading && closeInfoModal()}
+                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                  aria-label="Kapat"
+                >
+                  <X size={22} />
+                </button>
+              </div>
 
-              <div className="mb-6 flex items-center gap-3 pr-8">
-                <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
-                  <Edit2 className="size-5" />
+              <div className="mb-6 flex items-start justify-between gap-3 pr-[7.5rem]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
+                    <Edit2 className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                      İşletme Bilgilerini Güncelle
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      Şube telefonları ve çalışma saatleri
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                    İşletme Bilgilerini Güncelle
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Telefon ve çalışma saatleri
-                  </p>
+                <div className="w-44 shrink-0 sm:w-52">
+                  <SearchableSelect
+                    value={selectedBranchId}
+                    onChange={handleBranchSelect}
+                    options={branchSelectOptions}
+                    placeholder={t("selectBranchPlaceholder")}
+                    aria-label={t("selectBranchPlaceholder")}
+                    disabled={infoLoading || businessBranches.length === 0}
+                  />
                 </div>
               </div>
 
-              {/* ADIM 1: Telefon Girişi */}
-              {infoStep === 0 && (
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-4 space-y-2">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                      Mevcut Telefon Numarası:
-                    </p>
-                    <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400">
-                      {currentBusinessPhone}
-                    </p>
+              {/* Form: şube seç + telefonlar + çalışma saatleri */}
+              <div className="space-y-4">
+                  <div
+                    className={`space-y-1.5 ${
+                      !selectedBranchId ? "pointer-events-none opacity-50" : ""
+                    }`}
+                  >
+                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                      <Building2 className="size-4" />
+                      {t("updateBranchNameHint")}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={branchName}
+                        onChange={(e) => setBranchName(e.target.value)}
+                        disabled={branchFieldsLocked}
+                        placeholder={t("branchNamePlaceholder")}
+                        className="h-11 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveBranchName}
+                        disabled={branchFieldsLocked || !String(branchName || "").trim()}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50 dark:text-cyan-300"
+                      >
+                        <Save className="size-4" />
+                        {infoLoading ? "..." : t("saveBranchNameBtn")}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
                       <Phone className="size-4" />
-                      Yeni Telefon Numarası
+                      {t("branchPhoneLabel")}
                     </label>
-                    <div className="relative h-11 flex items-center rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950 focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-500/20 transition">
-                      {/* Sabit +90 Prefix */}
-                      <span className="absolute left-3 text-sm font-mono font-bold text-slate-600 dark:text-slate-400 pointer-events-none">
-                        +90
-                      </span>
-                      
-                      {/* Input: Maskeleme ile otomatik format */}
-                      <input
-                        type="tel"
-                        inputMode="numeric"
-                        value={formatPhoneDisplay(rawPhone)}
-                        onChange={handlePhoneInputChange}
-                        disabled={infoLoading}
-                        placeholder="+90 (XXX) XXX XXXX"
-                        maxLength="17"
-                        className="h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-slate-800 outline-none disabled:opacity-50 dark:text-slate-100"
-                      />
-                    </div>
+                    {renderMaskedPhoneInput("branch", branchPhoneInputRef)}
                   </div>
 
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                      <Phone className="size-4" />
+                      {t("whatsappPhoneLabel")}
+                    </label>
+                    {renderMaskedPhoneInput("whatsapp", whatsappPhoneInputRef)}
+                  </div>
+
+                  {!selectedBranchId ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-300">
+                      {t("selectBranchToEditPhones")}
+                    </p>
+                  ) : null}
+
                   {/* Çalışma Saatleri — Haftanın 7 Günü */}
-                  <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                  <div
+                    className={`mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 ${
+                      !selectedBranchId ? "pointer-events-none opacity-50" : ""
+                    }`}
+                  >
                     <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
                       <Clock className="size-4" />
                       Çalışma Saatleri
@@ -1347,7 +2006,8 @@ export function InstitutionAdminPage() {
                               <button
                                 type="button"
                                 onClick={() => toggleDayOpen(day)}
-                                className={`text-xs px-2.5 py-1.5 rounded font-medium transition ${
+                                disabled={branchFieldsLocked}
+                                className={`text-xs px-2.5 py-1.5 rounded font-medium transition disabled:cursor-not-allowed ${
                                   isClosed
                                     ? "bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-200"
                                     : "bg-cyan-500/20 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300"
@@ -1362,11 +2022,12 @@ export function InstitutionAdminPage() {
                                 <DualRangeSlider
                                   min={0}
                                   max={1440}
-                                  step={30}
+                                  step={15}
                                   minValue={start}
                                   maxValue={end}
-                                  disabled={infoLoading}
+                                  disabled={branchFieldsLocked}
                                   onRangeChange={(newStart, newEnd) => {
+                                    if (branchFieldsLocked) return;
                                     setBusinessHours((prev) => ({
                                       ...prev,
                                       [day]: [newStart, newEnd],
@@ -1389,6 +2050,68 @@ export function InstitutionAdminPage() {
                     </div>
                   </div>
 
+                  {/* Şube Konumu */}
+                  <div
+                    className={`mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 ${
+                      !selectedBranchId ? "pointer-events-none opacity-50" : ""
+                    }`}
+                  >
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
+                      <MapPin className="size-4" />
+                      {t("branchLocationTitle")}
+                    </h4>
+
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          {t("branchAddressLabel")}
+                        </label>
+                        <textarea
+                          value={branchAddress}
+                          onChange={(e) => setBranchAddress(e.target.value)}
+                          disabled={branchFieldsLocked}
+                          rows={3}
+                          placeholder={t("branchAddressPlaceholder")}
+                          className="min-h-[88px] w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                        />
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                          {t("branchMapHint")}
+                          {locationGeocoding ? " ..." : ""}
+                        </p>
+                        {hasBranchMarker ? (
+                          <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                            {Number(branchLat).toFixed(5)}, {Number(branchLng).toFixed(5)}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      {showInfoModal ? (
+                        <div className="relative h-56 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                          <MapContainer
+                            key={`branch-map-${selectedBranchId || "none"}-${showInfoModal}`}
+                            center={hasBranchMarker ? [branchLat, branchLng] : KKTC_MAP_CENTER}
+                            zoom={hasBranchMarker ? 14 : 9}
+                            scrollWheelZoom={!branchFieldsLocked}
+                            dragging={!branchFieldsLocked}
+                            className="h-full w-full"
+                          >
+                            <TileLayer
+                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                            />
+                            <BranchMapClickHandler
+                              disabled={branchFieldsLocked}
+                              onPick={handleBranchMapPick}
+                            />
+                            {hasBranchMarker ? (
+                              <Marker position={[branchLat, branchLng]} />
+                            ) : null}
+                          </MapContainer>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
                   {infoError ? (
                     <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
                       {infoError}
@@ -1401,95 +2124,230 @@ export function InstitutionAdminPage() {
                     </div>
                   ) : null}
 
-                  <div className="flex flex-col gap-3 pt-2 sm:flex-row">
+                  <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">
                     <button
                       type="button"
                       onClick={closeInfoModal}
                       disabled={infoLoading}
-                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                      className="flex-1 min-w-[8rem] rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
                     >
                       {t("cancel")}
                     </button>
                     <button
                       type="button"
                       onClick={handleSaveWorkingHours}
-                      disabled={infoLoading}
-                      className="flex-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:opacity-50 dark:text-cyan-300"
+                      disabled={branchFieldsLocked}
+                      className="flex-1 min-w-[8rem] rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed dark:text-cyan-300"
                     >
-                      {infoLoading ? "Kaydediliyor..." : "Saatleri Kaydet"}
+                      {infoLoading ? "Kaydediliyor..." : t("saveWorkingHoursBtn")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveBranchLocation}
+                      disabled={branchFieldsLocked}
+                      className="flex-1 min-w-[8rem] rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed dark:text-cyan-300"
+                    >
+                      {infoLoading ? "Kaydediliyor..." : t("saveBranchLocationBtn")}
                     </button>
                     <button
                       type="button"
                       onClick={handlePhoneSubmit}
-                      disabled={infoLoading || rawPhone.length !== 10}
-                      className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                      disabled={
+                        branchFieldsLocked ||
+                        rawBranchPhone.length !== 10 ||
+                        rawWhatsappPhone.length !== 10
+                      }
+                      className="flex-1 min-w-[8rem] rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
                     >
-                      {infoLoading ? "Gönderiliyor..." : "Telefon Güncelle"}
+                      {infoLoading ? "Kaydediliyor..." : t("saveBranchPhonesBtn")}
                     </button>
                   </div>
                 </div>
-              )}
+            </div>
+          </div>
+        )}
 
-              {/* ADIM 3: Kod Girişi (Onay aşaması atlanıp doğrudan koda geçildi) */}
-              {infoStep === 3 && (
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-4">
-                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
-                      Yeni Numaranız:
-                    </p>
-                    <p className="text-lg font-bold text-cyan-600 dark:text-cyan-400">
-                      +90 {formatPhoneDisplay(rawPhone)}
-                    </p>
-                  </div>
+        {showBranchRequestModal && (
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+            onClick={closeBranchRequestModal}
+          >
+            <div
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <HeaderActions compact />
+                <button
+                  type="button"
+                  onClick={closeBranchRequestModal}
+                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                  aria-label="Kapat"
+                >
+                  <X size={22} />
+                </button>
+              </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      Doğrulama Kodu
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="000000"
-                      maxLength="6"
-                      value={verificationCode}
-                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      disabled={infoLoading}
-                      className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-center text-lg font-mono font-bold text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 tracking-[0.5em]"
+              <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
+                <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
+                  <Plus className="size-5" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  {t("newBranchRequestTitle")}
+                </h3>
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    {t("branchNameLabel")}
+                  </label>
+                  <input
+                    type="text"
+                    value={branchRequestForm.name}
+                    onChange={(e) =>
+                      setBranchRequestForm((p) => ({ ...p, name: e.target.value }))
+                    }
+                    disabled={branchRequestLoading}
+                    placeholder={t("branchNamePlaceholder")}
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    <Phone className="size-4" />
+                    {t("phoneLabel")}
+                  </label>
+                  <input
+                    type="tel"
+                    value={branchRequestForm.phone}
+                    onChange={(e) =>
+                      setBranchRequestForm((p) => ({ ...p, phone: e.target.value }))
+                    }
+                    disabled={branchRequestLoading}
+                    placeholder={t("phonePlaceholder")}
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                    <MapPin className="size-4" />
+                    {t("branchAddressLabel")}
+                  </label>
+                  <textarea
+                    value={branchRequestForm.address}
+                    onChange={(e) =>
+                      setBranchRequestForm((p) => ({ ...p, address: e.target.value }))
+                    }
+                    disabled={branchRequestLoading}
+                    rows={3}
+                    placeholder={t("branchAddressPlaceholder")}
+                    className="min-h-[88px] w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {t("branchMapHint")}
+                    {branchRequestGeocoding ? " ..." : ""}
+                  </p>
+                  {branchRequestForm.lat != null && branchRequestForm.lng != null ? (
+                    <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                      {Number(branchRequestForm.lat).toFixed(5)},{" "}
+                      {Number(branchRequestForm.lng).toFixed(5)}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="relative h-52 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
+                  <MapContainer
+                    key={`branch-request-map-${showBranchRequestModal}`}
+                    center={
+                      branchRequestForm.lat != null && branchRequestForm.lng != null
+                        ? [branchRequestForm.lat, branchRequestForm.lng]
+                        : KKTC_MAP_CENTER
+                    }
+                    zoom={branchRequestForm.lat != null ? 14 : 9}
+                    scrollWheelZoom
+                    className="h-full w-full"
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     />
-                  </div>
-
-                  {infoError ? (
-                    <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
-                      {infoError}
-                    </div>
-                  ) : null}
-
-                  {infoSuccess ? (
-                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
-                      {infoSuccess}
-                    </div>
-                  ) : null}
-
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setInfoStep(0)}
-                      disabled={infoLoading}
-                      className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
-                    >
-                      Vazgeç
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleVerifyCode}
-                      disabled={infoLoading || verificationCode.length !== 6}
-                      className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
-                    >
-                      {infoLoading ? "Doğrulanıyor..." : "Kodu Doğrula"}
-                    </button>
-                  </div>
+                    <BranchMapClickHandler
+                      disabled={branchRequestLoading}
+                      onPick={handleBranchRequestMapPick}
+                    />
+                    {branchRequestForm.lat != null && branchRequestForm.lng != null ? (
+                      <Marker position={[branchRequestForm.lat, branchRequestForm.lng]} />
+                    ) : null}
+                  </MapContainer>
                 </div>
-              )}
+
+                {branchRequestError ? (
+                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                    {branchRequestError}
+                  </div>
+                ) : null}
+                {branchRequestSuccess ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
+                    {branchRequestSuccess}
+                  </div>
+                ) : null}
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={closeBranchRequestModal}
+                    disabled={branchRequestLoading}
+                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                  >
+                    {t("cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBranchRequestSubmitClick}
+                    disabled={branchRequestLoading}
+                    className="flex-1 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-50"
+                  >
+                    {t("send")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showBranchRequestConfirm && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <HeaderActions compact />
+              </div>
+              <h4 className="pr-[6.5rem] text-base font-bold text-slate-800 dark:text-slate-100">
+                {t("newBranchRequestTitle")}
+              </h4>
+              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                {t("newBranchRequestConfirm")}
+              </p>
+              <div className="mt-5 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBranchRequestConfirm(false)}
+                  disabled={branchRequestLoading}
+                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                >
+                  {t("cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBranchRequestConfirm}
+                  disabled={branchRequestLoading}
+                  className="flex-1 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-50"
+                >
+                  {branchRequestLoading ? t("sending") : t("confirmRequestBtn")}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1503,14 +2361,19 @@ export function InstitutionAdminPage() {
               className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
               onClick={(e) => e.stopPropagation()}
             >
-              <X
-                size={24}
-                onClick={closePasswordModal}
-                className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-                aria-label="Kapat"
-              />
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <HeaderActions compact />
+                <button
+                  type="button"
+                  onClick={closePasswordModal}
+                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                  aria-label="Kapat"
+                >
+                  <X size={22} />
+                </button>
+              </div>
 
-              <div className="mb-5 flex items-center gap-3 pr-8">
+              <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
                 <div className="rounded-lg bg-teal-500/10 p-2 text-teal-600 dark:text-teal-400">
                   <Key className="size-5" />
                 </div>

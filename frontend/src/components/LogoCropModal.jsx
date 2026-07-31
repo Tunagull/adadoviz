@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import Cropper from "react-easy-crop";
 import { X } from "lucide-react";
+import { HeaderActions } from "./HeaderActions";
 
 async function createImage(url) {
   return new Promise((resolve, reject) => {
@@ -73,24 +74,29 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
       onClick={onClose}
     >
       <div
-        className="relative bg-slate-900 border border-slate-700 rounded-2xl p-4 md:p-6 w-[95%] md:w-full max-w-lg shadow-2xl flex flex-col gap-4"
+        className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-lg shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
         onClick={(e) => e.stopPropagation()}
       >
-        <X
-          size={24}
-          onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-          aria-label="Kapat"
-        />
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+          <HeaderActions compact />
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+            aria-label="Kapat"
+          >
+            <X size={22} />
+          </button>
+        </div>
 
-        <div className="pr-8">
-          <h3 className="text-lg font-bold text-slate-100">Logoyu Kırp</h3>
-          <p className="mt-1 text-sm text-slate-400">
+        <div className="pr-[7.5rem]">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Logoyu Kırp</h3>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             Görseli sürükleyip yakınlaştırarak yuvarlak alana oturtun.
           </p>
         </div>
 
-        <div className="relative h-72 w-full overflow-hidden rounded-xl bg-slate-950">
+        <div className="relative h-72 w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-950">
           <Cropper
             image={imageSrc}
             crop={crop}

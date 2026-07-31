@@ -126,6 +126,100 @@ export async function updateBusinessProfile(token, payload) {
   return data;
 }
 
+export async function fetchBusinessBranches(token) {
+  const response = await fetch(apiUrl("/api/business/branches"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Şubeler alınamadı.");
+  }
+  return data.branches || [];
+}
+
+export async function updateBusinessBranch(token, id, payload) {
+  const response = await fetch(apiUrl(`/api/business/branches/${id}`), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Şube güncellenemedi.");
+  }
+  return data.branch;
+}
+
+export async function createBusinessBranchRequest(token, payload) {
+  const response = await fetch(apiUrl("/api/business/branch-requests"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Şube talebi oluşturulamadı.");
+  }
+  return data.request;
+}
+
+export async function fetchAdminBranchRequests(token, status) {
+  const q = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await fetch(apiUrl(`/api/admin/branch-requests${q}`), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talepler alınamadı.");
+  }
+  return data;
+}
+
+export async function fetchAdminBranchRequestsUnread(token) {
+  const response = await fetch(apiUrl("/api/admin/branch-requests/unread-count"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Bildirim sayısı alınamadı.");
+  }
+  return Number(data.unread) || 0;
+}
+
+export async function markAdminBranchRequestsRead(token) {
+  const response = await fetch(apiUrl("/api/admin/branch-requests/mark-read"), {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Okundu işaretlenemedi.");
+  }
+  return data;
+}
+
+export async function updateAdminBranchRequest(token, id, payload) {
+  const response = await fetch(apiUrl(`/api/admin/branch-requests/${id}`), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talep güncellenemedi.");
+  }
+  return data;
+}
+
 export async function fetchAdminBusinesses(token) {
   const response = await fetch(apiUrl("/api/admin/businesses"), {
     headers: authHeaders(token),

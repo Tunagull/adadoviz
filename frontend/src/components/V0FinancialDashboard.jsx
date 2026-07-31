@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Search,
@@ -31,6 +31,8 @@ import { apiUrl, ratesStreamUrl } from "../lib/api";
  */
 function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const { theme } = useTheme();
+  const { t, lang } = useLanguage();
+  const localeCode = lang === "en" ? "en-US" : "tr-TR";
   const isDark = theme === "dark";
   const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -450,19 +452,19 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     return processedData;
   }, [chartData, timeWindow, period]);
 
-  // ✅ Yüzde: pencerenin gerçek ilk/son noktası (tüm periyotlar)
+  // ✅ Yüzde: çizilen seri (buy) ile aynı kaynak — mid kullanmak yükselen buy + düşen mid'de yanlış kırmızı üretir
   const displayPercentage = useMemo(() => {
-    if (displayChartData.length === 0) return 0;
+    if (displayChartData.length < 2) return 0;
     const firstPoint = displayChartData[0];
     const lastPoint = displayChartData[displayChartData.length - 1];
-    const firstMid = (firstPoint.buy + firstPoint.sell) / 2;
-    const lastMid = (lastPoint.buy + lastPoint.sell) / 2;
-    if (!(firstMid > 0) || displayChartData.length < 2) return 0;
-    return ((lastMid - firstMid) / firstMid) * 100;
+    const firstVal = Number(firstPoint.buy ?? firstPoint.mid);
+    const lastVal = Number(lastPoint.buy ?? lastPoint.mid);
+    if (!(firstVal > 0) || !Number.isFinite(lastVal)) return 0;
+    return ((lastVal - firstVal) / firstVal) * 100;
   }, [displayChartData]);
 
-  // Google Finance stili: pozitif yeşil, negatif kırmızı
-  const strokeColor = displayPercentage >= 0 ? '#10b981' : '#ef4444';
+  // Google Finance stili: pozitif yeşil, negatif kırmızı (+ aynı gradient gölge)
+  const strokeColor = displayPercentage >= 0 ? "#10b981" : "#f43f5e";
   const gradientId = `colorValue-${currency}`;
 
   // ✅ Domain: her zaman aktif zaman penceresi
@@ -474,38 +476,73 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   // ✅ Sabit domain üzerinde eşit aralıklı 5 tick
   const xAxisTicks = useMemo(() => timeWindow.customTicks, [timeWindow]);
 
+  // Eşit aralıklı Y ekseni (Recharts'ın düzensiz "nice" tick'lerini bypass)
+  const yAxisConfig = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const row of displayChartData) {
+      const v = Number(row.buy);
+      if (!Number.isFinite(v)) continue;
+      min = Math.min(min, v);
+      max = Math.max(max, v);
+    }
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      return { domain: [0, 1], ticks: [0, 0.25, 0.5, 0.75, 1] };
+    }
+    if (Math.abs(max - min) < 0.0001) {
+      const pad = Math.max(Math.abs(min) * 0.002, 0.01);
+      min -= pad;
+      max += pad;
+    } else {
+      const pad = (max - min) * 0.06;
+      min -= pad;
+      max += pad;
+    }
+    const steps = 4;
+    const ticks = [];
+    for (let i = 0; i <= steps; i += 1) {
+      ticks.push(min + ((max - min) * i) / steps);
+    }
+    return { domain: [min, max], ticks };
+  }, [displayChartData]);
+
   // Kart üstü tarih aralığı etiketi (Gün Ay Yıl)
   const formatHeaderDate = (ms) => {
     if (!ms) return "";
-    return new Date(ms).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
+    return new Date(ms).toLocaleDateString(localeCode, { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
-  // ✅ X ekseni: Saatlik/Günlük → saat (küsüratsız); Yıllık → ay-yıl; diğerleri → gün-ay
+  // ✅ X ekseni: DD/MM + 24 saat (AM/PM yok)
   const formatXAxis = (ms) => {
     if (!ms) return "";
     const d = new Date(ms);
     if (isNaN(d.getTime())) return "";
-    if (period === 'Saatlik' || period === 'Günlük') {
-      return d.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/:\d{2}$/, ':00');
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    if (period === "Saatlik" || period === "Günlük") {
+      const hh = String(d.getHours()).padStart(2, "0");
+      return `${dd}/${mm}, ${hh}:00`;
     }
-    if (period === 'Yıllık') {
-      return d.toLocaleDateString('tr-TR', { month: 'short', year: 'numeric' });
+    if (period === "Yıllık") {
+      return d.toLocaleDateString(localeCode, { month: "short", year: "numeric" });
     }
-    return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
+    return `${dd}/${mm}`;
   };
 
-  // Düz çizgilerde (min≈max) Y ekseninin çökmesini önle
-  const getAxisDomain = ([dataMin, dataMax]) => {
-    if (Math.abs(dataMax - dataMin) < 0.0001) {
-      return [dataMin * 0.998, dataMax * 1.002];
-    }
-    return [dataMin, dataMax];
+  const formatChartTooltipLabel = (ms) => {
+    const d = new Date(ms);
+    if (!Number.isFinite(d.getTime())) return "";
+    const day = d.getDate();
+    const monthName = d.toLocaleDateString(localeCode, { month: "long" });
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    return `${day} ${monthName}, ${hh}:${min}`;
   };
 
   if (loading) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
-        <p className="text-xs text-slate-500 dark:text-slate-400">Yükleniyor...</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{t("loadingGeneric")}</p>
       </div>
     );
   }
@@ -514,7 +551,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   if (error || chartData.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
-        <p className="text-xs text-slate-500 dark:text-slate-400">{error ? `❌ ${error}` : '📊 Veri yok'}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{error ? `❌ ${error}` : t("chartNoData")}</p>
       </div>
     );
   }
@@ -522,7 +559,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   if (displayChartData.length === 0) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
-        <p className="text-xs text-slate-500 dark:text-slate-400">📊 Bu aralıkta gösterilecek nokta yok</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{t("chartNoPointsInRange")}</p>
       </div>
     );
   }
@@ -577,7 +614,8 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           tickLine={{ stroke: axisStroke }}
         />
         <YAxis
-          domain={getAxisDomain}
+          domain={yAxisConfig.domain}
+          ticks={yAxisConfig.ticks}
           width={45}
           tickFormatter={(val) => Number(val).toFixed(2)}
           tick={{ fontSize: tickFont, fill: tickFill }}
@@ -585,8 +623,8 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           tickLine={false}
         />
         <Tooltip
-          labelFormatter={(val) => new Date(val).toLocaleString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-          formatter={(value) => [Number(value).toFixed(4) + ' ₺', 'Kur']}
+          labelFormatter={(val) => formatChartTooltipLabel(val)}
+          formatter={(value) => [Number(value).toFixed(4) + ' ₺', t("rateLabel")]}
           contentStyle={{ backgroundColor: tooltipBg, border: tooltipBorder, borderRadius: '8px', color: tooltipColor }}
         />
         <Area
@@ -596,6 +634,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           strokeWidth={isExpanded ? 2.5 : 2}
           fillOpacity={1}
           fill={`url(#${gradId})`}
+          isAnimationActive={false}
           activeDot={{ r: isExpanded ? 6 : 5, fill: strokeColor, stroke: isDark ? '#fff' : '#0f172a', strokeWidth: 2 }}
         />
       </AreaChart>
@@ -703,19 +742,24 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             className="bg-white/95 backdrop-blur-xl border border-slate-200 rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl relative flex flex-col overflow-hidden dark:bg-slate-900/70 dark:border-slate-600/60 dark:border-t-slate-400/50"
             onClick={(e) => e.stopPropagation()}
           >
-            <X
-              size={24}
-              onClick={() => setIsModalOpen(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-              aria-label="Kapat"
-            />
+            <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
+              <HeaderActions compact />
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                aria-label="Kapat"
+              >
+                <X size={22} />
+              </button>
+            </div>
 
             {/* Özel Tarih Seçici (Sadece Modal Açıkken Sol Üstte) */}
             <div className="absolute top-4 left-4 md:left-6 flex items-center gap-2 z-20 bg-slate-50/90 p-1.5 rounded-lg border border-slate-200 backdrop-blur-sm dark:bg-slate-900/50 dark:border-slate-700/50">
               {/* Başlangıç Tarihi Input'u */}
               <input
                 type="date"
-                lang="tr-TR"
+                lang={localeCode}
                 value={startDateStr}
                 max={endDateStr || todayStr}
                 onChange={(e) => {
@@ -738,7 +782,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
               {/* Bitiş Tarihi Input'u */}
               <input
                 type="date"
-                lang="tr-TR"
+                lang={localeCode}
                 value={endDateStr}
                 min={startDateStr}
                 max={todayStr}
@@ -785,9 +829,99 @@ function PartnershipForm() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
+  const [rawPhone, setRawPhone] = useState("5");
+  const phoneFormattedRef = useRef("0(5");
+  const phoneInputRef = useRef(null);
+
+  const PHONE_MASK_TEMPLATE = "0(5XX) XXX XXXX";
 
   const partnershipInputClass =
     "h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400";
+
+  const formatPhoneDisplay = (rawDigits) => {
+    let d = String(rawDigits || "").replace(/\D/g, "").slice(0, 10);
+    if (!d.startsWith("5")) d = `5${d.replace(/^5*/, "")}`.slice(0, 10);
+    if (!d) d = "5";
+    let out = "0(";
+    out += d.slice(0, Math.min(3, d.length));
+    if (d.length >= 3) out += ")";
+    if (d.length > 3) out += ` ${d.slice(3, Math.min(6, d.length))}`;
+    if (d.length > 6) out += ` ${d.slice(6, Math.min(10, d.length))}`;
+    return out;
+  };
+
+  const phoneMaskGhost = (() => {
+    const typed = formatPhoneDisplay(rawPhone);
+    return PHONE_MASK_TEMPLATE.split("")
+      .map((ch, i) => (i < typed.length ? "\u00A0" : ch))
+      .join("");
+  })();
+  const phoneDisplaySuffix = formatPhoneDisplay(rawPhone).slice(3);
+  const phoneGhostSuffix = phoneMaskGhost.slice(3);
+
+  const extractRawPhoneDigits = (value) => {
+    let digits = String(value || "").replace(/\D/g, "");
+    if (digits.startsWith("0")) digits = digits.slice(1);
+    digits = digits.slice(0, 10);
+    if (!digits.startsWith("5")) {
+      digits = `5${digits.replace(/^5*/, "")}`.slice(0, 10);
+    }
+    return digits || "5";
+  };
+
+  const syncPhone = (digits) => {
+    const next = extractRawPhoneDigits(digits);
+    setRawPhone(next);
+    phoneFormattedRef.current = formatPhoneDisplay(next);
+    setFormData((prev) => ({ ...prev, phone: `+90 ${formatPhoneDisplay(next)}` }));
+  };
+
+  const handlePhoneInputChange = (e) => {
+    const inputValue = e.target.value;
+    const prevFormatted = phoneFormattedRef.current;
+    let digits = extractRawPhoneDigits(inputValue);
+
+    if (
+      inputValue.length < prevFormatted.length &&
+      digits.length >= rawPhone.length &&
+      rawPhone.length > 1
+    ) {
+      digits = rawPhone.slice(0, -1);
+    }
+
+    syncPhone(digits);
+  };
+
+  const handlePhoneKeyDown = (e) => {
+    const input = e.target;
+    const start = input.selectionStart ?? 0;
+    const end = input.selectionEnd ?? 0;
+
+    if (e.key !== "Backspace" || start !== end) return;
+    if (rawPhone.length <= 1) {
+      e.preventDefault();
+      return;
+    }
+    const before = input.value[start - 1];
+    if (before && /\D/.test(before)) {
+      e.preventDefault();
+      syncPhone(rawPhone.slice(0, -1));
+    }
+  };
+
+  const handlePhoneFocus = (e) => {
+    const input = e.target;
+    requestAnimationFrame(() => {
+      const pos = String(input.value || "").length;
+      input.setSelectionRange(pos, pos);
+    });
+  };
+
+  const handlePhoneClick = () => {};
+
+  useEffect(() => {
+    phoneFormattedRef.current = formatPhoneDisplay(rawPhone);
+  }, [rawPhone]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -795,9 +929,6 @@ function PartnershipForm() {
     if (name === "contact_person") {
       // Harf, boşluk ve Türkçe karakterler; sayı yok
       next = value.replace(/[0-9]/g, "");
-    } else if (name === "phone") {
-      // Sadece rakam, +, boşluk, parantez
-      next = value.replace(/[^\d+\s()]/g, "");
     }
     setFormData((prev) => ({ ...prev, [name]: next }));
   };
@@ -822,9 +953,11 @@ function PartnershipForm() {
         institution_name: "",
         contact_person: "",
         email: "",
-        phone: "",
+        phone: "+90 0(5",
         message: "",
       });
+      setRawPhone("5");
+      phoneFormattedRef.current = "0(5";
       setTimeout(() => setSubmitted(false), 5000);
     } catch (err) {
       setError(err.message || t("applicationSendFailed"));
@@ -898,17 +1031,34 @@ function PartnershipForm() {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium uppercase tracking-wide text-white">{t("phoneLabel")}</label>
-                <input
-                  type="tel"
-                  name="phone"
-                  placeholder={t("phonePlaceholder")}
-                  value={formData.phone}
-                  onChange={handleChange}
-                  inputMode="tel"
-                  autoComplete="tel"
-                  required
-                  className={partnershipInputClass}
-                />
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm text-white">
+                    +90
+                  </span>
+                  <input
+                    ref={phoneInputRef}
+                    type="tel"
+                    name="phone"
+                    value={phoneDisplaySuffix}
+                    onChange={handlePhoneInputChange}
+                    onKeyDown={handlePhoneKeyDown}
+                    onFocus={handlePhoneFocus}
+                    onClick={handlePhoneClick}
+                    inputMode="numeric"
+                    autoComplete="tel-national"
+                    required
+                    className={`${partnershipInputClass} pl-[68px]`}
+                  />
+                  <span className="pointer-events-none absolute left-[44px] top-1/2 z-10 -translate-y-1/2 text-sm text-white">
+                    0(5
+                  </span>
+                  <span
+                    className="pointer-events-none absolute left-[68px] right-3 top-1/2 -translate-y-1/2 overflow-hidden whitespace-pre text-sm text-slate-500"
+                    aria-hidden="true"
+                  >
+                    {phoneGhostSuffix}
+                  </span>
+                </div>
               </div>
             </div>
             <div className="flex flex-col gap-1">
@@ -967,10 +1117,28 @@ const EXCHANGE_SORT_OPTIONS = [
   { value: "eur-buy-low", labelKey: "sortEurBuyLow" },
 ];
 
-/** Çalışma saati aralığına göre şu an açık mı? Örn: "09:00 - 17:30" */
+/** Çalışma saati — string ("09:00 - 17:30") veya haftalık obje */
 function isOpenNow(workingHours) {
   if (!workingHours) return false;
   try {
+    if (typeof workingHours === "object" && !Array.isArray(workingHours)) {
+      const dayKeys = [
+        "pazar",
+        "pazartesi",
+        "sali",
+        "carsamba",
+        "persembe",
+        "cuma",
+        "cumartesi",
+      ];
+      const key = dayKeys[new Date().getDay()];
+      const slot = workingHours[key];
+      if (!Array.isArray(slot) || slot[0] == null || slot[1] == null) return false;
+      const now = new Date();
+      const currentTime = now.getHours() * 60 + now.getMinutes();
+      return currentTime >= Number(slot[0]) && currentTime <= Number(slot[1]);
+    }
+
     const [start, end] = String(workingHours)
       .split("-")
       .map((t) => t.trim());
@@ -1131,7 +1299,8 @@ function getBestDepositRate(bankList) {
 export function V0FinancialDashboard() {
   const navigate = useNavigate();
   const { isAuthenticated, isSuperAdmin, logout } = useAuth();
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
+  const localeCode = lang === 'en' ? 'en-US' : 'tr-TR';
 
   const handleLogout = () => {
     // ✅ FIXED MODAL POPUP GÖSTER
@@ -1390,7 +1559,7 @@ export function V0FinancialDashboard() {
             workingHours:
               apiBank?.workingHours ||
               apiBank?.working_hours ||
-              "09:00 - 17:00",
+              null,
             depositRate: parseRateNumber(apiBank?.depositRate),
             loans: {
               tasit: parseRateNumber(apiBank?.loans?.tasit),
@@ -1435,7 +1604,7 @@ export function V0FinancialDashboard() {
         if (mounted) {
           setBanks(mappedBanks);
           setLastUpdated(data?.updatedAt ?? null);
-          setLastUpdateTime(new Date().toLocaleTimeString('tr-TR'));
+          setLastUpdateTime(new Date().toLocaleTimeString(localeCode));
           console.log(`[DASHBOARD] ${mappedBanks.length} banka yüklendi, FirstBank: ${mappedBanks[0]?.name || "N/A"}`);
         }
       } catch (error) {
@@ -1877,13 +2046,13 @@ export function V0FinancialDashboard() {
               <SearchableSelect
                 value={calculatorBank}
                 onChange={setCalculatorBank}
-                placeholder={!exchangeCurrency ? "Lütfen önce Döviz Birimi seçin" : "Bir döviz bürosu seçin"}
+                placeholder={!exchangeCurrency ? t("selectCurrencyFirst") : t("selectExchangeOffice")}
                 disabled={!exchangeCurrency}
                 aria-label={t("selectBank")}
                 options={[
-                  { value: "", label: !exchangeCurrency ? "Lütfen önce Döviz Birimi seçin" : "Bir döviz bürosu seçin" },
+                  { value: "", label: !exchangeCurrency ? t("selectCurrencyFirst") : t("selectExchangeOffice") },
                   ...(exchangeCurrency ? [...banks]
-                    .sort((a, b) => a.name.localeCompare(b.name, "tr"))
+                    .sort((a, b) => a.name.localeCompare(b.name, localeCode))
                     .map((bank) => {
                       const rate = bank.exchangeRates?.find((r) => r.currency === exchangeCurrency);
                       // ⚠️ DÜZELTME (bkz. project_audit_report.md, 1.5): Müşteri "Alış" yaptığında
@@ -1917,11 +2086,11 @@ export function V0FinancialDashboard() {
                 value={exchangeAmount}
                 onChange={(e) => setExchangeAmount(e.target.value)}
                 className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder={!exchangeCurrency ? "Döviz Seçiniz" : !calculatorBank ? "Döviz Bürosu Seçin" : "Tutar giriniz"}
+                placeholder={!exchangeCurrency ? t("selectCurrencyPrompt") : !calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
               />
               {exchangeAmount !== "0" && (!exchangeCurrency || !calculatorBank) && (
                 <p className="text-xs text-indigo-600 dark:text-indigo-300 mt-1">
-                  ⚠️ Döviz birimi ya da şube seçilmedi
+                  ⚠️ {t("currencyOrBranchMissing")}
                 </p>
               )}
             </div>
@@ -1937,16 +2106,16 @@ export function V0FinancialDashboard() {
                   : "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-not-allowed"
               }`}>
                 {Number.isFinite(exchangeResult)
-                  ? `${exchangeResult.toLocaleString("tr-TR", {
+                  ? `${exchangeResult.toLocaleString(localeCode, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })} ${exchangeOperation === "buy" ? exchangeCurrency : "TL"}`
                   : !exchangeCurrency
-                    ? "Döviz Seçiniz"
+                    ? t("selectCurrencyPrompt")
                     : !calculatorBank
-                      ? "Döviz Bürosu Seçin"
+                      ? t("selectOfficePrompt")
                       : (exchangeAmount === "0" || exchangeAmount === "")
-                        ? "Dönüştürmek istediğiniz tutarı giriniz"
+                        ? t("enterAmountPrompt")
                         : t("resultWaiting")}
               </div>
             </div>
@@ -2003,7 +2172,7 @@ export function V0FinancialDashboard() {
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Net Getiri</label>
               <div className="flex h-11 items-center rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
                 {Number.isFinite(depositProfit)
-                  ? `${depositProfit.toLocaleString("tr-TR", {
+                  ? `${depositProfit.toLocaleString(localeCode, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })} TL`
@@ -2014,7 +2183,7 @@ export function V0FinancialDashboard() {
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Vade Sonu Toplam</label>
               <div className="flex h-11 items-center rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
                 {Number.isFinite(depositTotal)
-                  ? `${depositTotal.toLocaleString("tr-TR", {
+                  ? `${depositTotal.toLocaleString(localeCode, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })} TL`
@@ -2078,7 +2247,7 @@ export function V0FinancialDashboard() {
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Aylık Taksit Tutarı</label>
               <div className="flex h-11 items-center rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
                 {Number.isFinite(loanInstallment)
-                  ? `${loanInstallment.toLocaleString("tr-TR", {
+                  ? `${loanInstallment.toLocaleString(localeCode, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })} TL`
@@ -2089,7 +2258,7 @@ export function V0FinancialDashboard() {
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Toplam Geri Ödeme</label>
               <div className="flex h-11 items-center rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
                 {Number.isFinite(loanTotal)
-                  ? `${loanTotal.toLocaleString("tr-TR", {
+                  ? `${loanTotal.toLocaleString(localeCode, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })} TL`
@@ -2205,7 +2374,7 @@ export function V0FinancialDashboard() {
       {lastUpdateTime ? (
         <div className="mt-10 flex justify-center px-2">
           <div className="rounded-lg border border-slate-200 bg-white/80 px-4 py-2.5 text-center text-xs tracking-wide text-slate-500 shadow-sm dark:border-slate-700/80 dark:bg-slate-950/60">
-            {`Son Güncelleme: ${new Date().toLocaleDateString("tr-TR")} - ${lastUpdateTime}`}
+            {`${t("lastUpdate")}: ${new Date().toLocaleDateString(localeCode)} - ${lastUpdateTime}`}
           </div>
         </div>
       ) : null}

@@ -200,6 +200,24 @@ function initDb({ skipBusinessSeed = false } = {}) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (institution_id) REFERENCES institutions(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS branch_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER NOT NULL,
+      institution_id TEXT NOT NULL,
+      business_name TEXT NOT NULL DEFAULT '',
+      branch_name TEXT NOT NULL,
+      phone TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      lat REAL,
+      lng REAL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      is_read INTEGER NOT NULL DEFAULT 0,
+      admin_note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (business_id) REFERENCES institutions(id) ON DELETE CASCADE
+    );
   `);
 
   // Tek satırlık ziyaretçi sayacı (yoksa oluştur)
@@ -272,6 +290,42 @@ function initDb({ skipBusinessSeed = false } = {}) {
       `UPDATE institutions SET created_at = datetime('now') WHERE created_at IS NULL`
     );
   }
+  if (!columnExists("institutions", "branch_limit")) {
+    db.exec(`ALTER TABLE institutions ADD COLUMN branch_limit INTEGER NOT NULL DEFAULT 1`);
+  }
+  if (!columnExists("branches", "whatsapp")) {
+    db.exec(`ALTER TABLE branches ADD COLUMN whatsapp TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!columnExists("branches", "subscription_type")) {
+    db.exec(`ALTER TABLE branches ADD COLUMN subscription_type TEXT NOT NULL DEFAULT 'Test'`);
+  }
+  if (!columnExists("branches", "subscription_start_date")) {
+    db.exec(`ALTER TABLE branches ADD COLUMN subscription_start_date TEXT`);
+  }
+  if (!columnExists("branches", "subscription_end_date")) {
+    db.exec(`ALTER TABLE branches ADD COLUMN subscription_end_date TEXT`);
+  }
+  backfillBranchSubscriptionsIfNeeded();
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS branch_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER NOT NULL,
+      institution_id TEXT NOT NULL,
+      business_name TEXT NOT NULL DEFAULT '',
+      branch_name TEXT NOT NULL,
+      phone TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '',
+      lat REAL,
+      lng REAL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      is_read INTEGER NOT NULL DEFAULT 0,
+      admin_note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (business_id) REFERENCES institutions(id) ON DELETE CASCADE
+    )
+  `);
 
   migrateBankAdminsToInstitutions();
 
@@ -529,6 +583,7 @@ function migrateAkbankMargins() {
 }
 
 function packageDays(subscriptionType, subscriptionDuration) {
+  // Test = sınırsız (end_date null); buradaki 14 yalnızca geriye dönük yedek
   if (subscriptionType === "Test") return 14;
   if (subscriptionType === "Yıllık" || subscriptionDuration === "Yıllık") return 365;
   if (subscriptionType === "Aylık" || subscriptionDuration === "Aylık") return 30;
@@ -566,15 +621,64 @@ function daysRemainingFrom(endDateIso) {
   return Math.ceil((end - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
-/** Süresi bitmiş işletmeleri otomatik pasife alır */
+/** Mevcut şubelere işletme aboneliğinden başlangıç/bitiş kopyala (yalnızca start boşsa) */
+function backfillBranchSubscriptionsIfNeeded() {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT b.id, b.created_at,
+                i.subscription_type AS biz_type,
+                i.subscription_end_date AS biz_end
+         FROM branches b
+         JOIN institutions i ON i.id = b.business_id
+         WHERE b.subscription_start_date IS NULL OR b.subscription_start_date = ''`
+      )
+      .all();
+    if (!rows.length) return;
+
+    const upd = db.prepare(
+      `UPDATE branches
+       SET subscription_type = ?, subscription_start_date = ?, subscription_end_date = ?
+       WHERE id = ?`
+    );
+    for (const row of rows) {
+      const type = normalizeSubscriptionType(row.biz_type);
+      upd.run(
+        type,
+        row.created_at || new Date().toISOString(),
+        type === "Test" ? null : row.biz_end || null,
+        row.id
+      );
+    }
+    console.log(`[DB] ${rows.length} şube aboneliği işletmeden backfill edildi.`);
+  } catch (err) {
+    console.warn("[DB] branch subscription backfill:", err.message);
+  }
+}
+
+/** Süresi bitmiş işletmeleri otomatik pasife alır (Test = sınırsız, hariç) */
 function deactivateIfExpired(row) {
   if (!row || row.role === "superadmin") return row;
+  if (normalizeSubscriptionType(row.subscription_type) === "Test") return row;
   const days = daysRemainingFrom(row.subscription_end_date);
   if (days != null && days <= 0 && !(row.is_active === 0 || row.is_active === false)) {
     db.prepare(`UPDATE institutions SET is_active = 0 WHERE id = ?`).run(row.id);
     return { ...row, is_active: 0 };
   }
   return row;
+}
+
+function normalizeBranchLimit(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
+function countBranchesForBusiness(businessId) {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS c FROM branches WHERE business_id = ?`)
+    .get(businessId);
+  return Number(row?.c) || 0;
 }
 
 function mapBusinessRow(row) {
@@ -592,6 +696,8 @@ function mapBusinessRow(row) {
       working_hours = null;
     }
   }
+  const branch_limit = normalizeBranchLimit(synced.branch_limit ?? 1);
+  const branch_count = synced.id != null ? countBranchesForBusiness(synced.id) : 0;
   return {
     ...synced,
     is_active: synced.is_active === 0 || synced.is_active === false ? false : true,
@@ -600,6 +706,8 @@ function mapBusinessRow(row) {
     phone: synced.phone || null,
     working_hours,
     days_remaining,
+    branch_limit,
+    branch_count,
   };
 }
 
@@ -680,7 +788,10 @@ function listBusinesses() {
               COALESCE(subscription_type, 'Test') AS subscription_type,
               subscription_end_date,
               COALESCE(is_active, 1) AS is_active,
+              COALESCE(branch_limit, 1) AS branch_limit,
               logo_url,
+              phone,
+              working_hours,
               created_at
        FROM institutions
        WHERE COALESCE(role, 'business') != 'superadmin'
@@ -751,20 +862,25 @@ function createBusiness({
   remaining_days,
   is_active = true,
   logo_url,
+  branch_limit = 1,
 }) {
   const cleanUsername = String(username || "").trim();
   const cleanName = String(institution_name || "").trim();
   const type = normalizeSubscriptionType(subscription_type);
-  // Yeni kayıtta süre yoksa paket günü; 0 gelirse en az 1 gün (hemen filtreye düşmesin)
-  let days =
-    remaining_days != null
-      ? Math.max(0, Number(remaining_days) || 0)
-      : packageDays(type);
-  if (!Number.isFinite(days) || days <= 0) {
-    days = packageDays(type);
-  }
   const label = buildSubscriptionLabel(type);
-  const endDate = endDateFromRemainingDays(days);
+  const limit = normalizeBranchLimit(branch_limit);
+  // Test = sınırsız abonelik (subscription_end_date null)
+  let endDate = null;
+  if (type !== "Test") {
+    let days =
+      remaining_days != null
+        ? Math.max(0, Number(remaining_days) || 0)
+        : packageDays(type);
+    if (!Number.isFinite(days) || days <= 0) {
+      days = packageDays(type);
+    }
+    endDate = endDateFromRemainingDays(days);
+  }
   // Yeni işletme varsayılan AKTİF (1); yalnızca açıkça false/0 gelirse pasif
   const active = is_active === false || is_active === 0 || is_active === "0" ? 0 : 1;
   const passwordHash = bcrypt.hashSync(String(password || ""), 10);
@@ -787,15 +903,15 @@ function createBusiness({
     const result = db
       .prepare(
         `INSERT INTO institutions
-          (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url)
-         VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?)`
+          (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit)
+         VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?)`
       )
-      .run(cleanUsername, passwordHash, institutionId, cleanName, label, type, endDate, active, logo);
+      .run(cleanUsername, passwordHash, institutionId, cleanName, label, type, endDate, active, logo, limit);
 
     return mapBusinessRow(
       db
         .prepare(
-          `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, created_at
+          `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, created_at
            FROM institutions WHERE id = ?`
         )
         .get(result.lastInsertRowid)
@@ -808,14 +924,14 @@ function createBusiness({
           const result = db
             .prepare(
               `INSERT INTO institutions
-                (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url)
-               VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?)`
+                (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit)
+               VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?)`
             )
-            .run(cleanUsername, passwordHash, slug, cleanName, label, type, endDate, active, logo);
+            .run(cleanUsername, passwordHash, slug, cleanName, label, type, endDate, active, logo, limit);
           return mapBusinessRow(
             db
               .prepare(
-                `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, created_at
+                `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, created_at
                  FROM institutions WHERE id = ?`
               )
               .get(result.lastInsertRowid)
@@ -841,10 +957,11 @@ function updateBusiness(id, {
   remaining_days,
   is_active,
   logo_url,
+  branch_limit,
 }) {
   const row = db
     .prepare(
-      `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url
+      `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, COALESCE(branch_limit, 1) AS branch_limit
        FROM institutions WHERE id = ?`
     )
     .get(id);
@@ -859,13 +976,18 @@ function updateBusiness(id, {
     ? normalizeSubscriptionType(subscription_type ?? row.subscription_type)
     : normalizeSubscriptionType(row.subscription_type);
   const nextLabel = typeChanged ? buildSubscriptionLabel(nextType) : (row.subscription || buildSubscriptionLabel(nextType));
-  const endDate = typeChanged
-    ? endDateFromRemainingDays(
-        remaining_days != null
-          ? remaining_days
-          : packageDays(nextType)
-      )
-    : row.subscription_end_date || endDateFromRemainingDays(packageDays(nextType));
+  let endDate = row.subscription_end_date;
+  if (typeChanged) {
+    if (nextType === "Test") {
+      endDate = null;
+    } else {
+      endDate = endDateFromRemainingDays(
+        remaining_days != null ? remaining_days : packageDays(nextType)
+      );
+    }
+  } else if (!endDate && nextType !== "Test") {
+    endDate = endDateFromRemainingDays(packageDays(nextType));
+  }
   const active =
     is_active === undefined || is_active === null
       ? (row.is_active === 0 ? 0 : 1)
@@ -873,6 +995,10 @@ function updateBusiness(id, {
 
   const nextLogo =
     logo_url === undefined ? row.logo_url || null : sanitizeLogoUrl(logo_url);
+  const nextBranchLimit =
+    branch_limit === undefined || branch_limit === null
+      ? normalizeBranchLimit(row.branch_limit)
+      : normalizeBranchLimit(branch_limit);
 
   if (!nextUsername || !nextName) {
     throw new Error("Kullanıcı adı ve işletme adı zorunludur.");
@@ -888,16 +1014,16 @@ function updateBusiness(id, {
       db.prepare(
         `UPDATE institutions
          SET username = ?, institution_name = ?, subscription = ?, subscription_type = ?,
-             subscription_end_date = ?, is_active = ?, logo_url = ?, password_hash = ?
+             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, password_hash = ?
          WHERE id = ?`
-      ).run(nextUsername, nextName, nextLabel, nextType, endDate, active, nextLogo, passwordHash, id);
+      ).run(nextUsername, nextName, nextLabel, nextType, endDate, active, nextLogo, nextBranchLimit, passwordHash, id);
     } else {
       db.prepare(
         `UPDATE institutions
          SET username = ?, institution_name = ?, subscription = ?, subscription_type = ?,
-             subscription_end_date = ?, is_active = ?, logo_url = ?
+             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?
          WHERE id = ?`
-      ).run(nextUsername, nextName, nextLabel, nextType, endDate, active, nextLogo, id);
+      ).run(nextUsername, nextName, nextLabel, nextType, endDate, active, nextLogo, nextBranchLimit, id);
     }
   } catch (err) {
     if (String(err.message || "").includes("UNIQUE")) {
@@ -909,7 +1035,7 @@ function updateBusiness(id, {
   return mapBusinessRow(
     db
       .prepare(
-        `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, created_at
+        `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, created_at
          FROM institutions WHERE id = ?`
       )
       .get(id)
@@ -940,7 +1066,7 @@ function resetBusinessSubscription(id) {
 function updateBusinessStatus(id, is_active) {
   const row = db
     .prepare(
-      `SELECT id, role, subscription_end_date, is_active FROM institutions WHERE id = ?`
+      `SELECT id, role, subscription_type, subscription_end_date, is_active FROM institutions WHERE id = ?`
     )
     .get(id);
 
@@ -949,9 +1075,12 @@ function updateBusinessStatus(id, is_active) {
 
   const wantActive = !(is_active === false || is_active === 0);
   if (wantActive) {
-    const days = daysRemainingFrom(row.subscription_end_date);
-    if (days != null && days <= 0) {
-      throw new Error("Süresi bitmiş işletme aktif edilemez. Önce abonelik süresini uzatın.");
+    const type = normalizeSubscriptionType(row.subscription_type);
+    if (type !== "Test") {
+      const days = daysRemainingFrom(row.subscription_end_date);
+      if (days != null && days <= 0) {
+        throw new Error("Süresi bitmiş işletme aktif edilemez. Önce abonelik süresini uzatın.");
+      }
     }
   }
 
@@ -989,18 +1118,69 @@ function assertBusinessExists(businessId) {
   return row;
 }
 
+const BRANCH_SELECT_SQL = `id, business_id, name, phone, COALESCE(whatsapp, '') AS whatsapp, address, lat, lng,
+  COALESCE(subscription_type, 'Test') AS subscription_type,
+  subscription_start_date, subscription_end_date, created_at, updated_at`;
+
 function mapBranchRow(row) {
   if (!row) return null;
+  const subscription_type = normalizeSubscriptionType(row.subscription_type || "Test");
+  const subscription_end_date =
+    subscription_type === "Test" ? null : row.subscription_end_date || null;
   return {
     id: row.id,
     business_id: row.business_id,
     name: row.name,
     phone: row.phone || "",
+    whatsapp: row.whatsapp || "",
     address: row.address || "",
     lat: row.lat == null ? null : Number(row.lat),
     lng: row.lng == null ? null : Number(row.lng),
+    subscription_type,
+    subscription_start_date: row.subscription_start_date || row.created_at || null,
+    subscription_end_date,
+    days_remaining:
+      subscription_type === "Test" ? null : daysRemainingFrom(subscription_end_date),
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+function resolveBranchSubscriptionFields(
+  {
+    subscription_type,
+    subscription_start_date,
+    subscription_end_date,
+    remaining_days,
+  } = {},
+  fallback = {}
+) {
+  const type = normalizeSubscriptionType(
+    subscription_type !== undefined ? subscription_type : fallback.subscription_type || "Test"
+  );
+  const start =
+    subscription_start_date !== undefined && subscription_start_date !== null
+      ? String(subscription_start_date).trim() || null
+      : fallback.subscription_start_date || new Date().toISOString();
+
+  let end;
+  if (type === "Test") {
+    end = null;
+  } else if (remaining_days !== undefined && remaining_days !== null && remaining_days !== "") {
+    end = endDateFromRemainingDays(remaining_days);
+  } else if (subscription_end_date !== undefined) {
+    end =
+      subscription_end_date == null || subscription_end_date === ""
+        ? null
+        : String(subscription_end_date);
+  } else {
+    end = fallback.subscription_end_date || null;
+  }
+
+  return {
+    subscription_type: type,
+    subscription_start_date: start,
+    subscription_end_date: end,
   };
 }
 
@@ -1008,7 +1188,7 @@ function listBranchesByBusiness(businessId) {
   assertBusinessExists(businessId);
   return db
     .prepare(
-      `SELECT id, business_id, name, phone, address, lat, lng, created_at, updated_at
+      `SELECT ${BRANCH_SELECT_SQL}
        FROM branches
        WHERE business_id = ?
        ORDER BY name COLLATE NOCASE ASC`
@@ -1034,7 +1214,7 @@ function listBranchesByInstitutionKey(institutionKey) {
 
   return db
     .prepare(
-      `SELECT id, business_id, name, phone, address, lat, lng, created_at, updated_at
+      `SELECT ${BRANCH_SELECT_SQL}
        FROM branches
        WHERE business_id = ?
        ORDER BY name COLLATE NOCASE ASC`
@@ -1043,66 +1223,170 @@ function listBranchesByInstitutionKey(institutionKey) {
     .map(mapBranchRow);
 }
 
-function createBranch({ business_id, name, phone, address, lat, lng }) {
+function createBranch({
+  business_id,
+  name,
+  phone,
+  whatsapp,
+  address,
+  lat,
+  lng,
+  subscription_type,
+  subscription_start_date,
+  subscription_end_date,
+  remaining_days,
+}) {
   const businessId = Number(business_id);
   if (!Number.isFinite(businessId)) throw new Error("business_id zorunludur.");
   assertBusinessExists(businessId);
 
+  const biz = db
+    .prepare(
+      `SELECT COALESCE(branch_limit, 1) AS branch_limit,
+              COALESCE(subscription_type, 'Test') AS subscription_type,
+              subscription_end_date
+       FROM institutions WHERE id = ?`
+    )
+    .get(businessId);
+  const limit = normalizeBranchLimit(biz?.branch_limit);
+  const currentCount = countBranchesForBusiness(businessId);
+  if (currentCount >= limit) {
+    const err = new Error(
+      "Şube limitine ulaşıldı. Yeni şube eklemek için limit artırın veya iletişime geçin."
+    );
+    err.statusCode = 403;
+    err.code = "BRANCH_LIMIT_REACHED";
+    throw err;
+  }
+
   const branchName = String(name || "").trim();
   if (!branchName) throw new Error("Şube adı zorunludur.");
 
+  const sub = resolveBranchSubscriptionFields(
+    {
+      subscription_type,
+      subscription_start_date,
+      subscription_end_date,
+      remaining_days,
+    },
+    {
+      subscription_type: biz?.subscription_type,
+      subscription_start_date: new Date().toISOString(),
+      subscription_end_date: biz?.subscription_end_date,
+    }
+  );
+
   const info = db
     .prepare(
-      `INSERT INTO branches (business_id, name, phone, address, lat, lng)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO branches (
+         business_id, name, phone, whatsapp, address, lat, lng,
+         subscription_type, subscription_start_date, subscription_end_date
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       businessId,
       branchName,
       String(phone || "").trim(),
+      String(whatsapp || "").trim(),
       String(address || "").trim(),
       lat == null || lat === "" ? null : Number(lat),
-      lng == null || lng === "" ? null : Number(lng)
+      lng == null || lng === "" ? null : Number(lng),
+      sub.subscription_type,
+      sub.subscription_start_date,
+      sub.subscription_end_date
     );
 
   return mapBranchRow(
-    db
-      .prepare(
-        `SELECT id, business_id, name, phone, address, lat, lng, created_at, updated_at
-         FROM branches WHERE id = ?`
-      )
-      .get(info.lastInsertRowid)
+    db.prepare(`SELECT ${BRANCH_SELECT_SQL} FROM branches WHERE id = ?`).get(info.lastInsertRowid)
   );
 }
 
-function updateBranch(id, { name, phone, address, lat, lng }) {
+function updateBranch(
+  id,
+  {
+    name,
+    phone,
+    whatsapp,
+    address,
+    lat,
+    lng,
+    subscription_type,
+    subscription_start_date,
+    subscription_end_date,
+    remaining_days,
+  }
+) {
   const row = db.prepare(`SELECT id FROM branches WHERE id = ?`).get(id);
   if (!row) throw new Error("Şube bulunamadı.");
 
-  const branchName = String(name || "").trim();
+  const existing = db
+    .prepare(`SELECT ${BRANCH_SELECT_SQL} FROM branches WHERE id = ?`)
+    .get(id);
+
+  const branchName =
+    name !== undefined ? String(name || "").trim() : String(existing.name || "").trim();
   if (!branchName) throw new Error("Şube adı zorunludur.");
+
+  const nextPhone = phone !== undefined ? String(phone || "").trim() : existing.phone || "";
+  const nextWhatsapp =
+    whatsapp !== undefined ? String(whatsapp || "").trim() : existing.whatsapp || "";
+  const nextAddress =
+    address !== undefined ? String(address || "").trim() : existing.address || "";
+  const nextLat =
+    lat !== undefined
+      ? lat == null || lat === ""
+        ? null
+        : Number(lat)
+      : existing.lat;
+  const nextLng =
+    lng !== undefined
+      ? lng == null || lng === ""
+        ? null
+        : Number(lng)
+      : existing.lng;
+
+  const subTouched =
+    subscription_type !== undefined ||
+    subscription_start_date !== undefined ||
+    subscription_end_date !== undefined ||
+    remaining_days !== undefined;
+
+  const sub = subTouched
+    ? resolveBranchSubscriptionFields(
+        {
+          subscription_type,
+          subscription_start_date,
+          subscription_end_date,
+          remaining_days,
+        },
+        existing
+      )
+    : {
+        subscription_type: existing.subscription_type || "Test",
+        subscription_start_date: existing.subscription_start_date || existing.created_at,
+        subscription_end_date: existing.subscription_end_date,
+      };
 
   db.prepare(
     `UPDATE branches
-     SET name = ?, phone = ?, address = ?, lat = ?, lng = ?, updated_at = datetime('now')
+     SET name = ?, phone = ?, whatsapp = ?, address = ?, lat = ?, lng = ?,
+         subscription_type = ?, subscription_start_date = ?, subscription_end_date = ?,
+         updated_at = datetime('now')
      WHERE id = ?`
   ).run(
     branchName,
-    String(phone || "").trim(),
-    String(address || "").trim(),
-    lat == null || lat === "" ? null : Number(lat),
-    lng == null || lng === "" ? null : Number(lng),
+    nextPhone,
+    nextWhatsapp,
+    nextAddress,
+    nextLat,
+    nextLng,
+    sub.subscription_type,
+    sub.subscription_start_date,
+    sub.subscription_end_date,
     id
   );
 
-  return mapBranchRow(
-    db
-      .prepare(
-        `SELECT id, business_id, name, phone, address, lat, lng, created_at, updated_at
-         FROM branches WHERE id = ?`
-      )
-      .get(id)
-  );
+  return mapBranchRow(db.prepare(`SELECT ${BRANCH_SELECT_SQL} FROM branches WHERE id = ?`).get(id));
 }
 
 function deleteBranch(id) {
@@ -1850,6 +2134,7 @@ function getInstitutionFullById(id) {
                 COALESCE(subscription_type, 'Test') AS subscription_type,
                 subscription_end_date,
                 COALESCE(is_active, 1) AS is_active,
+                COALESCE(branch_limit, 1) AS branch_limit,
                 logo_url, email, phone, working_hours, created_at
          FROM institutions WHERE id = ?`
       )
@@ -1869,6 +2154,7 @@ function getInstitutionFullBySlug(institutionId) {
                 COALESCE(subscription_type, 'Test') AS subscription_type,
                 subscription_end_date,
                 COALESCE(is_active, 1) AS is_active,
+                COALESCE(branch_limit, 1) AS branch_limit,
                 logo_url, email, phone, working_hours, created_at
          FROM institutions
          WHERE lower(institution_id) = ? AND COALESCE(role, 'business') != 'superadmin'
@@ -1926,6 +2212,7 @@ function listAllInstitutionsForSync() {
               COALESCE(subscription_type, 'Test') AS subscription_type,
               subscription_end_date,
               COALESCE(is_active, 1) AS is_active,
+              COALESCE(branch_limit, 1) AS branch_limit,
               logo_url, email, phone, working_hours, created_at
        FROM institutions
        WHERE COALESCE(role, 'business') != 'superadmin'`
@@ -1936,7 +2223,9 @@ function listAllInstitutionsForSync() {
 function listAllBranchesForSync() {
   return db
     .prepare(
-      `SELECT b.id, b.business_id, b.name, b.phone, b.address, b.lat, b.lng,
+      `SELECT b.id, b.business_id, b.name, b.phone, COALESCE(b.whatsapp, '') AS whatsapp, b.address, b.lat, b.lng,
+              COALESCE(b.subscription_type, 'Test') AS subscription_type,
+              b.subscription_start_date, b.subscription_end_date,
               b.created_at, b.updated_at, i.institution_id
        FROM branches b
        JOIN institutions i ON i.id = b.business_id`
@@ -1974,7 +2263,8 @@ function applySupabaseInstitutionRow(row) {
          logo_url = COALESCE(?, logo_url),
          email = COALESCE(?, email),
          phone = COALESCE(?, phone),
-         working_hours = COALESCE(?, working_hours)
+         working_hours = COALESCE(?, working_hours),
+         branch_limit = COALESCE(?, branch_limit)
        WHERE institution_id = ?`
     ).run(
       row.username || null,
@@ -1988,14 +2278,15 @@ function applySupabaseInstitutionRow(row) {
       row.email || null,
       row.phone || null,
       row.working_hours || null,
+      row.branch_limit != null ? normalizeBranchLimit(row.branch_limit) : null,
       row.institution_id
     );
   } else {
     db.prepare(
       `INSERT INTO institutions
         (username, password_hash, institution_id, institution_name, role, subscription,
-         subscription_type, subscription_end_date, is_active, logo_url, email, phone, working_hours)
-       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?)`
+         subscription_type, subscription_end_date, is_active, logo_url, email, phone, working_hours, branch_limit)
+       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       row.username || row.institution_id,
       row.password_hash || bcrypt.hashSync("123", 10),
@@ -2008,7 +2299,8 @@ function applySupabaseInstitutionRow(row) {
       row.logo_url || null,
       row.email || null,
       row.phone || null,
-      row.working_hours || null
+      row.working_hours || null,
+      normalizeBranchLimit(row.branch_limit ?? 1)
     );
   }
 }
@@ -2043,16 +2335,191 @@ function applySupabaseBranchRow(row) {
     .get(biz.id, row.name);
 
   if (existing) {
+    const cur = db.prepare(`SELECT ${BRANCH_SELECT_SQL} FROM branches WHERE id = ?`).get(existing.id);
+    const nextType =
+      row.subscription_type != null
+        ? normalizeSubscriptionType(row.subscription_type)
+        : normalizeSubscriptionType(cur.subscription_type || "Test");
+    const nextStart =
+      row.subscription_start_date != null
+        ? String(row.subscription_start_date)
+        : cur.subscription_start_date || cur.created_at || new Date().toISOString();
+    const nextEnd =
+      nextType === "Test"
+        ? null
+        : row.subscription_end_date !== undefined
+          ? row.subscription_end_date || null
+          : cur.subscription_end_date || null;
+
     db.prepare(
-      `UPDATE branches SET phone = ?, address = ?, lat = ?, lng = ?, updated_at = datetime('now')
+      `UPDATE branches SET phone = ?, whatsapp = COALESCE(?, whatsapp), address = ?, lat = ?, lng = ?,
+         subscription_type = ?, subscription_start_date = ?, subscription_end_date = ?,
+         updated_at = datetime('now')
        WHERE id = ?`
-    ).run(row.phone || "", row.address || "", row.lat, row.lng, existing.id);
+    ).run(
+      row.phone || "",
+      row.whatsapp != null ? String(row.whatsapp) : null,
+      row.address || "",
+      row.lat,
+      row.lng,
+      nextType,
+      nextStart,
+      nextEnd,
+      existing.id
+    );
   } else {
+    const subType = normalizeSubscriptionType(row.subscription_type || "Test");
+    const subStart = row.subscription_start_date || row.created_at || new Date().toISOString();
+    const subEnd = subType === "Test" ? null : row.subscription_end_date || null;
     db.prepare(
-      `INSERT INTO branches (business_id, name, phone, address, lat, lng)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    ).run(biz.id, row.name, row.phone || "", row.address || "", row.lat, row.lng);
+      `INSERT INTO branches (
+         business_id, name, phone, whatsapp, address, lat, lng,
+         subscription_type, subscription_start_date, subscription_end_date
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      biz.id,
+      row.name,
+      row.phone || "",
+      row.whatsapp || "",
+      row.address || "",
+      row.lat,
+      row.lng,
+      subType,
+      subStart,
+      subEnd
+    );
   }
+}
+
+function mapBranchRequestRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    business_id: row.business_id,
+    institution_id: row.institution_id,
+    business_name: row.business_name || "",
+    branch_name: row.branch_name,
+    phone: row.phone || "",
+    address: row.address || "",
+    lat: row.lat == null ? null : Number(row.lat),
+    lng: row.lng == null ? null : Number(row.lng),
+    status: row.status || "pending",
+    is_read: row.is_read === 1 || row.is_read === true,
+    admin_note: row.admin_note || null,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function createBranchRequest({
+  business_id,
+  institution_id,
+  business_name,
+  branch_name,
+  phone,
+  address,
+  lat,
+  lng,
+}) {
+  const businessId = Number(business_id);
+  if (!Number.isFinite(businessId)) throw new Error("business_id zorunludur.");
+  assertBusinessExists(businessId);
+
+  const name = String(branch_name || "").trim();
+  if (!name) throw new Error("Şube adı zorunludur.");
+  const nextPhone = String(phone || "").trim();
+  if (!nextPhone) throw new Error("Telefon numarası zorunludur.");
+  const nextAddress = String(address || "").trim();
+  if (!nextAddress) throw new Error("Adres / konum zorunludur.");
+  const nextLat = lat == null || lat === "" ? null : Number(lat);
+  const nextLng = lng == null || lng === "" ? null : Number(lng);
+  if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+    throw new Error("Haritadan konum seçilmesi zorunludur.");
+  }
+
+  const info = db
+    .prepare(
+      `INSERT INTO branch_requests (
+         business_id, institution_id, business_name, branch_name, phone, address, lat, lng, status, is_read
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`
+    )
+    .run(
+      businessId,
+      String(institution_id || "").trim(),
+      String(business_name || "").trim(),
+      name,
+      nextPhone,
+      nextAddress,
+      nextLat,
+      nextLng
+    );
+
+  return mapBranchRequestRow(
+    db.prepare(`SELECT * FROM branch_requests WHERE id = ?`).get(info.lastInsertRowid)
+  );
+}
+
+function listBranchRequests({ status } = {}) {
+  let rows;
+  if (status) {
+    rows = db
+      .prepare(
+        `SELECT * FROM branch_requests WHERE status = ? ORDER BY datetime(created_at) DESC`
+      )
+      .all(String(status));
+  } else {
+    rows = db
+      .prepare(`SELECT * FROM branch_requests ORDER BY datetime(created_at) DESC`)
+      .all();
+  }
+  return rows.map(mapBranchRequestRow);
+}
+
+function countUnreadBranchRequests() {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM branch_requests
+       WHERE status = 'pending' AND COALESCE(is_read, 0) = 0`
+    )
+    .get();
+  return Number(row?.c) || 0;
+}
+
+function markBranchRequestsRead() {
+  db.prepare(
+    `UPDATE branch_requests
+     SET is_read = 1, updated_at = datetime('now')
+     WHERE status = 'pending' AND COALESCE(is_read, 0) = 0`
+  ).run();
+  return { ok: true, unread: countUnreadBranchRequests() };
+}
+
+function getBranchRequestById(id) {
+  return mapBranchRequestRow(
+    db.prepare(`SELECT * FROM branch_requests WHERE id = ?`).get(id)
+  );
+}
+
+function updateBranchRequestStatus(id, { status, admin_note }) {
+  const existing = getBranchRequestById(id);
+  if (!existing) throw new Error("Talep bulunamadı.");
+
+  const nextStatus = String(status || "").trim();
+  if (!["pending", "approved", "rejected"].includes(nextStatus)) {
+    throw new Error("Geçersiz talep durumu.");
+  }
+
+  db.prepare(
+    `UPDATE branch_requests
+     SET status = ?, admin_note = ?, is_read = 1, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(
+    nextStatus,
+    admin_note !== undefined ? String(admin_note || "").trim() || null : existing.admin_note,
+    id
+  );
+
+  return getBranchRequestById(id);
 }
 
 module.exports = {
@@ -2074,6 +2541,12 @@ module.exports = {
   createBranch,
   updateBranch,
   deleteBranch,
+  createBranchRequest,
+  listBranchRequests,
+  countUnreadBranchRequests,
+  markBranchRequestsRead,
+  getBranchRequestById,
+  updateBranchRequestStatus,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,

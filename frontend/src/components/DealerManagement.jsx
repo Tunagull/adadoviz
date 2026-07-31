@@ -6,6 +6,8 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { MapPin, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
+import { HeaderActions } from "./HeaderActions";
 import {
   createAdminBranch,
   deleteAdminBranch,
@@ -30,13 +32,33 @@ const emptyBranchForm = {
   address: "",
   lat: null,
   lng: null,
+  subscription_type: "Test",
+  subscription_start_date: "",
+  remaining_days: "",
 };
 
+function toDateInputValue(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function fromDateInputValue(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
 const inputClass =
-  "h-11 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20";
+  "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
 
 const textareaClass =
-  "min-h-[100px] w-full resize-y rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-100 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20";
+  "min-h-[100px] w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
 
 function MapClickHandler({ onPick }) {
   useMapEvents({
@@ -83,6 +105,7 @@ function BranchFormModal({
   onSave,
   onMapPick,
 }) {
+  const { t } = useLanguage();
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.body.style.overflow;
@@ -112,25 +135,30 @@ function BranchFormModal({
         className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[90vh] w-[95%] md:w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/50">
-        <X
-          size={24}
-          onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-          aria-label="Kapat"
-        />
-        <div className="border-b border-slate-800 px-5 py-4 pr-12">
-          <p className="text-[11px] uppercase tracking-wide text-teal-400/80">Şube / Bayi</p>
-          <h3 className="text-lg font-semibold text-white">{title}</h3>
+      <div className="relative z-10 flex max-h-[90vh] w-[95%] md:w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/50">
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+          <HeaderActions compact />
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+            aria-label="Kapat"
+          >
+            <X size={22} />
+          </button>
+        </div>
+        <div className="border-b border-slate-200 px-5 py-4 pr-[7.5rem] dark:border-slate-800">
+          <p className="text-[11px] uppercase tracking-wide text-teal-600 dark:text-teal-400/80">Şube / Bayi</p>
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
         </div>
 
         <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(260px,340px)_1fr]">
           <form
             onSubmit={onSave}
-            className="space-y-4 overflow-y-auto border-b border-slate-800 p-5 lg:border-b-0 lg:border-r"
+            className="space-y-4 overflow-y-auto border-b border-slate-200 p-5 lg:border-b-0 lg:border-r dark:border-slate-800"
           >
             <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Şube Adı
               </span>
               <input
@@ -153,6 +181,62 @@ function BranchFormModal({
                 placeholder="Örn: +90 392 000 00 00"
               />
             </label>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                Abonelik Tipi
+              </span>
+              <select
+                value={formData.subscription_type}
+                onChange={(e) =>
+                  setFormData((p) => ({
+                    ...p,
+                    subscription_type: e.target.value,
+                    remaining_days: e.target.value === "Test" ? "" : p.remaining_days,
+                  }))
+                }
+                className={inputClass}
+              >
+                <option value="Test">{t("subTypeTest")}</option>
+                <option value="Aylık">{t("subTypeMonthly")}</option>
+                <option value="Yıllık">{t("subTypeYearly")}</option>
+                <option value="Manuel">{t("subTypeManual")}</option>
+              </select>
+            </label>
+
+            <label className="block space-y-1.5">
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                {t("subscriptionStartDate")}
+              </span>
+              <input
+                type="date"
+                value={formData.subscription_start_date}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, subscription_start_date: e.target.value }))
+                }
+                className={inputClass}
+              />
+            </label>
+
+            {formData.subscription_type !== "Test" ? (
+              <label className="block space-y-1.5">
+                <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  {t("remainingSubscription")} ({t("daysUnit")})
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  value={formData.remaining_days}
+                  onChange={(e) =>
+                    setFormData((p) => ({ ...p, remaining_days: e.target.value }))
+                  }
+                  className={inputClass}
+                  placeholder="Örn: 30"
+                />
+              </label>
+            ) : (
+              <p className="text-[11px] text-teal-400/90">{t("unlimitedSubscription")}</p>
+            )}
 
             <label className="block space-y-1.5">
               <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -228,16 +312,28 @@ function BranchFormModal({
 
 /**
  * Seçili işletmeye bağlı şube/bayi yönetimi (parent-child).
+ * Döviz kurları işletme seviyesindedir; şubeler yalnızca fiziksel bilgi tutar.
  */
-export function BusinessBranchesPanel({ token, businessId, businessName }) {
+export function BusinessBranchesPanel({
+  token,
+  businessId,
+  businessName,
+  branchLimit = 1,
+}) {
+  const { t } = useLanguage();
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [formData, setFormData] = useState(emptyBranchForm);
   const [geocoding, setGeocoding] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+
+  const limit = Math.max(1, Number(branchLimit) || 1);
+  const used = branches.length;
+  const atLimit = used >= limit;
 
   const loadBranches = useCallback(async () => {
     if (!token || !businessId) return;
@@ -259,6 +355,10 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
   }, [loadBranches]);
 
   const openCreate = () => {
+    if (atLimit) {
+      setLimitModalOpen(true);
+      return;
+    }
     setFormData(emptyBranchForm);
     setFormError("");
     setModalOpen(true);
@@ -272,6 +372,14 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
       address: branch.address || "",
       lat: branch.lat ?? null,
       lng: branch.lng ?? null,
+      subscription_type: branch.subscription_type || "Test",
+      subscription_start_date: toDateInputValue(
+        branch.subscription_start_date || branch.created_at
+      ),
+      remaining_days:
+        branch.subscription_type === "Test" || branch.days_remaining == null
+          ? ""
+          : String(Math.max(0, branch.days_remaining)),
     });
     setFormError("");
     setModalOpen(true);
@@ -316,8 +424,21 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
         address: formData.address.trim(),
         lat: formData.lat,
         lng: formData.lng,
+        subscription_type: formData.subscription_type || "Test",
+        subscription_start_date:
+          fromDateInputValue(formData.subscription_start_date) || new Date().toISOString(),
       };
       if (!payload.name) throw new Error("Şube adı zorunludur.");
+      if (payload.subscription_type === "Test") {
+        payload.subscription_end_date = null;
+        payload.remaining_days = null;
+      } else {
+        const days = Number(formData.remaining_days);
+        if (!Number.isFinite(days) || days < 0) {
+          throw new Error("Kalan abonelik günü zorunludur.");
+        }
+        payload.remaining_days = days;
+      }
 
       if (formData.id) {
         await updateAdminBranch(token, formData.id, payload);
@@ -347,11 +468,20 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
   return (
     <div className="mt-2">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <MapPin size={18} className="text-teal-400" />
-          <h3 className="text-base font-semibold text-white">
-            {businessName} Şubeleri / Bayileri
-          </h3>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <MapPin size={18} className="text-teal-400" />
+            <h3 className="text-base font-semibold text-white">
+              {businessName} Şubeleri / Bayileri
+            </h3>
+          </div>
+          <p
+            className={`mt-1 text-xs font-medium ${
+              atLimit ? "text-amber-300" : "text-slate-400"
+            }`}
+          >
+            {t("branchUsageLabel")}: {used} / {limit}
+          </p>
         </div>
         <button
           type="button"
@@ -359,7 +489,7 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
           className="inline-flex items-center gap-2 rounded-lg border border-teal-500/40 bg-teal-500/10 px-3 py-2 text-sm font-medium text-teal-300 transition hover:bg-teal-500/20"
         >
           <Plus size={16} />
-          Yeni Şube/Bayi Ekle
+          {t("addBranchBtn")}
         </button>
       </div>
 
@@ -370,11 +500,10 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
       ) : null}
 
       {loading ? (
-        <p className="text-sm text-slate-400">Şubeler yükleniyor...</p>
+        <p className="text-sm text-slate-400">{t("branchesLoading")}</p>
       ) : branches.length === 0 ? (
         <p className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 px-4 py-6 text-sm text-slate-400">
-          Bu işletmeye henüz şube eklenmemiş. Haritalı form için &quot;Yeni Şube/Bayi Ekle&quot;ye
-          tıklayın.
+          {t("branchesEmpty")}
         </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -389,6 +518,15 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
                   {branch.phone ? (
                     <p className="mt-0.5 text-xs text-slate-400">{branch.phone}</p>
                   ) : null}
+                  <p className="mt-1 text-[11px] text-teal-400/90">
+                    {branch.subscription_type === "Test"
+                      ? t("unlimitedSubscription")
+                      : branch.days_remaining == null
+                        ? "—"
+                        : branch.days_remaining <= 0
+                          ? t("subscriptionExpired")
+                          : `${t("remainingSubscription")}: ${branch.days_remaining} ${t("daysUnit")}`}
+                  </p>
                   <p className="mt-1 line-clamp-2 text-[12px] text-slate-500">
                     {branch.address || "Adres yok"}
                   </p>
@@ -434,6 +572,45 @@ export function BusinessBranchesPanel({ token, businessId, businessName }) {
         onSave={handleSave}
         onMapPick={handleMapPick}
       />
+
+      {limitModalOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+              onClick={() => setLimitModalOpen(false)}
+            >
+              <div
+                className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                  <HeaderActions compact />
+                  <button
+                    type="button"
+                    onClick={() => setLimitModalOpen(false)}
+                    className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                    aria-label={t("cancel")}
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+                <h4 className="pr-[7.5rem] text-lg font-semibold text-slate-900 dark:text-white">{t("branchLimitTitle")}</h4>
+                <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{t("branchLimitContactMsg")}</p>
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300/90">
+                  {t("branchUsageLabel")}: {used} / {limit}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setLimitModalOpen(false)}
+                  className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-cyan-500/50 hover:text-cyan-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:text-cyan-300"
+                >
+                  {t("cancel")}
+                </button>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

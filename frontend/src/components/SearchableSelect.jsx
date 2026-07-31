@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Search } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
 
 const MENU_MAX_HEIGHT = 280;
 const MENU_GAP = 4;
@@ -19,6 +20,8 @@ export function SearchableSelect({
   disabled = false,
   "aria-label": ariaLabel,
 }) {
+  const { t, lang } = useLanguage();
+  const localeCode = lang === "en" ? "en-US" : "tr-TR";
   const listId = useId();
   const rootRef = useRef(null);
   const menuRef = useRef(null);
@@ -38,14 +41,14 @@ export function SearchableSelect({
   );
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase("tr-TR");
+    const q = query.trim().toLocaleLowerCase(localeCode);
     if (!q) return options;
     return options.filter((o) =>
       String(o.label || "")
-        .toLocaleLowerCase("tr-TR")
+        .toLocaleLowerCase(localeCode)
         .includes(q)
     );
-  }, [options, query]);
+  }, [options, query, localeCode]);
 
   const updateMenuPosition = () => {
     const el = rootRef.current;
@@ -115,7 +118,7 @@ export function SearchableSelect({
   };
 
   const jumpByChar = (char) => {
-    const ch = char.toLocaleLowerCase("tr-TR");
+    const ch = char.toLocaleLowerCase(localeCode);
     if (!ch || ch.length !== 1) return;
     const state = typeaheadRef.current;
     clearTimeout(state.timer);
@@ -130,7 +133,7 @@ export function SearchableSelect({
     const ordered = [...pool.slice(start), ...pool.slice(0, start)];
     const match = ordered.find((o) =>
       String(o.label || "")
-        .toLocaleLowerCase("tr-TR")
+        .toLocaleLowerCase(localeCode)
         .startsWith(buf)
     );
     if (match) {
@@ -206,7 +209,7 @@ export function SearchableSelect({
                   setHighlight(0);
                 }}
                 onKeyDown={onListKeyDown}
-                placeholder="Ara..."
+                placeholder={t("searchPlaceholder")}
                 className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-900 outline-none focus:border-teal-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
               />
             </div>
@@ -217,7 +220,7 @@ export function SearchableSelect({
               className="max-h-56 overflow-y-auto py-1"
             >
               {filtered.length === 0 ? (
-                <li className="px-3 py-2 text-xs text-slate-500">Sonuç yok</li>
+                <li className="px-3 py-2 text-xs text-slate-500">{t("noResults")}</li>
               ) : (
                 filtered.map((opt, idx) => {
                   const active = String(opt.value) === String(value);

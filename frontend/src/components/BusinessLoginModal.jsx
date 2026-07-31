@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Building2, Lock, Mail, Moon, Sun, User, X } from "lucide-react";
+import { Building2, Lock, Mail, User, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import { apiUrl } from "../lib/api";
+import { HeaderActions } from "./HeaderActions";
 
 export function BusinessLoginModal({ isOpen, onClose }) {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const { theme, toggleTheme } = useTheme();
-  const { lang, toggleLang, t } = useLanguage();
+  const { t } = useLanguage();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -121,35 +120,17 @@ export function BusinessLoginModal({ isOpen, onClose }) {
       />
 
       <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-indigo-950/20 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95 dark:shadow-indigo-950/50">
-        {/* Theme + Lang toggles */}
-        <div className="absolute top-3.5 right-12 z-20 flex items-center gap-1">
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+          <HeaderActions compact />
           <button
             type="button"
-            onClick={toggleTheme}
-            className="inline-flex size-7 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-amber-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-amber-300"
-            title={theme === "dark" ? t("themeLight") : t("themeDark")}
-            aria-label="Toggle theme"
+            onClick={onClose}
+            className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+            aria-label="Kapat"
           >
-            {theme === "dark" ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={toggleLang}
-            className="inline-flex h-7 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tracking-wide text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-            title="TR / EN"
-            aria-label="Language"
-          >
-            <span className={lang === "tr" ? "text-teal-600 dark:text-teal-300" : "text-slate-400"}>TR</span>
-            <span className="mx-0.5 text-slate-400">|</span>
-            <span className={lang === "en" ? "text-teal-600 dark:text-teal-300" : "text-slate-400"}>EN</span>
+            <X size={22} />
           </button>
         </div>
-        <X
-          size={24}
-          onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors z-10"
-          aria-label="Kapat"
-        />
         {isLoggingIn ? (
           <div className="p-12 flex flex-col items-center justify-center min-h-[300px]">
             <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
@@ -281,23 +262,28 @@ export function BusinessLoginModal({ isOpen, onClose }) {
             onClick={() => setShowForgotModal(false)}
             aria-label="Şifremi unuttum modalını kapat"
           />
-          <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 p-5 shadow-2xl">
-            <X
-              size={20}
-              onClick={() => setShowForgotModal(false)}
-              className="absolute top-3 right-3 text-slate-400 hover:text-rose-500 cursor-pointer transition-colors"
-              aria-label="Kapat"
-            />
-            <h3 id="forgot-password-title" className="pr-8 text-base font-bold text-slate-100">
+          <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+              <HeaderActions compact />
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(false)}
+                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                aria-label="Kapat"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <h3 id="forgot-password-title" className="pr-[7.5rem] text-base font-bold text-slate-900 dark:text-slate-100">
               {t("forgotPasswordTitle")}
             </h3>
-            <p className="mt-1 text-xs text-slate-400">{t("forgotPasswordDesc")}</p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("forgotPasswordDesc")}</p>
 
             <form onSubmit={handleForgotSubmit} className="mt-4 space-y-4">
               <div className="space-y-2">
                 <label
                   htmlFor="forgot-email"
-                  className="text-xs font-medium uppercase tracking-wide text-slate-400"
+                  className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
                 >
                   {t("emailOrUsername")}
                 </label>
@@ -310,7 +296,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder={t("emailOrUsernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-slate-700 bg-slate-950 pl-10 pr-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                     required
                     disabled={forgotLoading}
                   />
@@ -318,12 +304,12 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               </div>
 
               {forgotError ? (
-                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
                   {forgotError}
                 </div>
               ) : null}
               {forgotSuccess ? (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
                   {forgotSuccess}
                 </div>
               ) : null}

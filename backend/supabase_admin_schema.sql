@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS public.institutions (
   email TEXT,
   phone TEXT,
   working_hours TEXT,
+  branch_limit INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -30,9 +31,13 @@ CREATE TABLE IF NOT EXISTS public.branches (
   institution_id TEXT NOT NULL,
   name TEXT NOT NULL,
   phone TEXT DEFAULT '',
+  whatsapp TEXT DEFAULT '',
   address TEXT DEFAULT '',
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
+  subscription_type TEXT DEFAULT 'Test',
+  subscription_start_date TIMESTAMPTZ,
+  subscription_end_date TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (institution_id, name)
@@ -118,6 +123,42 @@ ALTER TABLE public.partnership_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.password_resets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.visitor_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_stats ENABLE ROW LEVEL SECURITY;
+
+-- Mevcut Supabase kurulumları için şube limiti sütunu
+ALTER TABLE public.institutions
+  ADD COLUMN IF NOT EXISTS branch_limit INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE public.branches
+  ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT '';
+
+ALTER TABLE public.branches
+  ADD COLUMN IF NOT EXISTS subscription_type TEXT DEFAULT 'Test';
+
+ALTER TABLE public.branches
+  ADD COLUMN IF NOT EXISTS subscription_start_date TIMESTAMPTZ;
+
+ALTER TABLE public.branches
+  ADD COLUMN IF NOT EXISTS subscription_end_date TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS public.branch_requests (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  local_id INTEGER,
+  business_local_id INTEGER,
+  institution_id TEXT NOT NULL,
+  business_name TEXT DEFAULT '',
+  branch_name TEXT NOT NULL,
+  phone TEXT DEFAULT '',
+  address TEXT DEFAULT '',
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
+  status TEXT NOT NULL DEFAULT 'pending',
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  admin_note TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.branch_requests ENABLE ROW LEVEL SECURITY;
 
 -- NOT: Bilinçli olarak burada CREATE POLICY ... USING (true) YOK.
 -- Backend, .env → SUPABASE_KEY altında service_role key kullanmalıdır.
