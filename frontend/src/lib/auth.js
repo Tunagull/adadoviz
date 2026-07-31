@@ -220,6 +220,33 @@ export async function updateAdminBranchRequest(token, id, payload) {
   return data;
 }
 
+export async function fetchBusinessNotifications(token) {
+  const response = await fetch(apiUrl("/api/business/notifications"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Bildirimler alınamadı.");
+  }
+  return data;
+}
+
+export async function markBusinessNotificationsRead(token, ids) {
+  const response = await fetch(apiUrl("/api/business/notifications/mark-read"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(ids ? { ids } : {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Okundu işaretlenemedi.");
+  }
+  return data;
+}
+
 export async function fetchAdminBusinesses(token) {
   const response = await fetch(apiUrl("/api/admin/businesses"), {
     headers: authHeaders(token),

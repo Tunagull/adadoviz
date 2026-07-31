@@ -160,5 +160,19 @@ CREATE TABLE IF NOT EXISTS public.branch_requests (
 
 ALTER TABLE public.branch_requests ENABLE ROW LEVEL SECURITY;
 
+CREATE TABLE IF NOT EXISTS public.business_notifications (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  business_local_id INTEGER,
+  institution_id TEXT,
+  type TEXT NOT NULL,
+  title TEXT DEFAULT '',
+  message TEXT NOT NULL,
+  related_request_id INTEGER,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.business_notifications ENABLE ROW LEVEL SECURITY;
+
 -- NOT: Bilinçli olarak burada CREATE POLICY ... USING (true) YOK.
 -- Backend, .env → SUPABASE_KEY altında service_role key kullanmalıdır.

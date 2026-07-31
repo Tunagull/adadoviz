@@ -34,7 +34,7 @@ function formatRate(rate, currency) {
   return n.toFixed(2);
 }
 
-function V0BankCardComponent({ bank, mode, onSelect }) {
+function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }) {
   // ✅ ADIM 2: Flash effect durumları
   const [flashColor, setFlashColor] = useState(null); // 'green' | 'red' | null
   const prevRatesRef = useRef({});
@@ -121,6 +121,15 @@ function V0BankCardComponent({ bank, mode, onSelect }) {
   const rawName = bank.name || "";
   const isTestAccount = bank.subscription_type === "Test";
   const displayName = rawName.replace(/\s*\([Tt]est\)\s*/g, "").trim();
+  const nearest = showNearestBranch ? bank.nearestBranch : null;
+  const nearestLabel =
+    nearest?.name && Number.isFinite(nearest.distanceKm)
+      ? `(${nearest.name} - ${
+          nearest.distanceKm < 10
+            ? `${nearest.distanceKm.toFixed(1)}km`
+            : `${Math.round(nearest.distanceKm)}km`
+        })`
+      : null;
 
   const handleCardClick = () => {
     if (typeof onSelect === "function") onSelect(bank);
@@ -162,6 +171,11 @@ function V0BankCardComponent({ bank, mode, onSelect }) {
             }`}
           >
             {displayName || bank.name}
+            {nearestLabel ? (
+              <span className="ml-1.5 text-xs font-medium text-teal-600 dark:text-teal-300">
+                {nearestLabel}
+              </span>
+            ) : null}
           </h3>
           {isTestAccount && (
             <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider text-rose-500 bg-rose-500/10 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.5)]">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus } from "lucide-react";
+import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell } from "lucide-react";
 import Cropper from "react-easy-crop";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -9,7 +9,18 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
-import { fetchAdminRates, saveAdminRates, changeBusinessPassword, fetchBusinessProfile, updateBusinessProfile, fetchBusinessBranches, updateBusinessBranch, createBusinessBranchRequest } from "../lib/auth";
+import {
+  fetchAdminRates,
+  saveAdminRates,
+  changeBusinessPassword,
+  fetchBusinessProfile,
+  updateBusinessProfile,
+  fetchBusinessBranches,
+  updateBusinessBranch,
+  createBusinessBranchRequest,
+  fetchBusinessNotifications,
+  markBusinessNotificationsRead,
+} from "../lib/auth";
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
 import { DualRangeSlider } from "../components/DualRangeSlider";
@@ -231,6 +242,11 @@ export function InstitutionAdminPage() {
     lat: null,
     lng: null,
   });
+  const [notifications, setNotifications] = useState([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [notifLoading, setNotifLoading] = useState(false);
+  const notifPanelRef = useRef(null);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState("");
   const [infoSuccess, setInfoSuccess] = useState("");
@@ -443,6 +459,73 @@ export function InstitutionAdminPage() {
       mounted = false;
     };
   }, [bootstrapping, auth?.token]);
+
+  const loadNotifications = async () => {
+    if (!auth?.token) return;
+    setNotifLoading(true);
+    try {
+      const data = await fetchBusinessNotifications(auth.token);
+      setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+      setNotifUnread(Number(data.unread) || 0);
+    } catch (err) {
+      console.warn("[NOTIF] Bildirimler yüklenemedi:", err.message);
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (bootstrapping || !auth?.token) return undefined;
+    loadNotifications();
+    const timer = setInterval(loadNotifications, 30000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootstrapping, auth?.token]);
+
+  useEffect(() => {
+    if (!showNotifPanel) return undefined;
+    const onDown = (e) => {
+      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target)) {
+        setShowNotifPanel(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [showNotifPanel]);
+
+  const openNotifications = async () => {
+    const next = !showNotifPanel;
+    setShowNotifPanel(next);
+    if (next) {
+      await loadNotifications();
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    if (!auth?.token) return;
+    try {
+      const data = await markBusinessNotificationsRead(auth.token);
+      setNotifUnread(Number(data.unread) || 0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    } catch (err) {
+      console.warn("[NOTIF] Okundu işaretlenemedi:", err.message);
+    }
+  };
+
+  const formatNotifDate = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return "—";
+    const locale = lang === "en" ? "en-GB" : "tr-TR";
+    return d.toLocaleString(locale, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  };
 
   const toggleSubscriptionPanel = async () => {
     const next = !showSubscriptionPanel;
@@ -1321,6 +1404,70 @@ export function InstitutionAdminPage() {
                 {t("subscriptionExpiringSoon")} : {subscriptionWarningDays} {t("daysUnit")}
               </p>
             ) : null}
+            <div className="relative" ref={notifPanelRef}>
+              <button
+                type="button"
+                onClick={openNotifications}
+                className="relative inline-flex size-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-cyan-400 hover:text-cyan-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+                aria-label={t("notificationsTitle")}
+                title={t("notificationsTitle")}
+              >
+                <Bell className="size-4" />
+                {notifUnread > 0 ? (
+                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                    {notifUnread > 99 ? "99+" : notifUnread}
+                  </span>
+                ) : null}
+              </button>
+              {showNotifPanel ? (
+                <div className="absolute right-0 z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-800">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {t("notificationsTitle")}
+                    </p>
+                    {notifUnread > 0 ? (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllNotificationsRead}
+                        className="text-[11px] font-medium text-cyan-700 hover:underline dark:text-cyan-300"
+                      >
+                        {t("notificationsMarkAllRead")}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {notifLoading && notifications.length === 0 ? (
+                      <p className="p-4 text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
+                    ) : notifications.length === 0 ? (
+                      <p className="p-4 text-sm text-slate-500 dark:text-slate-400">
+                        {t("notificationsEmpty")}
+                      </p>
+                    ) : (
+                      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {notifications.map((n) => (
+                          <li
+                            key={n.id}
+                            className={`px-3 py-3 ${
+                              n.is_read ? "" : "bg-cyan-500/5 dark:bg-cyan-500/10"
+                            }`}
+                          >
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {n.title || t("notificationsTitle")}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+                              {n.message}
+                            </p>
+                            <p className="mt-1 text-[10px] text-slate-400">
+                              {formatNotifDate(n.created_at)}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <HeaderActions />
             <button
               type="button"

@@ -218,6 +218,18 @@ function initDb({ skipBusinessSeed = false } = {}) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (business_id) REFERENCES institutions(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS business_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL,
+      related_request_id INTEGER,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (business_id) REFERENCES institutions(id) ON DELETE CASCADE
+    );
   `);
 
   // Tek satırlık ziyaretçi sayacı (yoksa oluştur)
@@ -323,6 +335,20 @@ function initDb({ skipBusinessSeed = false } = {}) {
       admin_note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (business_id) REFERENCES institutions(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS business_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      business_id INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL,
+      related_request_id INTEGER,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (business_id) REFERENCES institutions(id) ON DELETE CASCADE
     )
   `);
@@ -2406,9 +2432,25 @@ function mapBranchRequestRow(row) {
     status: row.status || "pending",
     is_read: row.is_read === 1 || row.is_read === true,
     admin_note: row.admin_note || null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    created_at: toIsoTimestamp(row.created_at),
+    updated_at: toIsoTimestamp(row.updated_at),
   };
+}
+
+/** SQLite datetime / ISO → tutarlı ISO UTC (frontend Absolute tarih için) */
+function toIsoTimestamp(raw) {
+  if (raw == null || raw === "") return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    return s.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(s) ? s : `${s}Z`;
+  }
+  // "YYYY-MM-DD HH:MM:SS" (SQLite UTC) → ISO
+  if (/^\d{4}-\d{2}-\d{2} /.test(s)) {
+    return `${s.replace(" ", "T")}Z`;
+  }
+  const ms = new Date(s).getTime();
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : s;
 }
 
 function createBranchRequest({
@@ -2437,11 +2479,13 @@ function createBranchRequest({
     throw new Error("Haritadan konum seçilmesi zorunludur.");
   }
 
+  const nowIso = new Date().toISOString();
   const info = db
     .prepare(
       `INSERT INTO branch_requests (
-         business_id, institution_id, business_name, branch_name, phone, address, lat, lng, status, is_read
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)`
+         business_id, institution_id, business_name, branch_name, phone, address, lat, lng,
+         status, is_read, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`
     )
     .run(
       businessId,
@@ -2451,7 +2495,9 @@ function createBranchRequest({
       nextPhone,
       nextAddress,
       nextLat,
-      nextLng
+      nextLng,
+      nowIso,
+      nowIso
     );
 
   return mapBranchRequestRow(
@@ -2476,10 +2522,10 @@ function listBranchRequests({ status } = {}) {
 }
 
 function countUnreadBranchRequests() {
+  // Onay/red verilmemiş tüm talepler bildirimde kalsın (görülmüş olsa bile)
   const row = db
     .prepare(
-      `SELECT COUNT(*) AS c FROM branch_requests
-       WHERE status = 'pending' AND COALESCE(is_read, 0) = 0`
+      `SELECT COUNT(*) AS c FROM branch_requests WHERE status = 'pending'`
     )
     .get();
   return Number(row?.c) || 0;
@@ -2522,6 +2568,96 @@ function updateBranchRequestStatus(id, { status, admin_note }) {
   return getBranchRequestById(id);
 }
 
+function mapBusinessNotificationRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    business_id: row.business_id,
+    type: row.type,
+    title: row.title || "",
+    message: row.message || "",
+    related_request_id: row.related_request_id == null ? null : Number(row.related_request_id),
+    is_read: row.is_read === 1 || row.is_read === true,
+    created_at: toIsoTimestamp(row.created_at),
+  };
+}
+
+function createBusinessNotification({
+  business_id,
+  type,
+  title,
+  message,
+  related_request_id = null,
+}) {
+  const businessId = Number(business_id);
+  if (!Number.isFinite(businessId)) throw new Error("business_id zorunludur.");
+  const nowIso = new Date().toISOString();
+  const info = db
+    .prepare(
+      `INSERT INTO business_notifications
+         (business_id, type, title, message, related_request_id, is_read, created_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?)`
+    )
+    .run(
+      businessId,
+      String(type || "info").trim(),
+      String(title || "").trim(),
+      String(message || "").trim(),
+      related_request_id == null ? null : Number(related_request_id),
+      nowIso
+    );
+  return mapBusinessNotificationRow(
+    db.prepare(`SELECT * FROM business_notifications WHERE id = ?`).get(info.lastInsertRowid)
+  );
+}
+
+function listBusinessNotifications(businessId, { limit = 50 } = {}) {
+  const id = Number(businessId);
+  if (!Number.isFinite(id)) return [];
+  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  return db
+    .prepare(
+      `SELECT * FROM business_notifications
+       WHERE business_id = ?
+       ORDER BY datetime(created_at) DESC
+       LIMIT ?`
+    )
+    .all(id, lim)
+    .map(mapBusinessNotificationRow);
+}
+
+function countUnreadBusinessNotifications(businessId) {
+  const id = Number(businessId);
+  if (!Number.isFinite(id)) return 0;
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM business_notifications
+       WHERE business_id = ? AND COALESCE(is_read, 0) = 0`
+    )
+    .get(id);
+  return Number(row?.c) || 0;
+}
+
+function markBusinessNotificationsRead(businessId, ids) {
+  const id = Number(businessId);
+  if (!Number.isFinite(id)) throw new Error("business_id zorunludur.");
+  if (Array.isArray(ids) && ids.length > 0) {
+    const clean = ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+    if (!clean.length) return { ok: true, unread: countUnreadBusinessNotifications(id) };
+    const placeholders = clean.map(() => "?").join(",");
+    db.prepare(
+      `UPDATE business_notifications
+       SET is_read = 1
+       WHERE business_id = ? AND id IN (${placeholders})`
+    ).run(id, ...clean);
+  } else {
+    db.prepare(
+      `UPDATE business_notifications SET is_read = 1 WHERE business_id = ? AND COALESCE(is_read, 0) = 0`
+    ).run(id);
+  }
+  return { ok: true, unread: countUnreadBusinessNotifications(id) };
+}
+
 module.exports = {
   initDb,
   seedAdminsIfNeeded,
@@ -2547,6 +2683,10 @@ module.exports = {
   markBranchRequestsRead,
   getBranchRequestById,
   updateBranchRequestStatus,
+  createBusinessNotification,
+  listBusinessNotifications,
+  countUnreadBusinessNotifications,
+  markBusinessNotificationsRead,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,

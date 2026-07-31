@@ -176,7 +176,12 @@ function MapUpdater({ lat, lng }) {
 /**
  * İşletme Analiz Modalı — KKTC MB historical_rates + gerçek işletme marjları + şube konumları.
  */
-export function BusinessDetailModal({ business, onClose }) {
+export function BusinessDetailModal({
+  business,
+  onClose,
+  initialBranchId = null,
+  initialView = "grafik",
+}) {
   const { t, lang } = useLanguage();
   const { theme } = useTheme();
   const isDark = theme === "dark";
@@ -187,7 +192,9 @@ export function BusinessDetailModal({ business, onClose }) {
   const tooltipBg = isDark ? "#0f172a" : "#ffffff";
   const tooltipBorder = isDark ? "#334155" : "#e2e8f0";
   const tooltipLabel = isDark ? "#e2e8f0" : "#0f172a";
-  const [activeView, setActiveView] = useState("grafik");
+  const [activeView, setActiveView] = useState(
+    initialView === "konum" ? "konum" : "grafik"
+  );
   const [periodId, setPeriodId] = useState("daily");
   const [currency, setCurrency] = useState("USD");
   const [chartRows, setChartRows] = useState([]);
@@ -301,7 +308,12 @@ export function BusinessDetailModal({ business, onClose }) {
         if (cancelled) return;
         const rows = Array.isArray(data.branches) ? data.branches : [];
         setBranches(rows);
-        setSelectedBranch(rows[0] || null);
+        const preferredId =
+          initialBranchId != null ? String(initialBranchId) : null;
+        const preferred = preferredId
+          ? rows.find((b) => String(b.id) === preferredId)
+          : null;
+        setSelectedBranch(preferred || rows[0] || null);
       } catch (err) {
         console.error("[BusinessDetailModal] Branches:", err);
         if (!cancelled) {
@@ -316,7 +328,7 @@ export function BusinessDetailModal({ business, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [institutionId]);
+  }, [institutionId, initialBranchId]);
 
   // Backend zaten "Nihai Kur = MB Kuru + Kâr Marjı" formülüyle hesaplayıp
   // kronolojik sırada döndürüyor.

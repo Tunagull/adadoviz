@@ -31,6 +31,10 @@ const {
   markBranchRequestsRead,
   getBranchRequestById,
   updateBranchRequestStatus,
+  createBusinessNotification,
+  listBusinessNotifications,
+  countUnreadBusinessNotifications,
+  markBusinessNotificationsRead,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -313,7 +317,7 @@ app.get("/api/kurlar", (_req, res) => {
         isBankVisible({
           is_active: biz.is_active,
           subscription_end_date: biz.subscription_end_date,
-        })
+        }) && (Number(biz.branch_count) || 0) > 0
       )
       .map((biz) => {
         const institutionId = biz.institution_id;
@@ -796,6 +800,37 @@ app.post("/api/business/branch-requests", requireAuth, (req, res) => {
   }
 });
 
+/** İşletme bildirimleri */
+app.get("/api/business/notifications", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    return res.json({
+      notifications: listBusinessNotifications(full.id),
+      unread: countUnreadBusinessNotifications(full.id),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Bildirimler alınamadı." });
+  }
+});
+
+app.post("/api/business/notifications/mark-read", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
+    return res.json(markBusinessNotificationsRead(full.id, ids));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Okundu işaretlenemedi." });
+  }
+});
+
 /** Super Admin: şube talepleri */
 app.get("/api/admin/branch-requests", requireSuperAdmin, (req, res) => {
   try {
@@ -855,6 +890,30 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
       status: nextStatus,
       admin_note: req.body?.admin_note,
     });
+
+    if (nextStatus === "approved" || nextStatus === "rejected") {
+      const branchLabel = existing.branch_name || "şube";
+      try {
+        createBusinessNotification({
+          business_id: existing.business_id,
+          type:
+            nextStatus === "approved"
+              ? "branch_request_approved"
+              : "branch_request_rejected",
+          title:
+            nextStatus === "approved"
+              ? "Şube talebi onaylandı"
+              : "Şube talebi reddedildi",
+          message:
+            nextStatus === "approved"
+              ? `Yönetici "${branchLabel}" şube başvurunuzu onayladı.`
+              : `Yönetici "${branchLabel}" şube başvurunuzu reddetti.`,
+          related_request_id: existing.id,
+        });
+      } catch (notifyErr) {
+        console.warn("[NOTIFICATIONS] branch request notify:", notifyErr.message);
+      }
+    }
 
     return res.json({ request, branch: createdBranch });
   } catch (err) {

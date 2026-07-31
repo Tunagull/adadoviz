@@ -1177,24 +1177,36 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-/** İşletmenin kullanıcıya en yakın şube mesafesi (km); şube yoksa Infinity */
-function nearestBranchDistanceKm(bank, userLat, userLng, branchesByInstitution) {
+/** En yakın şube + mesafe (km). Şube/koordinat yoksa null. */
+function getNearestBranchInfo(bank, userLat, userLng, branchesByInstitution) {
+  if (userLat == null || userLng == null) return null;
   const id = bank.institutionId;
   const nameKey = normalizeText(bank.name || "");
   const list =
     (id && branchesByInstitution[id]) ||
     branchesByInstitution[nameKey] ||
     [];
-  if (!list.length) return Number.POSITIVE_INFINITY;
+  if (!list.length) return null;
+  let best = null;
   let min = Number.POSITIVE_INFINITY;
   for (const branch of list) {
     const lat = Number(branch.lat);
     const lng = Number(branch.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
     const d = haversineKm(userLat, userLng, lat, lng);
-    if (d < min) min = d;
+    if (d < min) {
+      min = d;
+      best = branch;
+    }
   }
-  return min;
+  if (!best || !Number.isFinite(min)) return null;
+  return {
+    id: best.id,
+    name: best.name || "",
+    distanceKm: min,
+    lat: Number(best.lat),
+    lng: Number(best.lng),
+  };
 }
 
 // ✅ DEAD CODE REMOVED: INTEREST_SORT_OPTIONS ve CREDIT_SORT_OPTIONS kaldırıldı
@@ -1321,9 +1333,10 @@ export function V0FinancialDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("none");
   const [openNowOnly, setOpenNowOnly] = useState(false);
-  const [userLocation, setUserLocation] = useState(null); // { lat, lng }
+  const [userLocation, setUserLocation] = useState(null);
   const [branchesByInstitution, setBranchesByInstitution] = useState({});
   const [geoToast, setGeoToast] = useState("");
+  const [showLocationConsent, setShowLocationConsent] = useState(false);
   const [banks, setBanks] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [lastUpdateTime, setLastUpdateTime] = useState(null);
@@ -1636,7 +1649,7 @@ export function V0FinancialDashboard() {
     }));
   }, [t]);
 
-  // Şube koordinatlarını yükle (En Yakın sıralaması için)
+  // Şube koordinatları — En Yakın Konum sıralaması
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1669,13 +1682,13 @@ export function V0FinancialDashboard() {
 
   useEffect(() => {
     if (!geoToast) return undefined;
-    const t = setTimeout(() => setGeoToast(""), 4000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setGeoToast(""), 4500);
+    return () => clearTimeout(timer);
   }, [geoToast]);
 
   const requestNearestSort = () => {
     if (!navigator.geolocation) {
-      setGeoToast("Tarayıcınız konum servisini desteklemiyor.");
+      setGeoToast(t("locationUnsupported"));
       setSortBy("none");
       return;
     }
@@ -1689,7 +1702,7 @@ export function V0FinancialDashboard() {
         setGeoToast("");
       },
       () => {
-        setGeoToast("Konum izni verilmedi. En Yakın sıralaması kullanılamıyor.");
+        setGeoToast(t("locationPermissionRequired"));
         setUserLocation(null);
         setSortBy("none");
       },
@@ -1703,7 +1716,7 @@ export function V0FinancialDashboard() {
         setSortBy("nearest");
         return;
       }
-      requestNearestSort();
+      setShowLocationConsent(true);
       return;
     }
     setSortBy(value);
@@ -1715,8 +1728,6 @@ export function V0FinancialDashboard() {
       setSortBy(currentSortOptions[0]?.value ?? "none");
     }
   }, [currentSortOptions, sortBy]);
-
-  // ✅ DEAD CODE REMOVED: depositType effect kaldırıldı (Interest mode kaldırıldı)
 
   const filteredAndSortedBanks = useMemo(() => {
     // Aktif + süresi dolmamış
@@ -1731,7 +1742,6 @@ export function V0FinancialDashboard() {
       return true;
     });
 
-    // ID / institutionId / isim bazlı tekilleştirme (aynı işletmenin çift kartını engelle)
     const byIdOrInstitution = Array.from(
       new Map(
         result.map((business) => [
@@ -1740,7 +1750,6 @@ export function V0FinancialDashboard() {
         ])
       ).values()
     );
-    // Aynı görünen isim (Örn: Sun Döviz) farklı institutionId ile geldiyse yine tek tut
     result = Array.from(
       new Map(
         byIdOrInstitution.map((business) => [
@@ -1768,25 +1777,32 @@ export function V0FinancialDashboard() {
       });
     }
 
-    if (sortBy === "nearest") {
-      if (userLocation?.lat != null && userLocation?.lng != null) {
-        result.sort((a, b) => {
-          const da = nearestBranchDistanceKm(
-            a,
-            userLocation.lat,
-            userLocation.lng,
-            branchesByInstitution
-          );
-          const db = nearestBranchDistanceKm(
-            b,
-            userLocation.lat,
-            userLocation.lng,
-            branchesByInstitution
-          );
-          return da - db;
-        });
-      }
+    const nearestActive =
+      sortBy === "nearest" &&
+      userLocation?.lat != null &&
+      userLocation?.lng != null;
+
+    if (nearestActive) {
+      result = result.map((bank) => {
+        const nearest = getNearestBranchInfo(
+          bank,
+          userLocation.lat,
+          userLocation.lng,
+          branchesByInstitution
+        );
+        return {
+          ...bank,
+          nearestBranch: nearest,
+          nearestDistanceKm: nearest?.distanceKm ?? Number.POSITIVE_INFINITY,
+        };
+      });
+      result.sort((a, b) => a.nearestDistanceKm - b.nearestDistanceKm);
     } else if (sortBy !== "none") {
+      result = result.map((bank) => ({
+        ...bank,
+        nearestBranch: null,
+        nearestDistanceKm: null,
+      }));
       result.sort((a, b) => {
         const [currency, type, direction] = sortBy.split("-");
         const currencyUpper = currency.toUpperCase();
@@ -1795,11 +1811,16 @@ export function V0FinancialDashboard() {
         return direction === "high" ? rateB - rateA : rateA - rateB;
       });
     } else {
+      result = result.map((bank) => ({
+        ...bank,
+        nearestBranch: null,
+        nearestDistanceKm: null,
+      }));
       result.sort((a, b) => a.name.localeCompare(b.name, "tr"));
     }
 
     return result;
-  }, [banks, searchQuery, sortBy, mode, userLocation, branchesByInstitution, openNowOnly]);
+  }, [banks, searchQuery, sortBy, openNowOnly, userLocation, branchesByInstitution]);
 
   const bestDeposit = getBestDepositRate(banks);
   const selectedCalculatorBank = banks.find((b) => b.name === calculatorBank) ?? null;
@@ -2045,7 +2066,10 @@ export function V0FinancialDashboard() {
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">{t("selectBank")}</label>
               <SearchableSelect
                 value={calculatorBank}
-                onChange={setCalculatorBank}
+                onChange={(value) => {
+                  setCalculatorBank(value);
+                  setExchangeAmount("0");
+                }}
                 placeholder={!exchangeCurrency ? t("selectCurrencyFirst") : t("selectExchangeOffice")}
                 disabled={!exchangeCurrency}
                 aria-label={t("selectBank")}
@@ -2074,7 +2098,7 @@ export function V0FinancialDashboard() {
               />
             </div>
 
-            {/* 4️⃣ ÇEVRİLECEK TUTAR (Başlangıç: 0) */}
+            {/* 4️⃣ ÇEVRİLECEK TUTAR — büro seçilince açılır */}
             <div className="flex flex-col gap-1 sm:col-span-2">
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">
                 {exchangeOperation === "buy" ? t("amountTl") : `${t("amountCurrency")} (${exchangeCurrency})`}
@@ -2082,41 +2106,34 @@ export function V0FinancialDashboard() {
               <input
                 type="number"
                 min="0"
-                disabled={!exchangeCurrency}
-                value={exchangeAmount}
-                onChange={(e) => setExchangeAmount(e.target.value)}
-                className="h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                placeholder={!exchangeCurrency ? t("selectCurrencyPrompt") : !calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
+                disabled={!calculatorBank}
+                value={!calculatorBank ? "" : exchangeAmount === "0" ? "" : exchangeAmount}
+                onChange={(e) => setExchangeAmount(e.target.value === "" ? "0" : e.target.value)}
+                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-slate-300 disabled:hover:shadow-none dark:disabled:hover:border-slate-700"
+                placeholder={!calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
               />
-              {exchangeAmount !== "0" && (!exchangeCurrency || !calculatorBank) && (
-                <p className="text-xs text-indigo-600 dark:text-indigo-300 mt-1">
-                  ⚠️ {t("currencyOrBranchMissing")}
-                </p>
-              )}
             </div>
 
-            {/* 5️⃣ SONUÇ (En sağda) */}
+            {/* 5️⃣ SONUÇ — tutar girilince açılır */}
             <div className="flex flex-col gap-1 sm:col-span-3">
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">
-                {exchangeOperation === "buy" ? `${t("resultBuy")} ${exchangeCurrency}` : t("resultSell")}
+                {exchangeOperation === "buy" ? `${t("resultBuy")} ${exchangeCurrency || ""}`.trim() : t("resultSell")}
               </label>
-              <div className={`flex h-11 items-center rounded-lg border px-3 text-sm font-semibold ${
-                Number.isFinite(exchangeResult)
-                  ? "border-indigo-300/60 bg-indigo-50 text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100"
-                  : "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 cursor-not-allowed"
-              }`}>
-                {Number.isFinite(exchangeResult)
+              <div
+                className={`flex h-11 w-full items-center rounded-lg border px-3 text-sm outline-none transition-all duration-300 dark:border-slate-700 dark:bg-slate-950 ${
+                  Number.isFinite(exchangeResult) && calculatorBank && Number(exchangeAmount) > 0
+                    ? "border-slate-300 bg-white font-semibold text-slate-900 dark:text-slate-100"
+                    : "cursor-not-allowed border-slate-300 bg-white text-slate-400 opacity-60 dark:text-slate-500"
+                }`}
+              >
+                {Number.isFinite(exchangeResult) && calculatorBank && Number(exchangeAmount) > 0
                   ? `${exchangeResult.toLocaleString(localeCode, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })} ${exchangeOperation === "buy" ? exchangeCurrency : "TL"}`
-                  : !exchangeCurrency
-                    ? t("selectCurrencyPrompt")
-                    : !calculatorBank
-                      ? t("selectOfficePrompt")
-                      : (exchangeAmount === "0" || exchangeAmount === "")
-                        ? t("enterAmountPrompt")
-                        : t("resultWaiting")}
+                  : !calculatorBank
+                    ? t("selectOfficePrompt")
+                    : t("enterAmountPrompt")}
               </div>
             </div>
 
@@ -2337,6 +2354,42 @@ export function V0FinancialDashboard() {
         </div>
       ) : null}
 
+      {showLocationConsent ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              {t("locationShareTitle")}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+              {t("locationShareConfirm")}
+            </p>
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLocationConsent(false);
+                  setSortBy("none");
+                  setGeoToast(t("locationPermissionRequired"));
+                }}
+                className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+              >
+                {t("locationShareDeny")}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowLocationConsent(false);
+                  requestNearestSort();
+                }}
+                className="flex-1 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-500"
+              >
+                {t("locationShareAllow")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {banks.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white/80 p-6 py-10 text-center text-slate-600 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300">
           {t("banksLoading")}
@@ -2348,6 +2401,7 @@ export function V0FinancialDashboard() {
               key={bank.institutionId || bank.id}
               bank={bank}
               mode={mode}
+              showNearestBranch={sortBy === "nearest" && Boolean(userLocation)}
               onSelect={(biz) => {
                 const name = String(biz?.name || "")
                   .replace(/\s*\([Tt]est\)\s*/g, "")
@@ -2367,6 +2421,12 @@ export function V0FinancialDashboard() {
       {selectedBusiness ? (
         <BusinessDetailModal
           business={selectedBusiness}
+          initialBranchId={selectedBusiness?.nearestBranch?.id ?? null}
+          initialView={
+            sortBy === "nearest" && selectedBusiness?.nearestBranch?.id
+              ? "konum"
+              : "grafik"
+          }
           onClose={() => setSelectedBusiness(null)}
         />
       ) : null}

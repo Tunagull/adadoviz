@@ -478,6 +478,24 @@ export function SuperAdminDashboard() {
     });
   }
 
+  function formatRequestDateTime(iso) {
+    if (!iso) return "—";
+    const raw = String(iso).trim();
+    const d = new Date(
+      raw.includes("T") || raw.includes("Z") ? raw : raw.replace(" ", "T") + "Z"
+    );
+    if (!Number.isFinite(d.getTime())) return "—";
+    const locale = lang === "en" ? "en-GB" : "tr-TR";
+    return d.toLocaleString(locale, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
   const logData = analyticsData?.sessions || [];
 
   const businessLedger = useMemo(() => [], []);
@@ -1528,7 +1546,7 @@ export function SuperAdminDashboard() {
                           </p>
                         ) : null}
                         <p className="text-[11px] text-slate-400">
-                          {t("requestCreatedAt")}: {formatRelativeTime(req.created_at)}
+                          {t("requestCreatedAt")}: {formatRequestDateTime(req.created_at)}
                         </p>
                         <p className={`text-xs font-semibold ${statusClass}`}>{statusLabel}</p>
                       </div>
