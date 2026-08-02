@@ -471,7 +471,7 @@ export function BusinessDetailModal({
   if (!business) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[3000] flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-[3000] flex items-end justify-center p-0 sm:items-center sm:p-3 md:p-4">
       <button
         type="button"
         aria-label="Kapat"
@@ -481,48 +481,50 @@ export function BusinessDetailModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 flex h-[90vh] max-h-[90vh] w-[95%] max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/50 md:w-full"
+        className="relative z-10 flex h-[min(94dvh,94vh)] max-h-[min(94dvh,94vh)] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/50 sm:h-[90vh] sm:max-h-[90vh] sm:w-[95%] sm:rounded-2xl md:w-full"
       >
-        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 px-3 py-3 dark:border-slate-800 sm:gap-3 sm:px-4">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
-            <img
-              src={
-                business.logo_url ||
-                `https://www.google.com/s2/favicons?domain=${getFaviconDomain(displayName || business.name)}&sz=128`
-              }
-              alt=""
-              className="h-9 w-9 shrink-0 rounded-full bg-white p-0.5 object-cover shadow-sm"
-            />
-            <h2 className="truncate text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
-              {displayName || business.name}
-            </h2>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            <HeaderActions compact />
-            <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-950">
+        <div className="flex shrink-0 flex-col gap-2 border-b border-slate-200 px-3 py-3 dark:border-slate-800 sm:gap-3 sm:px-4">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
+              <img
+                src={
+                  business.logo_url ||
+                  `https://www.google.com/s2/favicons?domain=${getFaviconDomain(displayName || business.name)}&sz=128`
+                }
+                alt=""
+                className="h-9 w-9 shrink-0 rounded-full bg-white p-0.5 object-cover shadow-sm"
+              />
+              <h2 className="truncate text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
+                {displayName || business.name}
+              </h2>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              <HeaderActions compact />
               <button
                 type="button"
-                onClick={() => setActiveView("grafik")}
-                className={activeView === "grafik" ? tabActiveClass : tabIdleClass}
+                onClick={onClose}
+                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                aria-label="Kapat"
               >
-                {t("chartTabLabel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveView("konum")}
-                className={activeView === "konum" ? tabActiveClass : tabIdleClass}
-              >
-                {t("businessInfoTabLabel")}
+                <X size={22} />
               </button>
             </div>
+          </div>
+
+          <div className="flex w-full rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-950">
             <button
               type="button"
-              onClick={onClose}
-              className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
-              aria-label="Kapat"
+              onClick={() => setActiveView("grafik")}
+              className={`min-w-0 flex-1 text-center ${activeView === "grafik" ? tabActiveClass : tabIdleClass}`}
             >
-              <X size={22} />
+              {t("chartTabLabel")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("konum")}
+              className={`min-w-0 flex-1 text-center ${activeView === "konum" ? tabActiveClass : tabIdleClass}`}
+            >
+              {t("businessInfoTabLabel")}
             </button>
           </div>
         </div>

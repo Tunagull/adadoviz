@@ -1687,15 +1687,15 @@ export function SuperAdminDashboard() {
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pr-[7.5rem]">
-              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+            <div className="flex flex-wrap items-center justify-between gap-3 pr-0 pt-10 sm:pr-[7.5rem] sm:pt-0">
+              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 sm:text-lg">
                 {logsView === "customer" ? t("systemLogsTitle") : t("businessLedgerTitle")}
               </h3>
-              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-semibold shrink-0 dark:border-slate-700 dark:bg-slate-800">
+              <div className="flex w-full items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-semibold sm:w-auto shrink-0 dark:border-slate-700 dark:bg-slate-800">
                 <button
                   type="button"
                   onClick={() => setLogsView("customer")}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition ${
+                  className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition sm:flex-none ${
                     logsView === "customer"
                       ? "bg-teal-500/20 text-teal-700 dark:text-teal-300"
                       : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
@@ -1707,7 +1707,7 @@ export function SuperAdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setLogsView("business")}
-                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 transition ${
+                  className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition sm:flex-none ${
                     logsView === "business"
                       ? "bg-teal-500/20 text-teal-700 dark:text-teal-300"
                       : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"

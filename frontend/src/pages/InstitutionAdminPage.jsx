@@ -1340,24 +1340,24 @@ export function InstitutionAdminPage() {
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-[#020617] dark:text-white">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-8 sm:px-6">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-3 py-6 sm:px-6 sm:py-8">
         {/* Header: Logo + İşletme Bilgisi */}
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
             <button
               type="button"
               onClick={() => navigate("/")}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400"
             >
-              <ArrowLeft className="size-4" />
-              {t("backToDashboard")}
+              <ArrowLeft className="size-4 shrink-0" />
+              <span className="truncate">{t("backToDashboard")}</span>
             </button>
 
             {/* İşletme Logosu — Interactive */}
             <button
               type="button"
               onClick={() => setShowLogoModal(true)}
-              className="group relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+              className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:h-20 sm:w-20"
             >
               {profileLogoUrl ? (
                 <img
@@ -1381,9 +1381,9 @@ export function InstitutionAdminPage() {
             </button>
 
             {/* İşletme Bilgisi */}
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-lg font-bold text-slate-900 dark:text-white">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-base font-bold text-slate-900 dark:text-white sm:text-lg">
                   {institutionName} {t("managementPanel")}
                 </h1>
                 {auth?.subscription_type === "Test" && (
@@ -1398,9 +1398,9 @@ export function InstitutionAdminPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-3 sm:gap-4">
+          <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:gap-3 md:gap-4">
             {subscriptionWarningDays != null ? (
-              <p className="text-xs sm:text-sm font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+              <p className="max-w-full text-xs font-semibold text-amber-600 dark:text-amber-400 sm:text-sm">
                 {t("subscriptionExpiringSoon")} : {subscriptionWarningDays} {t("daysUnit")}
               </p>
             ) : null}
@@ -1854,7 +1854,7 @@ export function InstitutionAdminPage() {
             onClick={() => !logoLoading && !logoCropStep && setShowLogoModal(false)}
           >
             <div
-              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
@@ -1872,7 +1872,7 @@ export function InstitutionAdminPage() {
               {/* STEP 1: Dosya Seçimi */}
               {!logoCropStep ? (
                 <div className="p-6">
-                  <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
+                  <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
                     <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
                       <Camera className="size-5" />
                     </div>
@@ -1943,7 +1943,7 @@ export function InstitutionAdminPage() {
               ) : (
                 /* STEP 2: Kırpma */
                 <div className="p-6">
-                  <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
+                  <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
                     <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
                       <Camera className="size-5" />
                     </div>
@@ -2032,7 +2032,7 @@ export function InstitutionAdminPage() {
             onClick={() => !infoLoading && closeInfoModal()}
           >
             <div
-              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
@@ -2047,7 +2047,7 @@ export function InstitutionAdminPage() {
                 </button>
               </div>
 
-              <div className="mb-6 flex items-start justify-between gap-3 pr-[7.5rem]">
+              <div className="mb-6 flex items-start justify-between gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
                     <Edit2 className="size-5" />
@@ -2276,7 +2276,7 @@ export function InstitutionAdminPage() {
                       type="button"
                       onClick={closeInfoModal}
                       disabled={infoLoading}
-                      className="flex-1 min-w-[8rem] rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
+                      className="w-full min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white sm:min-w-[8rem]"
                     >
                       {t("cancel")}
                     </button>
@@ -2320,7 +2320,7 @@ export function InstitutionAdminPage() {
             onClick={closeBranchRequestModal}
           >
             <div
-              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
@@ -2335,7 +2335,7 @@ export function InstitutionAdminPage() {
                 </button>
               </div>
 
-              <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
+              <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
                 <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
                   <Plus className="size-5" />
                 </div>
@@ -2471,7 +2471,7 @@ export function InstitutionAdminPage() {
               <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
                 <HeaderActions compact />
               </div>
-              <h4 className="pr-[6.5rem] text-base font-bold text-slate-800 dark:text-slate-100">
+              <h4 className="pt-10 sm:pt-0 sm:pr-[6.5rem] text-base font-bold text-slate-800 dark:text-slate-100">
                 {t("newBranchRequestTitle")}
               </h4>
               <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
@@ -2520,7 +2520,7 @@ export function InstitutionAdminPage() {
                 </button>
               </div>
 
-              <div className="mb-5 flex items-center gap-3 pr-[7.5rem]">
+              <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
                 <div className="rounded-lg bg-teal-500/10 p-2 text-teal-600 dark:text-teal-400">
                   <Key className="size-5" />
                 </div>

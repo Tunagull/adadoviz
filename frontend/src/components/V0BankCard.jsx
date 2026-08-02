@@ -144,7 +144,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
 
   return (
     <div
-      className={getCardClasses() + " p-6"}
+      className={getCardClasses() + " p-4 sm:p-6"}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
       role="button"
@@ -160,9 +160,9 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
           alt={displayName || bank.name}
           className="h-8 w-8 shrink-0 rounded-full bg-white p-0.5 object-cover shadow-sm"
         />
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           <h3
-            className={`text-base font-semibold leading-tight transition-all duration-300 truncate ${
+            className={`min-w-0 text-base font-semibold leading-tight transition-all duration-300 ${
               flashColor === "green"
                 ? "text-emerald-700 dark:text-emerald-200"
                 : flashColor === "red"
@@ -170,9 +170,9 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
                   : "text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400"
             }`}
           >
-            {displayName || bank.name}
+            <span className="block truncate">{displayName || bank.name}</span>
             {nearestLabel ? (
-              <span className="ml-1.5 text-xs font-medium text-teal-600 dark:text-teal-300">
+              <span className="mt-0.5 block truncate text-xs font-medium text-teal-600 dark:text-teal-300">
                 {nearestLabel}
               </span>
             ) : null}

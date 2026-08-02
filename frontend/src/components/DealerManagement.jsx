@@ -128,15 +128,15 @@ function BranchFormModal({
     : `${businessName} için Yeni Bayi Ekleniyor`;
 
   return createPortal(
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-3 sm:p-4">
+    <div className="fixed inset-0 z-[2000] flex items-end justify-center p-0 sm:items-center sm:p-3 md:p-4">
       <button
         type="button"
         aria-label="Kapat"
         className="absolute inset-0 bg-slate-950/75 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative z-10 flex max-h-[90vh] w-[95%] md:w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/50">
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+      <div className="relative z-10 flex max-h-[min(94dvh,94vh)] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/50 sm:max-h-[90vh] sm:w-[95%] sm:rounded-2xl md:w-full">
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
           <HeaderActions compact />
           <button
             type="button"
@@ -147,9 +147,9 @@ function BranchFormModal({
             <X size={22} />
           </button>
         </div>
-        <div className="border-b border-slate-200 px-5 py-4 pr-[7.5rem] dark:border-slate-800">
+        <div className="border-b border-slate-200 px-4 py-4 pt-12 dark:border-slate-800 sm:px-5 sm:pr-[7.5rem] sm:pt-4">
           <p className="text-[11px] uppercase tracking-wide text-teal-600 dark:text-teal-400/80">Şube / Bayi</p>
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
+          <h3 className="truncate text-lg font-semibold text-slate-900 dark:text-white">{title}</h3>
         </div>
 
         <div className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[minmax(260px,340px)_1fr]">

@@ -57,10 +57,16 @@ export function SearchableSelect({
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
     const openUp = spaceBelow < MENU_MAX_HEIGHT && spaceAbove > spaceBelow;
+    const edge = 8;
+    const width = Math.min(Math.max(rect.width, 160), window.innerWidth - edge * 2);
+    const left = Math.min(
+      Math.max(rect.left, edge),
+      Math.max(edge, window.innerWidth - width - edge)
+    );
     setPlacement(openUp ? "top" : "bottom");
     setMenuStyle({
-      left: rect.left,
-      width: rect.width,
+      left,
+      width,
       top: openUp ? rect.top - MENU_GAP : rect.bottom + MENU_GAP,
     });
   };

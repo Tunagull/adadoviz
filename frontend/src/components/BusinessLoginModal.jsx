@@ -107,7 +107,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[200] flex items-end justify-center p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="business-login-title"
@@ -119,8 +119,8 @@ export function BusinessLoginModal({ isOpen, onClose }) {
         aria-label="Modalı kapat"
       />
 
-      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-indigo-950/20 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95 dark:shadow-indigo-950/50">
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+      <div className="relative z-10 max-h-[min(94dvh,94vh)] w-full max-w-md overflow-y-auto overflow-x-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl shadow-indigo-950/20 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95 dark:shadow-indigo-950/50 sm:rounded-2xl">
+        <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
           <HeaderActions compact />
           <button
             type="button"
@@ -144,13 +144,13 @@ export function BusinessLoginModal({ isOpen, onClose }) {
           </div>
         ) : (
           <>
-            <div className="border-b border-slate-200 bg-gradient-to-r from-white via-slate-50 to-indigo-50 px-6 py-5 pr-12 dark:border-white/10 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40">
-              <div className="flex items-center gap-3">
-                <div className="rounded-xl bg-gradient-to-tr from-indigo-500 to-teal-400 p-2.5 text-white shadow-lg shadow-indigo-900/40">
+            <div className="border-b border-slate-200 bg-gradient-to-r from-white via-slate-50 to-indigo-50 px-4 py-5 pr-14 dark:border-white/10 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40 sm:px-6 sm:pr-16">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="shrink-0 rounded-xl bg-gradient-to-tr from-indigo-500 to-teal-400 p-2.5 text-white shadow-lg shadow-indigo-900/40">
                   <Building2 className="size-5" />
                 </div>
-                <div>
-                  <h2 id="business-login-title" className="text-lg font-bold text-slate-900 dark:text-white">
+                <div className="min-w-0">
+                  <h2 id="business-login-title" className="truncate text-lg font-bold text-slate-900 dark:text-white">
                     {t("businessLogin")}
                   </h2>
                   <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{t("businessLoginSubtitle")}</p>
@@ -158,7 +158,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5 px-6 py-6">
+            <form onSubmit={handleSubmit} className="space-y-5 px-4 py-6 sm:px-6">
               <div className="space-y-2">
                 <label
                   htmlFor="business-username"
@@ -274,7 +274,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                 <X size={20} />
               </button>
             </div>
-            <h3 id="forgot-password-title" className="pr-[7.5rem] text-base font-bold text-slate-900 dark:text-slate-100">
+            <h3 id="forgot-password-title" className="pt-8 text-base font-bold text-slate-900 dark:text-slate-100 sm:pt-0 sm:pr-[7.5rem]">
               {t("forgotPasswordTitle")}
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("forgotPasswordDesc")}</p>
