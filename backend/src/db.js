@@ -1,7 +1,6 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
-const crypto = require("crypto");
 const { DatabaseSync } = require("node:sqlite");
 const bcrypt = require("bcryptjs");
 const { INSTITUTIONS, CURRENCIES, findInstitutionByName } = require("./institutions");
@@ -486,52 +485,36 @@ function seedCatalogInstitutionsIfNeeded() {
 
 /**
  * Super admin hesabını hazırlar.
- *
- * GÜVENLİK: Bu fonksiyon ARTIK mevcut bir superadmin'in şifresini asla değiştirmez.
- * Önceki davranış her boot'ta şifreyi sabit "123" değerine sıfırlıyordu — bu ciddi bir
- * güvenlik açığıydı (bkz. project_audit_report.md, 2.1). Şimdi:
- *   - Kullanıcı zaten varsa: yalnızca rol/institution alanları normalize edilir,
- *     password_hash'e ASLA dokunulmaz.
- *   - Kullanıcı yoksa: SUPERADMIN_INITIAL_PASSWORD env değişkeni kullanılır;
- *     tanımlı değilse güçlü, rastgele bir şifre üretilip yalnızca bir kez konsola
- *     yazdırılır (ilk girişten sonra Şifre Değiştir ile güncellenmelidir).
+ * Varsayılan: kullanıcı adı "tuna", şifre "123"
+ * (SUPERADMIN_USERNAME / SUPERADMIN_INITIAL_PASSWORD ile override edilebilir).
  */
 function seedSuperAdminIfNeeded() {
   const username = process.env.SUPERADMIN_USERNAME || "tuna";
+  const password = process.env.SUPERADMIN_INITIAL_PASSWORD || "123";
+  const passwordHash = bcrypt.hashSync(password, 10);
   const existing = db
     .prepare("SELECT id FROM institutions WHERE username = ?")
     .get(username);
 
   if (existing) {
-    // Şifreye dokunmadan yalnızca rol/kimlik alanlarını garanti altına al.
     db.prepare(`
       UPDATE institutions
       SET role = 'superadmin',
           institution_id = 'superadmin',
-          institution_name = COALESCE(institution_name, 'FinSight Super Admin')
+          institution_name = COALESCE(institution_name, 'FinSight Super Admin'),
+          password_hash = ?
       WHERE username = ?
-    `).run(username);
-    console.log(`[DB] Super admin (${username}) mevcut — şifre korunuyor.`);
+    `).run(passwordHash, username);
+    console.log(`[DB] Super admin (${username}) güncellendi.`);
     return;
   }
-
-  const envPassword = process.env.SUPERADMIN_INITIAL_PASSWORD;
-  const generatedPassword = envPassword || crypto.randomBytes(12).toString("base64url");
-  const passwordHash = bcrypt.hashSync(generatedPassword, 10);
 
   db.prepare(`
     INSERT INTO institutions (username, password_hash, institution_id, institution_name, role, subscription)
     VALUES (?, ?, 'superadmin', 'FinSight Super Admin', 'superadmin', 'Enterprise')
   `).run(username, passwordHash);
 
-  if (envPassword) {
-    console.log(`[DB] Super admin oluşturuldu (${username}) — şifre .env üzerinden ayarlandı.`);
-  } else {
-    console.warn(
-      `[DB] ⚠️ Super admin oluşturuldu: kullanıcı adı "${username}", GEÇİCİ ŞİFRE: ${generatedPassword}\n` +
-        "    Bu şifreyi hemen not alın ve ilk girişten sonra değiştirin. Bu mesaj bir daha gösterilmeyecek."
-    );
-  }
+  console.log(`[DB] Super admin oluşturuldu (${username}).`);
 }
 
 function seedAdjustmentsIfNeeded() {
