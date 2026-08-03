@@ -316,7 +316,11 @@ function initDb({ skipBusinessSeed = false } = {}) {
   if (!columnExists("branches", "subscription_end_date")) {
     db.exec(`ALTER TABLE branches ADD COLUMN subscription_end_date TEXT`);
   }
+  if (!columnExists("branches", "is_active")) {
+    db.exec(`ALTER TABLE branches ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`);
+  }
   backfillBranchSubscriptionsIfNeeded();
+  backfillInstitutionCreatedAtIfNeeded();
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS branch_requests (
@@ -375,6 +379,7 @@ function initDb({ skipBusinessSeed = false } = {}) {
   backfillSubscriptionFieldsIfNeeded();
   // ✅ KALDIRANDI: resetAllMarginsToZero();  // Var olan marjları silmemelidir!
   migrateAkbankMargins();
+  purgeOrphanBranches();
   console.log(`[DB] SQLite hazır: ${DB_PATH}`);
   return db;
 }
@@ -662,6 +667,67 @@ function backfillBranchSubscriptionsIfNeeded() {
     console.log(`[DB] ${rows.length} şube aboneliği işletmeden backfill edildi.`);
   } catch (err) {
     console.warn("[DB] branch subscription backfill:", err.message);
+  }
+}
+
+/**
+ * Kayıt tarihi düzeltmesi: migration sırasında datetime('now') yazılmış
+ * veya Supabase hydrate sırasında kaybolmuş created_at değerlerini,
+ * şube/abonelik başlangıç tarihlerinden en eskiye çeker.
+ */
+function backfillInstitutionCreatedAtIfNeeded() {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT i.id, i.created_at,
+                (SELECT MIN(COALESCE(b.subscription_start_date, b.created_at))
+                 FROM branches b WHERE b.business_id = i.id) AS earliest_branch
+         FROM institutions i
+         WHERE COALESCE(i.role, 'business') != 'superadmin'`
+      )
+      .all();
+
+    const upd = db.prepare(`UPDATE institutions SET created_at = ? WHERE id = ?`);
+    let fixed = 0;
+    for (const row of rows) {
+      const candidates = [];
+      if (row.created_at) candidates.push(row.created_at);
+      if (row.earliest_branch) candidates.push(row.earliest_branch);
+      if (!candidates.length) continue;
+
+      const toMs = (v) => {
+        const s = String(v).trim();
+        const d = new Date(s.includes("T") || s.includes("Z") ? s : s.replace(" ", "T") + "Z");
+        return d.getTime();
+      };
+      let best = null;
+      let bestMs = Infinity;
+      for (const c of candidates) {
+        const ms = toMs(c);
+        if (Number.isFinite(ms) && ms < bestMs) {
+          bestMs = ms;
+          best = c;
+        }
+      }
+      if (!best) continue;
+      const currentMs = row.created_at ? toMs(row.created_at) : NaN;
+      // created_at yoksa veya şube tarihlerinden belirgin şekilde sonraysa düzelt
+      if (!row.created_at || !Number.isFinite(currentMs) || currentMs > bestMs + 60_000) {
+        const iso =
+          String(best).includes("T") || String(best).includes("Z")
+            ? new Date(best).toISOString()
+            : new Date(String(best).replace(" ", "T") + "Z").toISOString();
+        if (Number.isFinite(new Date(iso).getTime()) && iso !== row.created_at) {
+          upd.run(iso, row.id);
+          fixed += 1;
+        }
+      }
+    }
+    if (fixed > 0) {
+      console.log(`[DB] ${fixed} işletme kayıt tarihi şube/başlangıç tarihinden düzeltildi.`);
+    }
+  } catch (err) {
+    console.warn("[DB] created_at backfill:", err.message);
   }
 }
 
@@ -1129,29 +1195,46 @@ function assertBusinessExists(businessId) {
 
 const BRANCH_SELECT_SQL = `id, business_id, name, phone, COALESCE(whatsapp, '') AS whatsapp, address, lat, lng,
   COALESCE(subscription_type, 'Test') AS subscription_type,
-  subscription_start_date, subscription_end_date, created_at, updated_at`;
+  subscription_start_date, subscription_end_date,
+  COALESCE(is_active, 1) AS is_active,
+  created_at, updated_at`;
+
+function deactivateBranchIfExpired(row) {
+  if (!row) return row;
+  if (normalizeSubscriptionType(row.subscription_type) === "Test") return row;
+  const days = daysRemainingFrom(row.subscription_end_date);
+  if (days != null && days <= 0 && !(row.is_active === 0 || row.is_active === false)) {
+    db.prepare(`UPDATE branches SET is_active = 0, updated_at = datetime('now') WHERE id = ?`).run(
+      row.id
+    );
+    return { ...row, is_active: 0 };
+  }
+  return row;
+}
 
 function mapBranchRow(row) {
   if (!row) return null;
-  const subscription_type = normalizeSubscriptionType(row.subscription_type || "Test");
+  const synced = deactivateBranchIfExpired(row);
+  const subscription_type = normalizeSubscriptionType(synced.subscription_type || "Test");
   const subscription_end_date =
-    subscription_type === "Test" ? null : row.subscription_end_date || null;
+    subscription_type === "Test" ? null : synced.subscription_end_date || null;
   return {
-    id: row.id,
-    business_id: row.business_id,
-    name: row.name,
-    phone: row.phone || "",
-    whatsapp: row.whatsapp || "",
-    address: row.address || "",
-    lat: row.lat == null ? null : Number(row.lat),
-    lng: row.lng == null ? null : Number(row.lng),
+    id: synced.id,
+    business_id: synced.business_id,
+    name: synced.name,
+    phone: synced.phone || "",
+    whatsapp: synced.whatsapp || "",
+    address: synced.address || "",
+    lat: synced.lat == null ? null : Number(synced.lat),
+    lng: synced.lng == null ? null : Number(synced.lng),
     subscription_type,
-    subscription_start_date: row.subscription_start_date || row.created_at || null,
+    subscription_start_date: synced.subscription_start_date || synced.created_at || null,
     subscription_end_date,
+    is_active: !(synced.is_active === 0 || synced.is_active === false),
     days_remaining:
       subscription_type === "Test" ? null : daysRemainingFrom(subscription_end_date),
-    created_at: row.created_at,
-    updated_at: row.updated_at,
+    created_at: synced.created_at,
+    updated_at: synced.updated_at,
   };
 }
 
@@ -1206,30 +1289,85 @@ function listBranchesByBusiness(businessId) {
     .map(mapBranchRow);
 }
 
-/** Public: institution_id slug (örn. akbank) ile şubeleri getir */
+/** Public görünürlük: aktif + abonelik süresi dolmamış */
+function isInstitutionPubliclyVisible(row) {
+  if (!row) return false;
+  if (row.role === "superadmin") return false;
+  const synced = deactivateIfExpired(row);
+  if (synced.is_active === 0 || synced.is_active === false) return false;
+  if (synced.subscription_end_date) {
+    const end = new Date(synced.subscription_end_date).getTime();
+    if (Number.isFinite(end) && end <= Date.now()) return false;
+  }
+  return true;
+}
+
+/** Public: institution_id slug (örn. akbank) ile şubeleri getir — yalnızca aktif işletme */
 function listBranchesByInstitutionKey(institutionKey) {
   const key = String(institutionKey || "").trim();
   if (!key) return [];
 
   const business = db
     .prepare(
-      `SELECT id FROM institutions
+      `SELECT id, role, COALESCE(is_active, 1) AS is_active, subscription_end_date
+       FROM institutions
        WHERE institution_id = ? AND COALESCE(role, 'business') != 'superadmin'
        LIMIT 1`
     )
     .get(key);
 
-  if (!business) return [];
+  if (!business || !isInstitutionPubliclyVisible(business)) return [];
 
   return db
     .prepare(
       `SELECT ${BRANCH_SELECT_SQL}
        FROM branches
        WHERE business_id = ?
+         AND COALESCE(is_active, 1) = 1
        ORDER BY name COLLATE NOCASE ASC`
     )
     .all(business.id)
     .map(mapBranchRow);
+}
+
+/**
+ * Hayalet / yetim şubeleri temizler:
+ * - business_id kurum tablosunda yok
+ * - bağlı kurum pasif veya süresi dolmuş (public SoT ile uyum)
+ * Not: Super Admin şube yönetimi için pasif işletme şubeleri silinmez —
+ * yalnızca gerçekten orphan (FK kırık) satırlar silinir.
+ */
+function purgeOrphanBranches() {
+  const orphaned = db
+    .prepare(
+      `DELETE FROM branches
+       WHERE business_id NOT IN (SELECT id FROM institutions)`
+    )
+    .run();
+  if (orphaned.changes > 0) {
+    console.log(`[DB] Yetim şube temizlendi: ${orphaned.changes}`);
+  }
+  return orphaned.changes;
+}
+
+/**
+ * Supabase SoT hydrate sonrası: yerel şubeleri Supabase listesiyle değiştir.
+ * Böylece yalnızca SQLite'ta kalan "hayalet" şubeler (örn. silinmiş Akbank şubeleri) kalkar.
+ */
+function replaceBusinessBranchesFromSupabase(branchRows) {
+  const rows = Array.isArray(branchRows) ? branchRows : [];
+  runInTransaction(() => {
+    db.prepare(
+      `DELETE FROM branches
+       WHERE business_id IN (
+         SELECT id FROM institutions WHERE COALESCE(role, 'business') != 'superadmin'
+       )`
+    ).run();
+    for (const row of rows) {
+      applySupabaseBranchRow(row);
+    }
+  });
+  console.log(`[DB] Şubeler Supabase SoT ile değiştirildi (${rows.length} satır).`);
 }
 
 function createBranch({
@@ -1323,6 +1461,7 @@ function updateBranch(
     subscription_start_date,
     subscription_end_date,
     remaining_days,
+    is_active,
   }
 ) {
   const row = db.prepare(`SELECT id FROM branches WHERE id = ?`).get(id);
@@ -1376,10 +1515,20 @@ function updateBranch(
         subscription_end_date: existing.subscription_end_date,
       };
 
+  const nextActive =
+    is_active === undefined
+      ? existing.is_active === 0 || existing.is_active === false
+        ? 0
+        : 1
+      : is_active === false || is_active === 0 || is_active === "0"
+        ? 0
+        : 1;
+
   db.prepare(
     `UPDATE branches
      SET name = ?, phone = ?, whatsapp = ?, address = ?, lat = ?, lng = ?,
          subscription_type = ?, subscription_start_date = ?, subscription_end_date = ?,
+         is_active = ?,
          updated_at = datetime('now')
      WHERE id = ?`
   ).run(
@@ -1391,7 +1540,8 @@ function updateBranch(
     nextLng,
     sub.subscription_type,
     sub.subscription_start_date,
-    sub.subscription_end_date,
+    sub.subscription_type === "Test" ? null : sub.subscription_end_date,
+    nextActive,
     id
   );
 
@@ -1897,19 +2047,23 @@ function getBusinessRateHistory(institutionId, currency, period = "Günlük") {
   };
 }
 
-/** Public: tüm şubeler (konum sıralaması için) */
+/** Public: tüm şubeler (konum sıralaması için) — yalnızca aktif + geçerli işletmeler */
 function listPublicBranches() {
   return db
     .prepare(
       `SELECT b.id, b.business_id, b.name, b.phone, b.address, b.lat, b.lng,
-              i.institution_id, i.institution_name
+              i.institution_id, i.institution_name,
+              i.role, COALESCE(i.is_active, 1) AS is_active, i.subscription_end_date
        FROM branches b
        INNER JOIN institutions i ON i.id = b.business_id
        WHERE COALESCE(i.role, 'business') != 'superadmin'
+         AND COALESCE(i.is_active, 1) = 1
+         AND COALESCE(b.is_active, 1) = 1
          AND b.lat IS NOT NULL AND b.lng IS NOT NULL
        ORDER BY i.institution_name COLLATE NOCASE ASC, b.name COLLATE NOCASE ASC`
     )
     .all()
+    .filter((row) => isInstitutionPubliclyVisible(row))
     .map((row) => ({
       ...mapBranchRow(row),
       institution_id: row.institution_id,
@@ -2273,7 +2427,8 @@ function applySupabaseInstitutionRow(row) {
          email = COALESCE(?, email),
          phone = COALESCE(?, phone),
          working_hours = COALESCE(?, working_hours),
-         branch_limit = COALESCE(?, branch_limit)
+         branch_limit = COALESCE(?, branch_limit),
+         created_at = COALESCE(created_at, ?)
        WHERE institution_id = ?`
     ).run(
       row.username || null,
@@ -2288,14 +2443,15 @@ function applySupabaseInstitutionRow(row) {
       row.phone || null,
       row.working_hours || null,
       row.branch_limit != null ? normalizeBranchLimit(row.branch_limit) : null,
+      row.created_at || null,
       row.institution_id
     );
   } else {
     db.prepare(
       `INSERT INTO institutions
         (username, password_hash, institution_id, institution_name, role, subscription,
-         subscription_type, subscription_end_date, is_active, logo_url, email, phone, working_hours, branch_limit)
-       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         subscription_type, subscription_end_date, is_active, logo_url, email, phone, working_hours, branch_limit, created_at)
+       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       row.username || row.institution_id,
       row.password_hash || bcrypt.hashSync("123", 10),
@@ -2309,7 +2465,8 @@ function applySupabaseInstitutionRow(row) {
       row.email || null,
       row.phone || null,
       row.working_hours || null,
-      normalizeBranchLimit(row.branch_limit ?? 1)
+      normalizeBranchLimit(row.branch_limit ?? 1),
+      row.created_at || new Date().toISOString()
     );
   }
 }
@@ -2359,10 +2516,19 @@ function applySupabaseBranchRow(row) {
         : row.subscription_end_date !== undefined
           ? row.subscription_end_date || null
           : cur.subscription_end_date || null;
+    const nextActive =
+      row.is_active === undefined
+        ? cur.is_active === 0 || cur.is_active === false
+          ? 0
+          : 1
+        : row.is_active === false || row.is_active === 0
+          ? 0
+          : 1;
 
     db.prepare(
       `UPDATE branches SET phone = ?, whatsapp = COALESCE(?, whatsapp), address = ?, lat = ?, lng = ?,
          subscription_type = ?, subscription_start_date = ?, subscription_end_date = ?,
+         is_active = ?,
          updated_at = datetime('now')
        WHERE id = ?`
     ).run(
@@ -2374,17 +2540,19 @@ function applySupabaseBranchRow(row) {
       nextType,
       nextStart,
       nextEnd,
+      nextActive,
       existing.id
     );
   } else {
     const subType = normalizeSubscriptionType(row.subscription_type || "Test");
     const subStart = row.subscription_start_date || row.created_at || new Date().toISOString();
     const subEnd = subType === "Test" ? null : row.subscription_end_date || null;
+    const nextActive = row.is_active === false || row.is_active === 0 ? 0 : 1;
     db.prepare(
       `INSERT INTO branches (
          business_id, name, phone, whatsapp, address, lat, lng,
-         subscription_type, subscription_start_date, subscription_end_date
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         subscription_type, subscription_start_date, subscription_end_date, is_active
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       biz.id,
       row.name,
@@ -2395,7 +2563,8 @@ function applySupabaseBranchRow(row) {
       row.lng,
       subType,
       subStart,
-      subEnd
+      subEnd,
+      nextActive
     );
   }
 }
@@ -2657,6 +2826,8 @@ module.exports = {
   listBranchesByBusiness,
   listBranchesByInstitutionKey,
   listPublicBranches,
+  purgeOrphanBranches,
+  replaceBusinessBranchesFromSupabase,
   createBranch,
   updateBranch,
   deleteBranch,

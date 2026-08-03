@@ -3,29 +3,90 @@ import { apiUrl, getApiBase } from "./api";
 export { getApiBase };
 
 const AUTH_STORAGE_KEY = "finsight_business_auth";
+const AUTH_REMEMBER_KEY = "finsight_auth_remember";
 
-export function getStoredAuth() {
+function readJson(storage, key) {
   try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    const raw = storage.getItem(key);
     if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed?.token) return null;
-    if (!parsed?.institution_id && parsed?.role !== "superadmin") return null;
-    return parsed;
+    return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-export function saveAuth(auth) {
-  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+function isValidAuth(parsed) {
+  if (!parsed?.token) return false;
+  if (!parsed?.institution_id && parsed?.role !== "superadmin") return false;
+  return true;
+}
+
+/**
+ * Oturumu oku: önce sessionStorage (sekme oturumu), sonra localStorage (kalıcı).
+ */
+export function getStoredAuth() {
+  const fromSession = readJson(sessionStorage, AUTH_STORAGE_KEY);
+  if (isValidAuth(fromSession)) return fromSession;
+  const fromLocal = readJson(localStorage, AUTH_STORAGE_KEY);
+  if (isValidAuth(fromLocal)) return fromLocal;
+  return null;
+}
+
+export function getRememberPreference() {
+  try {
+    if (sessionStorage.getItem(AUTH_REMEMBER_KEY) === "0") return false;
+    if (localStorage.getItem(AUTH_REMEMBER_KEY) === "1") return true;
+    // Eski oturumlar yalnızca localStorage'daydı → kalıcı kabul et
+    if (localStorage.getItem(AUTH_STORAGE_KEY)) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
+/**
+ * @param {object} auth
+ * @param {{ remember?: boolean }} [options]
+ *   remember=true  → localStorage (sekme kapansa da kalır)
+ *   remember=false → sessionStorage (sekme kapanınca çıkar)
+ */
+export function saveAuth(auth, options = {}) {
+  const remember =
+    typeof options.remember === "boolean"
+      ? options.remember
+      : getRememberPreference();
+
+  const payload = JSON.stringify(auth);
+  try {
+    if (remember) {
+      localStorage.setItem(AUTH_STORAGE_KEY, payload);
+      localStorage.setItem(AUTH_REMEMBER_KEY, "1");
+      sessionStorage.removeItem(AUTH_STORAGE_KEY);
+      sessionStorage.removeItem(AUTH_REMEMBER_KEY);
+    } else {
+      sessionStorage.setItem(AUTH_STORAGE_KEY, payload);
+      sessionStorage.setItem(AUTH_REMEMBER_KEY, "0");
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      localStorage.removeItem(AUTH_REMEMBER_KEY);
+    }
+  } catch (err) {
+    console.warn("[AUTH] Storage yazılamadı:", err?.message || err);
+  }
 }
 
 export function clearAuth() {
-  localStorage.removeItem(AUTH_STORAGE_KEY);
+  try {
+    localStorage.removeItem(AUTH_STORAGE_KEY);
+    localStorage.removeItem(AUTH_REMEMBER_KEY);
+    sessionStorage.removeItem(AUTH_STORAGE_KEY);
+    sessionStorage.removeItem(AUTH_REMEMBER_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
-export async function loginBusiness(username, password) {
+export async function loginBusiness(username, password, options = {}) {
+  const remember = options.remember === true;
   const response = await fetch(apiUrl("/api/auth/login"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -48,7 +109,7 @@ export async function loginBusiness(username, password) {
     subscription_end_date: data.subscription_end_date || null,
     is_active: data.is_active !== false,
   };
-  saveAuth(auth);
+  saveAuth(auth, { remember });
   return auth;
 }
 
@@ -62,7 +123,7 @@ export async function fetchAdminRates(token) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error || "Oranlar alınamadı.");
+    throw new Error(data?.error || "Kurlar alınamadı.");
   }
   return data;
 }
@@ -78,7 +139,7 @@ export async function saveAdminRates(token, currencies) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error || "Oranlar kaydedilemedi.");
+    throw new Error(data?.error || "Kurlar kaydedilemedi.");
   }
   return data;
 }
@@ -107,7 +168,7 @@ export async function fetchBusinessProfile(token) {
   if (!response.ok) {
     throw new Error(data?.error || "Profil alınamadı.");
   }
-  return data.profile || null;
+  return data;
 }
 
 export async function updateBusinessProfile(token, payload) {
@@ -134,7 +195,7 @@ export async function fetchBusinessBranches(token) {
   if (!response.ok) {
     throw new Error(data?.error || "Şubeler alınamadı.");
   }
-  return data.branches || [];
+  return data?.branches || [];
 }
 
 export async function updateBusinessBranch(token, id, payload) {
@@ -150,7 +211,7 @@ export async function updateBusinessBranch(token, id, payload) {
   if (!response.ok) {
     throw new Error(data?.error || "Şube güncellenemedi.");
   }
-  return data.branch;
+  return data?.branch || data;
 }
 
 export async function createBusinessBranchRequest(token, payload) {
@@ -166,7 +227,7 @@ export async function createBusinessBranchRequest(token, payload) {
   if (!response.ok) {
     throw new Error(data?.error || "Şube talebi oluşturulamadı.");
   }
-  return data.request;
+  return data;
 }
 
 export async function fetchAdminBranchRequests(token, status) {
@@ -187,9 +248,9 @@ export async function fetchAdminBranchRequestsUnread(token) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error || "Bildirim sayısı alınamadı.");
+    throw new Error(data?.error || "Okunmamış sayısı alınamadı.");
   }
-  return Number(data.unread) || 0;
+  return data;
 }
 
 export async function markAdminBranchRequestsRead(token) {
@@ -199,7 +260,7 @@ export async function markAdminBranchRequestsRead(token) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error || "Okundu işaretlenemedi.");
+    throw new Error(data?.error || "İşaretleme başarısız.");
   }
   return data;
 }
@@ -242,7 +303,7 @@ export async function markBusinessNotificationsRead(token, ids) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error || "Okundu işaretlenemedi.");
+    throw new Error(data?.error || "Bildirimler işaretlenemedi.");
   }
   return data;
 }
@@ -255,7 +316,7 @@ export async function fetchAdminBusinesses(token) {
   if (!response.ok) {
     throw new Error(data?.error || "İşletmeler alınamadı.");
   }
-  return data.businesses || [];
+  return data?.businesses || [];
 }
 
 export async function createAdminBusiness(token, payload) {
@@ -271,7 +332,7 @@ export async function createAdminBusiness(token, payload) {
   if (!response.ok) {
     throw new Error(data?.error || "İşletme oluşturulamadı.");
   }
-  return data.business;
+  return data;
 }
 
 export async function updateAdminBusiness(token, id, payload) {
@@ -287,7 +348,7 @@ export async function updateAdminBusiness(token, id, payload) {
   if (!response.ok) {
     throw new Error(data?.error || "İşletme güncellenemedi.");
   }
-  return data.business;
+  return data;
 }
 
 export async function updateAdminBusinessStatus(token, id, is_active) {
@@ -303,7 +364,7 @@ export async function updateAdminBusinessStatus(token, id, is_active) {
   if (!response.ok) {
     throw new Error(data?.error || "Durum güncellenemedi.");
   }
-  return data.business;
+  return data;
 }
 
 export async function resetAdminBusinessSubscription(token, id) {
@@ -318,7 +379,7 @@ export async function resetAdminBusinessSubscription(token, id) {
   if (!response.ok) {
     throw new Error(data?.error || "Abonelik sıfırlanamadı.");
   }
-  return data.business;
+  return data;
 }
 
 export async function deleteAdminBusiness(token, id) {
@@ -341,7 +402,7 @@ export async function fetchAdminBranches(token, businessId) {
   if (!response.ok) {
     throw new Error(data?.error || "Şubeler alınamadı.");
   }
-  return data.branches || [];
+  return data?.branches || [];
 }
 
 export async function createAdminBranch(token, payload) {
@@ -355,9 +416,9 @@ export async function createAdminBranch(token, payload) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(data?.error || "Şube oluşturulamadı.");
+    throw new Error(data?.error || "Şube eklenemedi.");
   }
-  return data.branch;
+  return data;
 }
 
 export async function updateAdminBranch(token, id, payload) {
@@ -373,7 +434,7 @@ export async function updateAdminBranch(token, id, payload) {
   if (!response.ok) {
     throw new Error(data?.error || "Şube güncellenemedi.");
   }
-  return data.branch;
+  return data;
 }
 
 export async function deleteAdminBranch(token, id) {

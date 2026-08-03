@@ -90,6 +90,7 @@ async function syncBranchUpsert(branch, institutionId) {
         subscription_type: branch.subscription_type || "Test",
         subscription_start_date: branch.subscription_start_date || null,
         subscription_end_date: branch.subscription_end_date || null,
+        is_active: !(branch.is_active === 0 || branch.is_active === false),
         created_at: branch.created_at || new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
@@ -280,10 +281,17 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
 
   console.log("[SUPABASE-SYNC] Hydrate (Supabase → SQLite) başlıyor...");
 
+  const key = String(process.env.SUPABASE_KEY || "");
+  const looksLikePublishableOrAnon =
+    key.startsWith("sb_publishable_") ||
+    key.includes("anon") ||
+    key.includes("publishable");
+
   let institutions = 0;
   let adjustments = 0;
   let branches = 0;
   let institutionsOk = true;
+  let branchesOk = false;
 
   try {
     const { data: instRows, error: instErr } = await supabase
@@ -318,13 +326,31 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
     logErr("hydrate.rate_adjustments", err);
   }
 
+  // Publishable/anon + RLS: select boş dönebilir; SoT güvenilir sayılmaz.
+  const soTUntrusted =
+    !institutionsOk ||
+    (institutions === 0 && looksLikePublishableOrAnon);
+
   try {
     const { data: branchRows, error: brErr } = await supabase.from("branches").select("*");
     if (brErr) throw brErr;
-    for (const row of branchRows || []) {
-      if (typeof upsertBranchRow === "function") {
-        upsertBranchRow(row);
-        branches += 1;
+    branchesOk = true;
+    // SoT güvenilirse yerel şubeleri tamamen değiştir (hayalet şube temizliği).
+    // Aksi halde yalnızca upsert ile ekle/güncelle; mevcut satırları silme.
+    if (!soTUntrusted && typeof applyFns.replaceAllBranches === "function") {
+      applyFns.replaceAllBranches(branchRows || []);
+      branches = (branchRows || []).length;
+    } else {
+      for (const row of branchRows || []) {
+        if (typeof upsertBranchRow === "function") {
+          upsertBranchRow(row);
+          branches += 1;
+        }
+      }
+      if (soTUntrusted) {
+        console.warn(
+          "[SUPABASE-SYNC] Şube replace ATLANDI — SoT güvenilmez (RLS/anahtar); hayalet riski için yalnızca upsert."
+        );
       }
     }
   } catch (err) {
@@ -332,16 +358,10 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   }
 
   console.log(
-    `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} branches=${branches}`
+    `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} branches=${branches} branchesOk=${branchesOk}`
   );
 
-  // Publishable/anon + RLS: select boş dönebilir; SoT güvenilir sayılmaz.
-  const key = String(process.env.SUPABASE_KEY || "");
-  const looksLikePublishableOrAnon =
-    key.startsWith("sb_publishable_") ||
-    key.includes("anon") ||
-    key.includes("publishable");
-  if (institutionsOk && institutions === 0 && looksLikePublishableOrAnon) {
+  if (soTUntrusted && institutions === 0) {
     return {
       ok: false,
       institutions,

@@ -4,8 +4,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Activity,
+  AlertTriangle,
   Building2,
   Check,
+  CheckCircle2,
   ClipboardList,
   CreditCard,
   LogOut,
@@ -134,6 +136,57 @@ function formatRemaining(days, t, subscriptionType) {
   if (days == null) return "—";
   if (days <= 0) return t("subscriptionExpired");
   return `${days} ${t("daysUnit")} ${t("daysRemainingSuffix")}`;
+}
+
+/** Şube doluluk: eksik sarı, tam yeşil, fazla kırmızı */
+function BranchQuotaBadge({ used, limit }) {
+  const u = Number(used) || 0;
+  const lim = Math.max(1, Number(limit) || 1);
+  const label = `${u}/${lim}`;
+  if (u > lim) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400"
+        title="Şube limiti aşıldı"
+      >
+        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+        {label}
+      </span>
+    );
+  }
+  if (u < lim) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+        title="Eksik şube"
+      >
+        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+      title="Şube limiti dolu"
+    >
+      <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+function parseDateLoose(iso) {
+  if (!iso) return null;
+  const raw = String(iso).trim();
+  if (!raw) return null;
+  // YYYY-MM-DD or YYYY-MM-DD HH:MM:SS → UTC olarak oku
+  if (/^\d{4}-\d{2}-\d{2}( |T)/.test(raw) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(raw)) {
+    const d = new Date(raw.replace(" ", "T") + "Z");
+    return Number.isFinite(d.getTime()) ? d : null;
+  }
+  const d = new Date(raw);
+  return Number.isFinite(d.getTime()) ? d : null;
 }
 
 function SubscriptionFields({ form, setForm }) {
@@ -462,15 +515,13 @@ export function SuperAdminDashboard() {
   }
 
   function formatRegistrationDate(iso) {
-    if (!iso) return "—";
-    const d = new Date(iso.includes("T") || iso.includes("Z") ? iso : iso.replace(" ", "T") + "Z");
-    const locale = lang === "en" ? "en-GB" : "tr-TR";
-    if (!Number.isFinite(d.getTime())) {
-      // SQLite datetime('now') genelde "YYYY-MM-DD HH:MM:SS"
-      const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const d = parseDateLoose(iso);
+    if (!d) {
+      const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
       if (!m) return "—";
       return `${m[3]}.${m[2]}.${m[1]}`;
     }
+    const locale = lang === "en" ? "en-GB" : "tr-TR";
     return d.toLocaleDateString(locale, {
       day: "numeric",
       month: "long",
@@ -632,6 +683,36 @@ export function SuperAdminDashboard() {
   }, [bootstrapping, isSuperAdmin, token, loadBusinesses]);
 
   useEffect(() => {
+    if (!showEditModal || editPanelTab !== "subscription" || !editForm.id || !token) return;
+    let cancelled = false;
+    (async () => {
+      setBranchSubLoading(true);
+      setBranchSubError("");
+      try {
+        const rows = await fetchAdminBranches(token, editForm.id);
+        if (!cancelled) {
+          setBranchSubList(rows);
+          setBranchSubBusiness({
+            id: editForm.id,
+            institution_name: editForm.institution_name,
+            username: editForm.username,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBranchSubList([]);
+          setBranchSubError(err.message || t("statsLoadFailedMsg"));
+        }
+      } finally {
+        if (!cancelled) setBranchSubLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showEditModal, editPanelTab, editForm.id, editForm.institution_name, editForm.username, token, t]);
+
+  useEffect(() => {
     if (!showEditModal) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -722,23 +803,81 @@ export function SuperAdminDashboard() {
 
   const handleSaveBranchSubscription = async () => {
     if (!branchSubSelectedId || !token) return;
+    const businessId = branchSubBusiness?.id || editForm.id;
+    if (!businessId) return;
     setBranchSubSaving(true);
     setBranchSubError("");
     try {
       const payload = {
         subscription_type: branchSubForm.subscriptionType,
         remaining_days: branchSubCalculatedDays,
+        is_active: true,
       };
       if (branchSubForm.subscriptionType === "Test") {
         payload.subscription_end_date = null;
         payload.remaining_days = null;
       }
       await updateAdminBranch(token, branchSubSelectedId, payload);
-      const rows = await fetchAdminBranches(token, branchSubBusiness.id);
+      const rows = await fetchAdminBranches(token, businessId);
       setBranchSubList(rows);
       const updated = rows.find((b) => String(b.id) === String(branchSubSelectedId));
       if (updated) selectBranchForSubscription(updated);
       setSuccess(t("branchSubscriptionSaved"));
+    } catch (err) {
+      setBranchSubError(err.message || t("updateFailedMsg"));
+    } finally {
+      setBranchSubSaving(false);
+    }
+  };
+
+  const handleExtendBranchOneMonth = async () => {
+    if (!branchSubSelectedId || !token) return;
+    const businessId = branchSubBusiness?.id || editForm.id;
+    const current = branchSubList.find((b) => String(b.id) === String(branchSubSelectedId));
+    if (!businessId || !current) return;
+    setBranchSubSaving(true);
+    setBranchSubError("");
+    try {
+      const baseDays =
+        current.subscription_type === "Test"
+          ? 0
+          : Math.max(0, Number(current.days_remaining) || 0);
+      await updateAdminBranch(token, branchSubSelectedId, {
+        subscription_type:
+          current.subscription_type === "Test" ? "Aylık" : current.subscription_type || "Aylık",
+        remaining_days: baseDays + 30,
+        is_active: true,
+      });
+      const rows = await fetchAdminBranches(token, businessId);
+      setBranchSubList(rows);
+      const updated = rows.find((b) => String(b.id) === String(branchSubSelectedId));
+      if (updated) selectBranchForSubscription(updated);
+      setSuccess(t("branchExtendedOneMonth"));
+    } catch (err) {
+      setBranchSubError(err.message || t("updateFailedMsg"));
+    } finally {
+      setBranchSubSaving(false);
+    }
+  };
+
+  const handleToggleBranchActive = async () => {
+    if (!branchSubSelectedId || !token) return;
+    const businessId = branchSubBusiness?.id || editForm.id;
+    const current = branchSubList.find((b) => String(b.id) === String(branchSubSelectedId));
+    if (!businessId || !current) return;
+    setBranchSubSaving(true);
+    setBranchSubError("");
+    try {
+      await updateAdminBranch(token, branchSubSelectedId, {
+        is_active: current.is_active === false,
+      });
+      const rows = await fetchAdminBranches(token, businessId);
+      setBranchSubList(rows);
+      const updated = rows.find((b) => String(b.id) === String(branchSubSelectedId));
+      if (updated) selectBranchForSubscription(updated);
+      setSuccess(
+        current.is_active === false ? t("branchActivatedMsg") : t("branchDeactivatedMsg")
+      );
     } catch (err) {
       setBranchSubError(err.message || t("updateFailedMsg"));
     } finally {
@@ -1024,11 +1163,11 @@ export function SuperAdminDashboard() {
                         <td className="px-4 py-3 text-slate-800 dark:text-slate-100">{biz.institution_name}</td>
                         <td className="px-4 py-3">
                           <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-teal-700 dark:border-slate-700 dark:bg-slate-950 dark:text-teal-300">
-                            {subscriptionTypeLabel(biz.subscription || biz.subscription_type, t)}
+                            {t("branchBasedSubscription")}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-200">
-                          {used}/{limit}
+                        <td className="px-4 py-3">
+                          <BranchQuotaBadge used={used} limit={limit} />
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap dark:text-slate-300">
                           {formatRegistrationDate(biz.created_at)}
@@ -1116,7 +1255,7 @@ export function SuperAdminDashboard() {
                       ? t("editBusinessTitle")
                       : editPanelTab === "business"
                         ? t("businessLedgerTitle")
-                        : t("subscriptionLedgerTitle")}
+                        : t("addSubscriptionTitle")}
                   </h2>
                   <span className="mt-0.5 block truncate text-sm font-mono text-cyan-600 dark:text-cyan-300">
                     {editForm.username}
@@ -1140,7 +1279,7 @@ export function SuperAdminDashboard() {
                 {[
                   { id: "edit", icon: Pencil, label: t("editBtn") },
                   { id: "business", icon: ClipboardList, label: t("businessLedgerShort") },
-                  { id: "subscription", icon: CreditCard, label: t("subscriptionLedgerShort") },
+                  { id: "subscription", icon: CreditCard, label: t("addSubscriptionTitle") },
                 ].map(({ id, icon: Icon, label }) => (
                   <button
                     key={id}
@@ -1252,29 +1391,124 @@ export function SuperAdminDashboard() {
                     })}
                   </ul>
                 )
-              ) : editSubscriptionLedger.length === 0 ? (
-                <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                  {t("ledgerEmpty")}
-                </p>
               ) : (
-                <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-                  {editSubscriptionLedger.map((row) => {
-                    const when = formatLedgerDateTime(row.timestamp);
-                    return (
-                      <li key={row.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                        <div className="min-w-0 flex-1">
-                          <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-                            {when.date}
-                          </span>
-                          <p className="mt-0.5 text-sm text-slate-800 dark:text-slate-200">{row.plan}</p>
-                        </div>
-                        <span className="shrink-0 text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                          {formatMoneyTry(row.amount, lang)}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    {t("addSubscriptionHint")}
+                  </p>
+                  {branchSubLoading ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
+                  ) : branchSubError && branchSubList.length === 0 ? (
+                    <p className="text-sm text-rose-600 dark:text-rose-300">{branchSubError}</p>
+                  ) : branchSubList.length === 0 ? (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {t("noBranchesForSubscription")}
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {branchSubList.map((branch) => {
+                        const selected = String(branchSubSelectedId) === String(branch.id);
+                        const rem = formatRemaining(
+                          branch.days_remaining,
+                          t,
+                          branch.subscription_type || "Test"
+                        );
+                        const active = branch.is_active !== false;
+                        return (
+                          <li key={branch.id}>
+                            <button
+                              type="button"
+                              onClick={() => selectBranchForSubscription(branch)}
+                              className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                                selected
+                                  ? "border-cyan-500/50 bg-cyan-500/10"
+                                  : "border-slate-200 bg-slate-50 hover:border-cyan-400/50 dark:border-slate-700 dark:bg-slate-950"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-medium text-slate-900 dark:text-white">
+                                  {branch.name}
+                                  {!active ? (
+                                    <span className="ml-2 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-300">
+                                      {t("statusInactive")}
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <span
+                                  className={`text-xs font-semibold ${
+                                    !active
+                                      ? "text-slate-400"
+                                      : branch.subscription_type === "Test"
+                                        ? "text-cyan-600 dark:text-cyan-300"
+                                        : branch.days_remaining != null &&
+                                            branch.days_remaining <= 30
+                                          ? "text-rose-600 dark:text-rose-400"
+                                          : "text-emerald-600 dark:text-emerald-400"
+                                  }`}
+                                >
+                                  {rem}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                                {subscriptionTypeLabel(branch.subscription_type, t)}
+                                {" · "}
+                                {t("subscriptionStartDate")}:{" "}
+                                {formatRegistrationDate(
+                                  branch.subscription_start_date || branch.created_at
+                                )}
+                              </p>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
+                  {branchSubSelectedId ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 dark:border-slate-700 dark:bg-slate-950/60">
+                      <SubscriptionFields form={branchSubForm} setForm={setBranchSubForm} />
+                      <SubscriptionPreview
+                        currentDays={branchSubForm.currentRemainingDays}
+                        newDays={branchSubCalculatedDays}
+                        price={branchSubForm.price}
+                        lang={lang}
+                        t={t}
+                      />
+                      {branchSubError ? (
+                        <p className="text-xs text-rose-600 dark:text-rose-300">{branchSubError}</p>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={branchSubSaving}
+                          onClick={handleSaveBranchSubscription}
+                          className={primaryBtnClass}
+                        >
+                          {branchSubSaving ? t("saving") : t("saveBranchSubscriptionBtn")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={branchSubSaving}
+                          onClick={handleExtendBranchOneMonth}
+                          className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 dark:text-cyan-300"
+                        >
+                          {t("extendOneMonthBtn")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={branchSubSaving}
+                          onClick={handleToggleBranchActive}
+                          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                        >
+                          {branchSubList.find((b) => String(b.id) === String(branchSubSelectedId))
+                            ?.is_active === false
+                            ? t("activateBranchBtn")
+                            : t("deactivateBranchBtn")}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
           </div>
@@ -1390,14 +1624,35 @@ export function SuperAdminDashboard() {
                   {branchSubError ? (
                     <p className="text-xs text-rose-600 dark:text-rose-300">{branchSubError}</p>
                   ) : null}
-                  <button
-                    type="button"
-                    disabled={branchSubSaving}
-                    onClick={handleSaveBranchSubscription}
-                    className={primaryBtnClass}
-                  >
-                    {branchSubSaving ? t("saving") : t("saveBranchSubscriptionBtn")}
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={branchSubSaving}
+                      onClick={handleSaveBranchSubscription}
+                      className={primaryBtnClass}
+                    >
+                      {branchSubSaving ? t("saving") : t("saveBranchSubscriptionBtn")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={branchSubSaving}
+                      onClick={handleExtendBranchOneMonth}
+                      className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 dark:text-cyan-300"
+                    >
+                      {t("extendOneMonthBtn")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={branchSubSaving}
+                      onClick={handleToggleBranchActive}
+                      className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    >
+                      {branchSubList.find((b) => String(b.id) === String(branchSubSelectedId))
+                        ?.is_active === false
+                        ? t("activateBranchBtn")
+                        : t("deactivateBranchBtn")}
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>

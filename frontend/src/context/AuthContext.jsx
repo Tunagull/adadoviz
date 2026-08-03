@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { apiUrl } from "../lib/api";
 import {
   clearAuth,
+  getRememberPreference,
   getStoredAuth,
   loginBusiness as loginBusinessApi,
   saveAuth,
@@ -49,7 +50,7 @@ export function AuthProvider({ children }) {
           subscription_end_date: me.subscription_end_date || stored.subscription_end_date || null,
           is_active: me.is_active !== false,
         };
-        saveAuth(next);
+        saveAuth(next, { remember: getRememberPreference() });
         if (!cancelled) setAuth(next);
       } catch {
         // Offline / backend down: keep stored token so refresh still feels logged-in.
@@ -65,8 +66,10 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const login = useCallback(async (username, password) => {
-    const next = await loginBusinessApi(username, password);
+  const login = useCallback(async (username, password, options = {}) => {
+    const next = await loginBusinessApi(username, password, {
+      remember: options.remember === true,
+    });
     setAuth(next);
     return next;
   }, []);

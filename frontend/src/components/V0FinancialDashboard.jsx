@@ -1322,6 +1322,12 @@ export function V0FinancialDashboard() {
       const langPref = localStorage.getItem("finsight-lang");
       logout();
       localStorage.clear();
+      try {
+        sessionStorage.removeItem("finsight_business_auth");
+        sessionStorage.removeItem("finsight_auth_remember");
+      } catch {
+        /* ignore */
+      }
       if (themePref) localStorage.setItem("finsight-theme", themePref);
       if (langPref) localStorage.setItem("finsight-lang", langPref);
       window.location.href = "/";  // ✅ React Router'dan önce tam yenileme

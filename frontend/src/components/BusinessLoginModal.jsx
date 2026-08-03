@@ -21,6 +21,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
   const [forgotLoading, setForgotLoading] = useState(false);
   const [forgotError, setForgotError] = useState("");
   const [forgotSuccess, setForgotSuccess] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -28,6 +29,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
     setError("");
     setUsername("");
     setPassword("");
+    setRememberMe(false);
     setShowForgotModal(false);
     setForgotEmail("");
     setForgotError("");
@@ -61,7 +63,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
     setLoading(true);
 
     try {
-      const result = await login(username.trim(), password);
+      const result = await login(username.trim(), password, { remember: rememberMe });
 
       if (!result?.token) {
         throw new Error("Token alınamadı");
@@ -201,7 +203,18 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     required
                   />
                 </div>
-                <div className="flex justify-end">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="inline-flex cursor-pointer items-center gap-2 select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-600 dark:bg-slate-950"
+                    />
+                    <span className="text-xs text-slate-600 dark:text-slate-300">
+                      {t("rememberMe")}
+                    </span>
+                  </label>
                   <button
                     type="button"
                     onClick={() => {
@@ -210,7 +223,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                       setForgotEmail("");
                       setShowForgotModal(true);
                     }}
-                    className="text-xs text-teal-400 hover:text-teal-300 transition-colors"
+                    className="text-xs text-teal-400 transition-colors hover:text-teal-300"
                   >
                     {t("forgotPassword")}
                   </button>

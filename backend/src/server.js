@@ -47,6 +47,8 @@ const {
   applySupabaseInstitutionRow,
   applySupabaseAdjustmentRow,
   applySupabaseBranchRow,
+  purgeOrphanBranches,
+  replaceBusinessBranchesFromSupabase,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,
@@ -309,15 +311,17 @@ app.get("/api/kurlar", (_req, res) => {
     );
 
     /**
-     * Tek kaynak: Super Admin'deki aktif işletmeler.
-     * Kart kuru = Merkez Bankası kuru + o işletmenin kâr marjı (fixed/percent).
-     */
+ * Tek kaynak: Super Admin'deki aktif + süresi dolmamış işletmeler.
+ * Kart kuru = Merkez Bankası kuru + o işletmenin kâr marjı (fixed/percent).
+ * Not: branch_count filtresi KALDIRILDI — Dashboard ile Super Admin aktif
+ * listesi tutarlı olsun (şubesi olmayan aktif işletmeler de görünür).
+ */
     const banks = listBusinesses()
       .filter((biz) =>
         isBankVisible({
           is_active: biz.is_active,
           subscription_end_date: biz.subscription_end_date,
-        }) && (Number(biz.branch_count) || 0) > 0
+        })
       )
       .map((biz) => {
         const institutionId = biz.institution_id;
@@ -354,6 +358,7 @@ app.get("/api/kurlar", (_req, res) => {
           subscription_end_date: biz.subscription_end_date || null,
           logo_url: biz.logo_url || null,
           working_hours: biz.working_hours || null,
+          branch_count: Number(biz.branch_count) || 0,
           is_active: true,
         };
       });
@@ -1231,6 +1236,7 @@ app.put("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
       subscription_start_date: req.body?.subscription_start_date,
       subscription_end_date: req.body?.subscription_end_date,
       remaining_days: req.body?.remaining_days,
+      is_active: req.body?.is_active,
     });
     const biz = getInstitutionFullById(branch.business_id);
     if (biz) syncBranchUpsert(branch, biz.institution_id);
@@ -1913,7 +1919,9 @@ async function startServer() {
       upsertInstitutionRow: applySupabaseInstitutionRow,
       upsertAdjustmentRow: applySupabaseAdjustmentRow,
       upsertBranchRow: applySupabaseBranchRow,
+      replaceAllBranches: replaceBusinessBranchesFromSupabase,
     });
+    purgeOrphanBranches();
   } catch (err) {
     console.warn("[SUPABASE-SYNC] Hydrate hatası:", err.message);
   }

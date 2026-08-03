@@ -38,10 +38,14 @@ CREATE TABLE IF NOT EXISTS public.branches (
   subscription_type TEXT DEFAULT 'Test',
   subscription_start_date TIMESTAMPTZ,
   subscription_end_date TIMESTAMPTZ,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (institution_id, name)
 );
+
+-- Mevcut kurulumlar için (tablo zaten varsa):
+ALTER TABLE public.branches ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- 3) Güncel kâr marjları
 CREATE TABLE IF NOT EXISTS public.rate_adjustments (
