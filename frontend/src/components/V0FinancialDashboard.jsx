@@ -1634,7 +1634,7 @@ export function V0FinancialDashboard() {
     return undefined;
   }, []);
   const [exchangeCurrency, setExchangeCurrency] = useState("");
-  // Alış: TL tutarı; Satış: döviz tutarı — operasyona göre anlam değişir
+  // Alış: döviz tutarı → TL; Satış: TL tutarı → döviz
   const [exchangeAmount, setExchangeAmount] = useState("0");
   const [exchangeOperation, setExchangeOperation] = useState("buy");
   const [depositAmount, setDepositAmount] = useState("100000");
@@ -2026,13 +2026,17 @@ export function V0FinancialDashboard() {
   const selectedExchangeSellRate = selectedExchangePair?.sell ?? null;
   const selectedExchangeBuyRate = selectedExchangePair?.buy ?? null;
   const exchangeAmountNum = Number.parseFloat(exchangeAmount);
+  // Alış = büronun alış kuru (müşteri döviz satar → TL alır)
+  // Satış = büronun satış kuru (müşteri TL verir → döviz alır)
   const exchangeResult =
     Number.isFinite(exchangeAmountNum) &&
     exchangeAmountNum > 0 &&
-    (exchangeOperation === "buy" ? Number.isFinite(selectedExchangeSellRate) : Number.isFinite(selectedExchangeBuyRate))
+    (exchangeOperation === "buy"
+      ? Number.isFinite(selectedExchangeBuyRate)
+      : Number.isFinite(selectedExchangeSellRate))
       ? exchangeOperation === "buy"
-        ? exchangeAmountNum / selectedExchangeSellRate
-        : exchangeAmountNum * selectedExchangeBuyRate
+        ? exchangeAmountNum * selectedExchangeBuyRate
+        : exchangeAmountNum / selectedExchangeSellRate
       : null;
 
   const depositPrincipal = Number.parseFloat(depositAmount);
@@ -2382,16 +2386,11 @@ export function V0FinancialDashboard() {
                     .sort((a, b) => a.name.localeCompare(b.name, localeCode))
                     .map((bank) => {
                       const rate = bank.exchangeRates?.find((r) => r.currency === exchangeCurrency);
-                      // ⚠️ DÜZELTME (bkz. project_audit_report.md, 1.5): Müşteri "Alış" yaptığında
-                      // (TL verip döviz alır) fiilen büronun SATIŞ kuru uygulanır — hesaplama zaten
-                      // `exchangeAmountNum / sell` şeklindeydi. Ancak burada etiket/rakam yanlışlıkla
-                      // `rate.buy` (büronun alış kuru) gösteriyordu; ekranda görünen kur, gerçekte
-                      // kullanılan kurdan farklıydı. Aynı mantık "Satış" için de tersti. Artık
-                      // gösterilen kur, hesaplamada kullanılan kurla birebir eşleşiyor.
+                      // Seçilen işlem türü = tabeladaki kur (Alış→buy, Satış→sell)
                       const price = exchangeOperation === "buy"
-                        ? (Number.isFinite(rate?.sell) ? rate.sell.toFixed(2) : "—")
-                        : (Number.isFinite(rate?.buy) ? rate.buy.toFixed(2) : "—");
-                      const operationType = exchangeOperation === "buy" ? t("sell") : t("buy");
+                        ? (Number.isFinite(rate?.buy) ? rate.buy.toFixed(2) : "—")
+                        : (Number.isFinite(rate?.sell) ? rate.sell.toFixed(2) : "—");
+                      const operationType = exchangeOperation === "buy" ? t("buy") : t("sell");
                       return {
                         value: bank.name,
                         label: `${bank.name} | ${operationType}: ${price}`,
@@ -2404,7 +2403,9 @@ export function V0FinancialDashboard() {
             {/* 4️⃣ ÇEVRİLECEK TUTAR — büro seçilince açılır */}
             <div className="flex min-w-0 flex-col gap-1 xl:col-span-2">
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">
-                {exchangeOperation === "buy" ? t("amountTl") : `${t("amountCurrency")} (${exchangeCurrency})`}
+                {exchangeOperation === "buy"
+                  ? `${t("amountCurrency")} (${exchangeCurrency})`
+                  : t("amountTl")}
               </label>
               <input
                 type="number"
@@ -2420,7 +2421,9 @@ export function V0FinancialDashboard() {
             {/* 5️⃣ SONUÇ — tutar girilince açılır */}
             <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 xl:col-span-3">
               <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">
-                {exchangeOperation === "buy" ? `${t("resultBuy")} ${exchangeCurrency || ""}`.trim() : t("resultSell")}
+                {exchangeOperation === "buy"
+                  ? t("resultSell")
+                  : `${t("resultBuy")} ${exchangeCurrency || ""}`.trim()}
               </label>
               <div
                 className={`flex h-11 w-full items-center overflow-hidden rounded-lg border px-3 text-sm outline-none transition-all duration-300 dark:border-slate-700 dark:bg-slate-950 ${
@@ -2434,7 +2437,7 @@ export function V0FinancialDashboard() {
                   ? `${exchangeResult.toLocaleString(localeCode, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
-                    })} ${exchangeOperation === "buy" ? exchangeCurrency : "TL"}`
+                    })} ${exchangeOperation === "buy" ? "TL" : exchangeCurrency}`
                   : !calculatorBank
                     ? t("selectOfficePrompt")
                     : t("enterAmountPrompt")}

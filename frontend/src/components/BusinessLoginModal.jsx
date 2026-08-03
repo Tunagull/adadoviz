@@ -34,6 +34,10 @@ export function BusinessLoginModal({ isOpen, onClose }) {
     setForgotEmail("");
     setForgotError("");
     setForgotSuccess("");
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
 
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
