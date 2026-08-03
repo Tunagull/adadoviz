@@ -776,10 +776,125 @@ function countBranchesForBusiness(businessId) {
   return Number(row?.c) || 0;
 }
 
+/**
+ * Aktif şubeler arasında en uzun kalan süreli aboneliği seç.
+ * Kurum hâlâ "Test" iken şube Manuel/Aylık/Yıllık ise public/admin rozeti için kullanılır.
+ */
+function pickBestTimedBranchForBusiness(businessId) {
+  const id = Number(businessId);
+  if (!Number.isFinite(id)) return null;
+  const rows = db
+    .prepare(
+      `SELECT ${BRANCH_SELECT_SQL}
+       FROM branches
+       WHERE business_id = ? AND COALESCE(is_active, 1) = 1`
+    )
+    .all(id);
+
+  let best = null;
+  for (const raw of rows) {
+    const branch = mapBranchRow(raw);
+    if (!branch || normalizeSubscriptionType(branch.subscription_type) === "Test") continue;
+    if (branch.days_remaining != null && branch.days_remaining <= 0) continue;
+    if (!best) {
+      best = branch;
+      continue;
+    }
+    const bestScore =
+      best.days_remaining == null ? Number.POSITIVE_INFINITY : Number(best.days_remaining);
+    const curScore =
+      branch.days_remaining == null ? Number.POSITIVE_INFINITY : Number(branch.days_remaining);
+    if (curScore > bestScore) best = branch;
+  }
+  return best;
+}
+
+/** Kurum satırı + şube aboneliklerinden efektif tip / bitiş / kalan gün. */
+function resolveEffectiveBusinessSubscription(synced) {
+  let subscription_type = synced.subscription_type || "Test";
+  let subscription_end_date = synced.subscription_end_date || null;
+  let days_remaining = daysRemainingFrom(subscription_end_date);
+
+  // Test + gelecek end_date tutarsızlığı: süreli abonelik gibi göster
+  if (
+    normalizeSubscriptionType(subscription_type) === "Test" &&
+    days_remaining != null &&
+    days_remaining > 0
+  ) {
+    subscription_type = "Manuel";
+  }
+
+  // Kurum Test kalmış ama şubede süreli abonelik varsa onu kullan
+  if (normalizeSubscriptionType(subscription_type) === "Test" && synced.id != null) {
+    const best = pickBestTimedBranchForBusiness(synced.id);
+    if (best) {
+      subscription_type = best.subscription_type;
+      subscription_end_date = best.subscription_end_date;
+      days_remaining = best.days_remaining;
+    }
+  }
+
+  if (normalizeSubscriptionType(subscription_type) === "Test") {
+    return {
+      subscription_type: "Test",
+      subscription: buildSubscriptionLabel("Test"),
+      subscription_end_date: null,
+      days_remaining: null,
+    };
+  }
+
+  return {
+    subscription_type,
+    subscription: buildSubscriptionLabel(subscription_type),
+    subscription_end_date,
+    days_remaining,
+  };
+}
+
+/**
+ * Şube aboneliği güncellenince kurum kaydını Test'ten süreliye yükselt
+ * (dashboard / login ile Super Admin şube aboneliği tutarlı kalsın).
+ */
+function syncInstitutionSubscriptionFromBranches(businessId) {
+  const id = Number(businessId);
+  if (!Number.isFinite(id)) return null;
+  const best = pickBestTimedBranchForBusiness(id);
+  if (!best) return null;
+
+  const row = db
+    .prepare(
+      `SELECT id, subscription_type, subscription_end_date FROM institutions WHERE id = ?`
+    )
+    .get(id);
+  if (!row) return null;
+
+  const currentType = normalizeSubscriptionType(row.subscription_type || "Test");
+  const currentDays = daysRemainingFrom(row.subscription_end_date);
+  const bestDays = best.days_remaining;
+  const shouldPromoteFromTest = currentType === "Test";
+  const shouldExtend =
+    bestDays != null && (currentDays == null || bestDays > currentDays);
+
+  if (!shouldPromoteFromTest && !shouldExtend) return best;
+
+  db.prepare(
+    `UPDATE institutions
+     SET subscription_type = ?, subscription = ?, subscription_end_date = ?, is_active = 1
+     WHERE id = ?`
+  ).run(
+    best.subscription_type,
+    buildSubscriptionLabel(best.subscription_type),
+    best.subscription_end_date,
+    id
+  );
+  return best;
+}
+
 function mapBusinessRow(row) {
   if (!row) return null;
   const synced = deactivateIfExpired(row);
-  const days_remaining = daysRemainingFrom(synced.subscription_end_date);
+  const eff = resolveEffectiveBusinessSubscription(synced);
+
   let working_hours = null;
   if (synced.working_hours) {
     try {
@@ -796,12 +911,15 @@ function mapBusinessRow(row) {
   return {
     ...synced,
     is_active: synced.is_active === 0 || synced.is_active === false ? false : true,
-    subscription_type: synced.subscription_type || "Test",
+    subscription_type: eff.subscription_type,
+    subscription: eff.subscription,
+    subscription_end_date: eff.subscription_end_date,
     logo_url: synced.logo_url || null,
     phone: synced.phone || null,
     contact_person: synced.contact_person || null,
+    email: synced.email || null,
     working_hours,
-    days_remaining,
+    days_remaining: eff.days_remaining,
     branch_limit,
     branch_count,
   };
@@ -873,8 +991,10 @@ function findAdminByUsername(username) {
 
   if (!row) return null;
   const synced = deactivateIfExpired(row);
+  const eff = resolveEffectiveBusinessSubscription(synced);
   return {
     ...synced,
+    ...eff,
     is_active: synced.is_active === 0 || synced.is_active === false ? 0 : 1,
   };
 }
@@ -1704,6 +1824,8 @@ function createBranch({
       sub.subscription_end_date
     );
 
+  syncInstitutionSubscriptionFromBranches(businessId);
+
   return mapBranchRow(
     db.prepare(`SELECT ${BRANCH_SELECT_SQL} FROM branches WHERE id = ?`).get(info.lastInsertRowid)
   );
@@ -1805,6 +1927,10 @@ function updateBranch(
     nextActive,
     id
   );
+
+  if (subTouched) {
+    syncInstitutionSubscriptionFromBranches(existing.business_id);
+  }
 
   return mapBranchRow(db.prepare(`SELECT ${BRANCH_SELECT_SQL} FROM branches WHERE id = ?`).get(id));
 }

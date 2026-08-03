@@ -1756,6 +1756,9 @@ export function V0FinancialDashboard() {
                 ],
             subscription_type: apiBank?.subscription_type || null,
             subscription_end_date: apiBank?.subscription_end_date || null,
+            days_remaining:
+              apiBank?.days_remaining != null ? Number(apiBank.days_remaining) : null,
+            logo_url: apiBank?.logo_url || null,
             is_active:
               apiBank?.is_active === true ||
               apiBank?.is_active === 1 ||

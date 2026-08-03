@@ -48,6 +48,12 @@ export function AuthProvider({ children }) {
           subscription: me.subscription || stored.subscription || "Test",
           subscription_type: me.subscription_type || stored.subscription_type || "Test",
           subscription_end_date: me.subscription_end_date || stored.subscription_end_date || null,
+          days_remaining:
+            me.days_remaining != null
+              ? me.days_remaining
+              : stored.days_remaining != null
+                ? stored.days_remaining
+                : null,
           is_active: me.is_active !== false,
         };
         saveAuth(next, { remember: getRememberPreference() });

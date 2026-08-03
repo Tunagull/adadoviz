@@ -363,6 +363,7 @@ app.get("/api/kurlar", (_req, res) => {
           interestRates: [],
           subscription_type: biz.subscription_type || null,
           subscription_end_date: biz.subscription_end_date || null,
+          days_remaining: biz.days_remaining != null ? biz.days_remaining : null,
           logo_url: biz.logo_url || null,
           working_hours: biz.working_hours || null,
           branch_count: Number(biz.branch_count) || 0,
@@ -525,6 +526,7 @@ app.post("/api/auth/login", (req, res) => {
     subscription: admin.subscription || "Test",
     subscription_type: admin.subscription_type || "Test",
     subscription_end_date: admin.subscription_end_date || null,
+    days_remaining: admin.days_remaining != null ? admin.days_remaining : null,
     is_active: isActive,
   });
 });
@@ -656,6 +658,7 @@ app.get("/api/admin/me", requireAuth, (req, res) => {
     subscription: admin?.subscription || "Test",
     subscription_type: admin?.subscription_type || "Test",
     subscription_end_date: admin?.subscription_end_date || null,
+    days_remaining: admin?.days_remaining != null ? admin.days_remaining : null,
     is_active: isActive,
   });
 });
@@ -1455,7 +1458,10 @@ app.post("/api/admin/branches", requireSuperAdmin, (req, res) => {
       remaining_days: req.body?.remaining_days,
     });
     const biz = getInstitutionFullById(branch.business_id);
-    if (biz) syncBranchUpsert(branch, biz.institution_id);
+    if (biz) {
+      syncBranchUpsert(branch, biz.institution_id);
+      syncInstitutionUpsert(biz);
+    }
     return res.status(201).json({ branch });
   } catch (err) {
     const status =
@@ -1488,7 +1494,11 @@ app.put("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
       is_active: req.body?.is_active,
     });
     const biz = getInstitutionFullById(branch.business_id);
-    if (biz) syncBranchUpsert(branch, biz.institution_id);
+    if (biz) {
+      syncBranchUpsert(branch, biz.institution_id);
+      // Şube aboneliği kurum kaydını güncellediyse Supabase'e de yaz
+      syncInstitutionUpsert(biz);
+    }
     return res.json({ branch });
   } catch (err) {
     const status = err.message === "Şube bulunamadı." ? 404 : 400;

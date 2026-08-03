@@ -25,6 +25,7 @@ import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
 import { DualRangeSlider } from "../components/DualRangeSlider";
 import { SearchableSelect } from "../components/SearchableSelect";
+import { shouldShowTestBadge } from "../lib/subscriptionBadge";
 import "leaflet/dist/leaflet.css";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -452,6 +453,28 @@ export function InstitutionAdminPage() {
     if (min === Infinity) return null;
     return Math.max(0, min);
   }, [subscriptionBranches]);
+
+  const showTestBadge = useMemo(() => {
+    const institutionLooksTest = shouldShowTestBadge({
+      subscription_type: auth?.subscription_type,
+      subscription_end_date: auth?.subscription_end_date,
+      days_remaining: auth?.days_remaining,
+    });
+    if (!institutionLooksTest) return false;
+
+    // Şube bazlı süreli abonelik varsa kurum TEST rozetini gizle
+    const hasTimedBranch = (subscriptionBranches || []).some((branch) => {
+      if (!branch || branch.subscription_type === "Test") return false;
+      const days = branchRemainingDays(branch);
+      return days == null || days > 0;
+    });
+    return !hasTimedBranch;
+  }, [
+    auth?.subscription_type,
+    auth?.subscription_end_date,
+    auth?.days_remaining,
+    subscriptionBranches,
+  ]);
 
   useEffect(() => {
     if (bootstrapping || !auth?.token) return;
@@ -1459,7 +1482,7 @@ export function InstitutionAdminPage() {
                 <h1 className="text-base font-bold text-slate-900 dark:text-white sm:text-lg">
                   {institutionName} {t("managementPanel")}
                 </h1>
-                {auth?.subscription_type === "Test" && (
+                {showTestBadge && (
                   <span className="px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider text-rose-500 bg-rose-500/10 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.5)]">
                     TEST
                   </span>

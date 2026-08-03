@@ -51,12 +51,24 @@ function institutionPayload(row) {
 async function syncInstitutionUpsert(row) {
   const payload = institutionPayload(row);
   if (!payload?.institution_id) return false;
-  return safe("institution.upsert", async () => {
+  const ok = await safe("institution.upsert", async () => {
     const { error } = await supabase
       .from("institutions")
       .upsert(payload, { onConflict: "institution_id" });
     if (error) throw error;
   });
+  // Büyük logo PostgREST limitine takılırsa logosuz alanlarla tekrar dene
+  // (logo_url gönderilmez → mevcut Supabase logosu silinmez; işletme kaydı kalır)
+  if (!ok && payload.logo_url) {
+    const { logo_url: _omitLogo, ...withoutLogo } = payload;
+    return safe("institution.upsert.without_logo", async () => {
+      const { error } = await supabase
+        .from("institutions")
+        .upsert(withoutLogo, { onConflict: "institution_id" });
+      if (error) throw error;
+    });
+  }
+  return ok;
 }
 
 async function syncInstitutionDelete(institutionId) {

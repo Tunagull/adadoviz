@@ -107,6 +107,7 @@ export async function loginBusiness(username, password, options = {}) {
     subscription: data.subscription || "Test",
     subscription_type: data.subscription_type || "Test",
     subscription_end_date: data.subscription_end_date || null,
+    days_remaining: data.days_remaining != null ? data.days_remaining : null,
     is_active: data.is_active !== false,
   };
   saveAuth(auth, { remember });

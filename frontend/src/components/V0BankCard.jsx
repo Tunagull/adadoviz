@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, memo } from "react";
+import { shouldShowTestBadge } from "../lib/subscriptionBadge";
 
 function getCurrencyDisplay(currency) {
   return currency;
@@ -119,7 +120,11 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
   };
 
   const rawName = bank.name || "";
-  const isTestAccount = bank.subscription_type === "Test";
+  const isTestAccount = shouldShowTestBadge({
+    subscription_type: bank.subscription_type,
+    subscription_end_date: bank.subscription_end_date,
+    days_remaining: bank.days_remaining,
+  });
   const displayName = rawName.replace(/\s*\([Tt]est\)\s*/g, "").trim();
   const nearest = showNearestBranch ? bank.nearestBranch : null;
   const nearestLabel =
