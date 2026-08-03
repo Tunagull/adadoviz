@@ -21,6 +21,9 @@ import { apiUrl } from "../lib/api";
 import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
 import { HeaderActions } from "./HeaderActions";
+import { Helmet } from "react-helmet-async";
+import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
+import { buildBusinessSlug, buildBranchSlug } from "../lib/slug";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -455,6 +458,28 @@ export function BusinessDetailModal({
     [business?.workingHours, business?.working_hours, t]
   );
 
+  const localBusinessJsonLd = useMemo(() => {
+    if (!business) return null;
+    const bizName = displayName || business.name || "Döviz Bürosu";
+    const businessSlug = buildBusinessSlug({
+      institutionId: business.institutionId,
+      name: bizName,
+    });
+    const branchNodes = (branches || []).map((branch) => ({
+      ...branch,
+      slug: buildBranchSlug(branch, bizName),
+    }));
+    return buildExchangeOfficeGraphJsonLd({
+      businessName: bizName,
+      businessSlug,
+      workingHours: business.workingHours ?? business.working_hours,
+      phone: business.phone,
+      logoUrl: business.logo_url,
+      branches: branchNodes,
+      lang,
+    });
+  }, [business, branches, displayName, lang]);
+
   const todayHours = useMemo(() => {
     if (!weekSchedule?.length) return null;
     if (weekSchedule[0]?.key === "legacy") return weekSchedule[0];
@@ -472,6 +497,11 @@ export function BusinessDetailModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[3000] flex items-end justify-center p-0 sm:items-center sm:p-3 md:p-4">
+      {localBusinessJsonLd ? (
+        <Helmet>
+          <script type="application/ld+json">{JSON.stringify(localBusinessJsonLd)}</script>
+        </Helmet>
+      ) : null}
       <button
         type="button"
         aria-label="Kapat"

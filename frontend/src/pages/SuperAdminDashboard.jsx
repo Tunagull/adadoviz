@@ -13,6 +13,7 @@ import {
   LogOut,
   Pencil,
   Plus,
+  Search,
   Shield,
   Trash2,
   Users,
@@ -28,6 +29,8 @@ import {
   resetAdminBusinessSubscription,
   deleteAdminBusiness,
   fetchAdminAnalytics,
+  fetchAdminSeo,
+  updateAdminSeo,
   fetchAdminBranchRequests,
   fetchAdminBranchRequestsUnread,
   markAdminBranchRequestsRead,
@@ -88,6 +91,7 @@ function inDateRange(iso, from, to) {
 
 const emptyCreateForm = {
   institution_name: "",
+  contact_person: "",
   username: "",
   password: "",
   subscriptionType: "Test",
@@ -100,6 +104,7 @@ const emptyCreateForm = {
 const emptyEditForm = {
   id: null,
   institution_name: "",
+  contact_person: "",
   username: "",
   password: "",
   subscriptionType: "Test",
@@ -349,6 +354,12 @@ export function SuperAdminDashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editPanelTab, setEditPanelTab] = useState("edit"); // "edit" | "business" | "subscription"
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showSeoModal, setShowSeoModal] = useState(false);
+  const [seoForm, setSeoForm] = useState(null);
+  const [seoLoading, setSeoLoading] = useState(false);
+  const [seoSaving, setSeoSaving] = useState(false);
+  const [seoError, setSeoError] = useState("");
+  const [seoSuccess, setSeoSuccess] = useState("");
   const [ledgerView, setLedgerView] = useState(null); // null | "subscription"
   const [ledgerScopeBusiness, setLedgerScopeBusiness] = useState(null); // null = tümü, string = işletme adı
   const [analyticsData, setAnalyticsData] = useState(null);
@@ -725,6 +736,7 @@ export function SuperAdminDashboard() {
     setEditForm({
       id: biz.id,
       institution_name: biz.institution_name || "",
+      contact_person: biz.contact_person || "",
       username: biz.username || "",
       password: "",
       subscriptionType: parseSubscriptionType(biz),
@@ -744,6 +756,59 @@ export function SuperAdminDashboard() {
   const closeEditModal = () => {
     setShowEditModal(false);
     setEditPanelTab("edit");
+  };
+
+  const openSeoModal = async () => {
+    setShowSeoModal(true);
+    setSeoError("");
+    setSeoSuccess("");
+    setSeoLoading(true);
+    try {
+      const seo = await fetchAdminSeo(token);
+      setSeoForm({
+        site_name: seo.site_name || "",
+        title: seo.title || "",
+        description: seo.description || "",
+        keywords: seo.keywords || "",
+        canonical_url: seo.canonical_url || "",
+        og_image: seo.og_image || "",
+        robots: seo.robots || "index, follow",
+        geo_region: seo.geo_region || "",
+        geo_placename: seo.geo_placename || "",
+        locale: seo.locale || "tr_TR",
+        focus_queries: seo.focus_queries || "",
+        structured_data_enabled: seo.structured_data_enabled !== false,
+      });
+    } catch (err) {
+      setSeoError(err.message || t("seoLoadFailed"));
+      setSeoForm(null);
+    } finally {
+      setSeoLoading(false);
+    }
+  };
+
+  const closeSeoModal = () => {
+    if (seoSaving) return;
+    setShowSeoModal(false);
+    setSeoError("");
+    setSeoSuccess("");
+  };
+
+  const handleSeoSave = async (event) => {
+    event.preventDefault();
+    if (!seoForm) return;
+    setSeoSaving(true);
+    setSeoError("");
+    setSeoSuccess("");
+    try {
+      const saved = await updateAdminSeo(token, seoForm);
+      setSeoForm((prev) => ({ ...prev, ...saved }));
+      setSeoSuccess(t("seoSavedMsg"));
+    } catch (err) {
+      setSeoError(err.message || t("seoSaveFailed"));
+    } finally {
+      setSeoSaving(false);
+    }
   };
 
   const openBranchSubscriptionModal = async (biz) => {
@@ -932,6 +997,7 @@ export function SuperAdminDashboard() {
     try {
       await createAdminBusiness(token, {
         institution_name: createForm.institution_name,
+        contact_person: createForm.contact_person,
         username: createForm.username,
         password: createForm.password,
         subscription_type: createForm.subscriptionType,
@@ -964,6 +1030,7 @@ export function SuperAdminDashboard() {
       const payload = {
         username: editForm.username,
         institution_name: editForm.institution_name,
+        contact_person: editForm.contact_person,
         logo_url: editForm.logo_url || null,
         branch_limit: Math.max(1, parseInt(editForm.branchLimit, 10) || 1),
       };
@@ -1052,6 +1119,14 @@ export function SuperAdminDashboard() {
           />
           <button
             type="button"
+            onClick={openSeoModal}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          >
+            <Search size={18} />
+            {t("seoButton")}
+          </button>
+          <button
+            type="button"
             onClick={() => setShowLogModal(true)}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
@@ -1128,13 +1203,13 @@ export function SuperAdminDashboard() {
             <p className="p-6 text-sm text-slate-500 dark:text-slate-400">{t("noBusinessesYet")}</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-left text-sm">
+              <table className="w-full min-w-[880px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950/80 dark:text-slate-500">
                   <tr>
                     <th className="px-4 py-3 font-medium">{t("colId")}</th>
                     <th className="px-4 py-3 font-medium">{t("colLoginId")}</th>
                     <th className="px-4 py-3 font-medium">{t("businessName")}</th>
-                    <th className="px-4 py-3 font-medium">{t("colSubscription")}</th>
+                    <th className="px-4 py-3 font-medium">{t("contactPerson")}</th>
                     <th className="px-4 py-3 font-medium">{t("colBranchCount")}</th>
                     <th className="px-4 py-3 font-medium">{t("colRegisteredAt")}</th>
                     <th className="px-4 py-3 font-medium">{t("colStatus")}</th>
@@ -1161,10 +1236,8 @@ export function SuperAdminDashboard() {
                           </button>
                         </td>
                         <td className="px-4 py-3 text-slate-800 dark:text-slate-100">{biz.institution_name}</td>
-                        <td className="px-4 py-3">
-                          <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-teal-700 dark:border-slate-700 dark:bg-slate-950 dark:text-teal-300">
-                            {t("branchBasedSubscription")}
-                          </span>
+                        <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
+                          {biz.contact_person || "—"}
                         </td>
                         <td className="px-4 py-3">
                           <BranchQuotaBadge used={used} limit={limit} />
@@ -1241,7 +1314,14 @@ export function SuperAdminDashboard() {
       {showEditModal && editForm.id ? (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
-          onClick={closeEditModal}
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              closeEditModal();
+            }
+          }}
         >
           <div
             className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
@@ -1312,6 +1392,20 @@ export function SuperAdminDashboard() {
                         value={editForm.institution_name}
                         onChange={(e) => setEditForm((p) => ({ ...p, institution_name: e.target.value }))}
                         className={inputClass}
+                        required
+                      />
+                    </Field>
+                    <Field label={t("contactPerson")}>
+                      <input
+                        value={editForm.contact_person}
+                        onChange={(e) =>
+                          setEditForm((p) => ({
+                            ...p,
+                            contact_person: e.target.value.replace(/[0-9]/g, ""),
+                          }))
+                        }
+                        className={inputClass}
+                        placeholder={t("contactPersonPlaceholder")}
                         required
                       />
                     </Field>
@@ -1518,7 +1612,14 @@ export function SuperAdminDashboard() {
       {showBranchSubModal && branchSubBusiness ? (
         <div
           className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
-          onClick={closeBranchSubscriptionModal}
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              closeBranchSubscriptionModal();
+            }
+          }}
         >
           <div
             className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
@@ -1680,6 +1781,20 @@ export function SuperAdminDashboard() {
                 required
               />
             </Field>
+            <Field label={t("contactPerson")}>
+              <input
+                value={createForm.contact_person}
+                onChange={(e) =>
+                  setCreateForm((p) => ({
+                    ...p,
+                    contact_person: e.target.value.replace(/[0-9]/g, ""),
+                  }))
+                }
+                className={inputClass}
+                placeholder={t("contactPersonPlaceholder")}
+                required
+              />
+            </Field>
             <Field label={t("loginIdEmailField")}>
               <input
                 value={createForm.username}
@@ -1781,6 +1896,11 @@ export function SuperAdminDashboard() {
                       <div className="min-w-0 space-y-1">
                         <p className="font-semibold text-slate-900 dark:text-white">
                           {req.branch_name}
+                          <span className="ml-2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                            {req.request_type === "reactivate"
+                              ? t("requestTypeRenew")
+                              : t("requestTypeNew")}
+                          </span>
                         </p>
                         <p className="text-xs text-slate-500 dark:text-slate-400">
                           {t("requestBusinessLabel")}: {req.business_name || req.institution_id}
@@ -1839,7 +1959,14 @@ export function SuperAdminDashboard() {
       {ledgerView === "subscription" && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
-          onClick={closeSubscriptionLedger}
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              closeSubscriptionLedger();
+            }
+          }}
         >
           <div
             className="relative flex max-h-[90vh] w-[95%] max-w-3xl flex-col gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900 md:w-full md:p-6"
@@ -1921,10 +2048,176 @@ export function SuperAdminDashboard() {
         </div>
       )}
 
+      {showSeoModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              closeSeoModal();
+            }
+          }}
+        >
+          <div
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                    {t("seoModalTitle")}
+                  </h2>
+                  <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300/90">
+                    {t("seoModalHint")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <HeaderActions compact />
+                  <button
+                    type="button"
+                    onClick={closeSeoModal}
+                    className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                    aria-label={t("cancel")}
+                  >
+                    <X size={22} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              {seoLoading ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
+              ) : seoForm ? (
+                <form onSubmit={handleSeoSave} className="grid gap-4">
+                  <Field label={t("seoSiteName")}>
+                    <input
+                      className={inputClass}
+                      value={seoForm.site_name}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, site_name: e.target.value }))}
+                    />
+                  </Field>
+                  <Field label={t("seoTitle")}>
+                    <input
+                      className={inputClass}
+                      value={seoForm.title}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, title: e.target.value }))}
+                      required
+                    />
+                  </Field>
+                  <Field label={t("seoDescription")}>
+                    <textarea
+                      rows={3}
+                      className={`${inputClass} min-h-[88px] py-2`}
+                      value={seoForm.description}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, description: e.target.value }))}
+                      required
+                    />
+                  </Field>
+                  <Field label={t("seoKeywords")}>
+                    <textarea
+                      rows={2}
+                      className={`${inputClass} min-h-[64px] py-2`}
+                      value={seoForm.keywords}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, keywords: e.target.value }))}
+                    />
+                  </Field>
+                  <Field label={t("seoFocusQueries")}>
+                    <input
+                      className={inputClass}
+                      value={seoForm.focus_queries}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, focus_queries: e.target.value }))}
+                      placeholder="döviz, dolar tl, döviz bürosu, exchange..."
+                    />
+                  </Field>
+                  <Field label={t("seoCanonical")}>
+                    <input
+                      className={inputClass}
+                      value={seoForm.canonical_url}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, canonical_url: e.target.value }))}
+                    />
+                  </Field>
+                  <Field label={t("seoOgImage")}>
+                    <input
+                      className={inputClass}
+                      value={seoForm.og_image}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, og_image: e.target.value }))}
+                    />
+                  </Field>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label={t("seoGeoRegion")}>
+                      <input
+                        className={inputClass}
+                        value={seoForm.geo_region}
+                        onChange={(e) => setSeoForm((p) => ({ ...p, geo_region: e.target.value }))}
+                      />
+                    </Field>
+                    <Field label={t("seoGeoPlace")}>
+                      <input
+                        className={inputClass}
+                        value={seoForm.geo_placename}
+                        onChange={(e) =>
+                          setSeoForm((p) => ({ ...p, geo_placename: e.target.value }))
+                        }
+                      />
+                    </Field>
+                  </div>
+                  <Field label={t("seoRobots")}>
+                    <input
+                      className={inputClass}
+                      value={seoForm.robots}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, robots: e.target.value }))}
+                    />
+                  </Field>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={seoForm.structured_data_enabled !== false}
+                      onChange={(e) =>
+                        setSeoForm((p) => ({
+                          ...p,
+                          structured_data_enabled: e.target.checked,
+                        }))
+                      }
+                    />
+                    {t("seoStructuredData")}
+                  </label>
+
+                  {seoError ? (
+                    <p className="text-sm text-rose-600 dark:text-rose-300">{seoError}</p>
+                  ) : null}
+                  {seoSuccess ? (
+                    <p className="text-sm text-emerald-600 dark:text-emerald-300">{seoSuccess}</p>
+                  ) : null}
+
+                  <button type="submit" disabled={seoSaving} className={primaryBtnClass}>
+                    {seoSaving ? t("saving") : t("seoSaveBtn")}
+                  </button>
+                </form>
+              ) : (
+                <p className="text-sm text-rose-600 dark:text-rose-300">
+                  {seoError || t("seoLoadFailed")}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showLogModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
-          onClick={() => setShowLogModal(false)}
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              setShowLogModal(false);
+            }
+          }}
         >
           <div
             className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
@@ -2165,7 +2458,14 @@ export function SuperAdminDashboard() {
       {businessToDelete && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
-          onClick={() => setBusinessToDelete(null)}
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              setBusinessToDelete(null);
+            }
+          }}
         >
           <div
             className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
@@ -2224,7 +2524,14 @@ export function SuperAdminDashboard() {
       {showResetConfirm && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
-          onClick={() => setShowResetConfirm(false)}
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              setShowResetConfirm(false);
+            }
+          }}
         >
           <div
             className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
@@ -2270,7 +2577,14 @@ export function SuperAdminDashboard() {
       {showSuccessModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
-          onClick={() => setShowSuccessModal(false)}
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              setShowSuccessModal(false);
+            }
+          }}
         >
           <div
             className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-xs shadow-2xl flex flex-col items-center text-center gap-3 dark:bg-slate-900 dark:border-slate-700"

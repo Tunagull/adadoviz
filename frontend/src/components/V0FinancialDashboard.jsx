@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Helmet } from "react-helmet-async";
 import {
   Search,
   TrendingUp,
@@ -15,7 +16,6 @@ import {
 import { useNavigate } from "react-router-dom";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { V0BankCard } from "./V0BankCard";
-import { BusinessDetailModal } from "./BusinessDetailModal";
 import { BusinessLoginModal } from "./BusinessLoginModal";
 import { SearchableSelect } from "./SearchableSelect";
 import { HeaderActions } from "./HeaderActions";
@@ -25,6 +25,63 @@ import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import { trackBusinessClick, trackCurrencyView } from "../lib/analytics";
 import { apiUrl, ratesStreamUrl } from "../lib/api";
+import { buildBranchSlug, buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
+
+const SEO_SITE_URL = "https://adadoviz.tunahangul.com";
+
+function buildCurrencyConversionJsonLd({ lang, banksCount }) {
+  const isEn = lang === "en";
+  return {
+    "@context": "https://schema.org",
+    "@type": "CurrencyConversionService",
+    name: isEn ? "AdaDöviz KKTC Live Exchange Rates & Converter" : "AdaDöviz KKTC Canlı Döviz Kurları ve Çevirici",
+    description: isEn
+      ? "Compare live USD, EUR and GBP exchange rates across Northern Cyprus (KKTC) exchange offices and convert currencies instantly."
+      : "Kuzey Kıbrıs (KKTC) döviz bürolarının güncel USD, EUR ve GBP kurlarını karşılaştırın; anında döviz çevirisi yapın.",
+    url: `${SEO_SITE_URL}/`,
+    provider: {
+      "@type": "Organization",
+      name: "AdaDöviz",
+      url: `${SEO_SITE_URL}/`,
+      logo: `${SEO_SITE_URL}/adadoviz-logo.svg`,
+    },
+    areaServed: {
+      "@type": "Place",
+      name: isEn ? "Northern Cyprus (KKTC)" : "Kuzey Kıbrıs (KKTC)",
+    },
+    serviceType: "Currency exchange rate comparison",
+    availableChannel: {
+      "@type": "ServiceChannel",
+      serviceUrl: `${SEO_SITE_URL}/`,
+      availableLanguage: ["tr", "en"],
+    },
+    ...(Number.isFinite(banksCount) && banksCount > 0
+      ? { offerCount: banksCount }
+      : {}),
+  };
+}
+
+function buildFinancialProductJsonLd(lang) {
+  const isEn = lang === "en";
+  return {
+    "@context": "https://schema.org",
+    "@type": "FinancialProduct",
+    name: isEn ? "KKTC Exchange Rate Comparison" : "KKTC Döviz Kuru Karşılaştırma",
+    description: isEn
+      ? "Live FX rates for USD/TRY, EUR/TRY and GBP/TRY based on Central Bank of Northern Cyprus reference rates."
+      : "KKTC Merkez Bankası referans kurlarına dayalı canlı USD/TRY, EUR/TRY ve GBP/TRY döviz kurları.",
+    url: `${SEO_SITE_URL}/`,
+    category: "ExchangeRate",
+    brand: {
+      "@type": "Brand",
+      name: "AdaDöviz",
+    },
+    areaServed: {
+      "@type": "AdministrativeArea",
+      name: isEn ? "Northern Cyprus" : "Kuzey Kıbrıs Türk Cumhuriyeti",
+    },
+  };
+}
 
 /**
  * ✅ Piyasa Özeti Kartı - Gerçek Geçmiş Veri Grafiği ve SSE Canlı Güncellemeleri
@@ -657,6 +714,39 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
   return (
     <>
+      {isModalOpen ? (
+        <Helmet prioritizeSeoTags>
+          <title>
+            {lang === "en"
+              ? `AdaDöviz | ${currency}/TRY Live Chart (${period}) – KKTC Market Summary`
+              : `AdaDöviz | ${currency}/TRY Canlı Grafik (${period}) – KKTC Piyasa Özeti`}
+          </title>
+          <meta
+            name="description"
+            content={
+              lang === "en"
+                ? `Follow live ${currency}/TRY exchange rate trends in Northern Cyprus (KKTC). AdaDöviz market summary charts for ${period.toLowerCase()} FX moves.`
+                : `KKTC ${currency}/TRY canlı döviz kuru grafiği. AdaDöviz Piyasa Özeti ile ${period.toLowerCase()} kur hareketlerini takip edin.`
+            }
+          />
+          <meta
+            property="og:title"
+            content={
+              lang === "en"
+                ? `AdaDöviz | ${currency}/TRY Live Chart – KKTC`
+                : `AdaDöviz | ${currency}/TRY Canlı Grafik – KKTC`
+            }
+          />
+          <meta
+            property="og:description"
+            content={
+              lang === "en"
+                ? `Northern Cyprus ${currency}/TRY market summary and historical rates.`
+                : `Kuzey Kıbrıs ${currency}/TRY piyasa özeti ve geçmiş kurlar.`
+            }
+          />
+        </Helmet>
+      ) : null}
       <div className="rounded-xl border border-slate-200 bg-white p-4 relative overflow-hidden dark:border-slate-800 dark:bg-slate-900">
         {/* Sol Ok - Kartın sol kenarına yakın (border'dan ~8px uzak) */}
         <button
@@ -848,17 +938,16 @@ function PartnershipForm() {
     return out;
   };
 
-  const phoneMaskGhost = (() => {
-    const typed = formatPhoneDisplay(rawPhone);
+  const buildPhoneMaskGhost = (rawDigits) => {
+    const typed = formatPhoneDisplay(rawDigits);
     return PHONE_MASK_TEMPLATE.split("")
       .map((ch, i) => (i < typed.length ? "\u00A0" : ch))
       .join("");
-  })();
-  const phoneDisplaySuffix = formatPhoneDisplay(rawPhone).slice(3);
-  const phoneGhostSuffix = phoneMaskGhost.slice(3);
+  };
 
   const extractRawPhoneDigits = (value) => {
     let digits = String(value || "").replace(/\D/g, "");
+    if (digits.startsWith("90") && digits.length >= 11) digits = digits.slice(2);
     if (digits.startsWith("0")) digits = digits.slice(1);
     digits = digits.slice(0, 10);
     if (!digits.startsWith("5")) {
@@ -894,6 +983,24 @@ function PartnershipForm() {
     const input = e.target;
     const start = input.selectionStart ?? 0;
     const end = input.selectionEnd ?? 0;
+    const lockedUntil = 3;
+
+    if (
+      (e.key === "Backspace" || e.key === "Delete" || e.key === "ArrowLeft" || e.key === "Home") &&
+      start <= lockedUntil &&
+      start === end
+    ) {
+      if (e.key === "Backspace" || e.key === "Delete" || e.key === "Home") {
+        e.preventDefault();
+        requestAnimationFrame(() => input.setSelectionRange(lockedUntil, lockedUntil));
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        input.setSelectionRange(lockedUntil, lockedUntil);
+        return;
+      }
+    }
 
     if (e.key !== "Backspace" || start !== end) return;
     if (rawPhone.length <= 1) {
@@ -908,24 +1015,47 @@ function PartnershipForm() {
   };
 
   const handlePhoneFocus = (e) => {
+    const lockedUntil = 3;
     const input = e.target;
     requestAnimationFrame(() => {
-      const pos = String(input.value || "").length;
+      const pos = Math.max(input.selectionStart ?? lockedUntil, lockedUntil);
       input.setSelectionRange(pos, pos);
     });
   };
 
-  const handlePhoneClick = () => {};
+  const handlePhoneClick = (e) => {
+    const lockedUntil = 3;
+    const input = e.target;
+    if ((input.selectionStart ?? 0) < lockedUntil) {
+      input.setSelectionRange(lockedUntil, lockedUntil);
+    }
+  };
 
   useEffect(() => {
     phoneFormattedRef.current = formatPhoneDisplay(rawPhone);
   }, [rawPhone]);
 
+  const buildPartnershipDefaultMessage = () => {
+    const institution = String(formData.institution_name || "").trim() || "…";
+    const person = String(formData.contact_person || "").trim() || "…";
+    const mail = String(formData.email || "").trim() || "…";
+    const tel =
+      rawPhone.length >= 10
+        ? `+90 ${formatPhoneDisplay(rawPhone)}`
+        : String(formData.phone || "").trim() || "…";
+    return (
+      `${institution} kurumundan ${person} adlı yetkili, AdaDöviz partnerlik programına başvurmak istemektedir. ` +
+      `İletişim: ${mail} / ${tel}. Lütfen en kısa sürede dönüş yapınız.`
+    );
+  };
+
+  const messageIsEmpty = !String(formData.message || "").trim();
+  const messagePreview = buildPartnershipDefaultMessage();
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     let next = value;
     if (name === "contact_person") {
-      // Harf, boşluk ve Türkçe karakterler; sayı yok
       next = value.replace(/[0-9]/g, "");
     }
     setFormData((prev) => ({ ...prev, [name]: next }));
@@ -933,14 +1063,24 @@ function PartnershipForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (rawPhone.length !== 10) {
+      setError(t("phoneIncompleteError") || "Lütfen 10 haneli telefon numarasını eksiksiz girin.");
+      return;
+    }
     setLoading(true);
     setError("");
+
+    const payload = {
+      ...formData,
+      phone: `+90 ${formatPhoneDisplay(rawPhone)}`,
+      message: messageIsEmpty ? messagePreview : String(formData.message).trim(),
+    };
 
     try {
       const res = await fetch(apiUrl("/api/partnership-apply"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -1029,15 +1169,21 @@ function PartnershipForm() {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium uppercase tracking-wide text-white">{t("phoneLabel")}</label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-sm text-white">
+                <div className="relative h-11 flex items-center rounded-lg border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 focus-within:border-cyan-400 focus-within:shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all duration-300">
+                  <span className="absolute left-3 z-10 text-sm font-mono font-bold text-slate-800 dark:text-white pointer-events-none">
                     +90
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-slate-400 dark:text-slate-500 select-none"
+                  >
+                    {buildPhoneMaskGhost(rawPhone)}
                   </span>
                   <input
                     ref={phoneInputRef}
                     type="tel"
                     name="phone"
-                    value={phoneDisplaySuffix}
+                    value={formatPhoneDisplay(rawPhone)}
                     onChange={handlePhoneInputChange}
                     onKeyDown={handlePhoneKeyDown}
                     onFocus={handlePhoneFocus}
@@ -1045,17 +1191,8 @@ function PartnershipForm() {
                     inputMode="numeric"
                     autoComplete="tel-national"
                     required
-                    className={`${partnershipInputClass} pl-[68px]`}
+                    className="relative z-10 h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-slate-800 outline-none caret-cyan-500 dark:text-slate-100"
                   />
-                  <span className="pointer-events-none absolute left-[44px] top-1/2 z-10 -translate-y-1/2 text-sm text-white">
-                    0(5
-                  </span>
-                  <span
-                    className="pointer-events-none absolute left-[68px] right-3 top-1/2 -translate-y-1/2 overflow-hidden whitespace-pre text-sm text-slate-500"
-                    aria-hidden="true"
-                  >
-                    {phoneGhostSuffix}
-                  </span>
                 </div>
               </div>
             </div>
@@ -1069,6 +1206,16 @@ function PartnershipForm() {
                 onChange={handleChange}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400"
               />
+              {messageIsEmpty ? (
+                <div className="rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
+                    {t("messageTemplatePreviewLabel")}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                    {messagePreview}
+                  </p>
+                </div>
+              ) : null}
             </div>
             <button
               type="submit"
@@ -1343,7 +1490,8 @@ export function V0FinancialDashboard() {
   const [showLocationConsent, setShowLocationConsent] = useState(false);
   const [banks, setBanks] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [lastUpdateTime, setLastUpdateTime] = useState(null);
+  const lastUpdatedRef = useRef(null);
+  const ratesFingerprintRef = useRef("");
   const [rawCentralBankRates, setRawCentralBankRates] = useState(null); // ✅ SAF XML kurları
   const [marginAdjustments, setMarginAdjustments] = useState({}); // ✅ DB'den gelen marjlar
   const [calculatorBank, setCalculatorBank] = useState("");
@@ -1351,7 +1499,6 @@ export function V0FinancialDashboard() {
   const [showLogoutPopup, setShowLogoutPopup] = useState(false);  // ✅ YENİ: Çıkış Modal
   const [chartPeriod, setChartPeriod] = useState('Günlük');  // ✅ YENİ: Market Summary filtresi
   const [liveRates, setLiveRates] = useState(null); // ✅ TEK merkezi SSE mesajı - tüm banka kartları bunu paylaşır
-  const [selectedBusiness, setSelectedBusiness] = useState(null);
   const [headerCompact, setHeaderCompact] = useState(false);
 
   // ✅ Histerezis (iki farklı eşik + aradaki "ölü bölge"): scroll pozisyonu tek bir
@@ -1405,6 +1552,16 @@ export function V0FinancialDashboard() {
           const data = JSON.parse(event.data);
           if (data.type === "rate_update" && data.rates) {
             setLiveRates(data.rates);
+            const at = data.ratesChangedAt || data.timestamp || new Date().toISOString();
+            if (at !== lastUpdatedRef.current) {
+              lastUpdatedRef.current = at;
+              setLastUpdated(at);
+            }
+          } else if (data.type === "data_changed" && data.ratesChangedAt) {
+            if (data.ratesChangedAt !== lastUpdatedRef.current) {
+              lastUpdatedRef.current = data.ratesChangedAt;
+              setLastUpdated(data.ratesChangedAt);
+            }
           }
         } catch (err) {
           // Sessizce yut - tekil mesaj parse hatası kritik değil
@@ -1572,6 +1729,12 @@ export function V0FinancialDashboard() {
             name: apiName,
             websiteUrl,
             institutionId,
+            slug:
+              apiBank?.slug ||
+              buildBusinessSlug({
+                institutionId,
+                name: apiName,
+              }),
             exchangeRates,
             workingHours:
               apiBank?.workingHours ||
@@ -1620,8 +1783,35 @@ export function V0FinancialDashboard() {
 
         if (mounted) {
           setBanks(mappedBanks);
-          setLastUpdated(data?.updatedAt ?? null);
-          setLastUpdateTime(new Date().toLocaleTimeString(localeCode));
+
+          // Son güncelleme: yalnızca kur/marj içeriği veya sunucu damgası değişince
+          const fingerprint = JSON.stringify(
+            mappedBanks.map((b) => ({
+              id: b.institutionId || b.id,
+              rates: b.exchangeRates,
+            }))
+          );
+          const serverChangedAt =
+            data?.ratesChangedAt || data?.updatedAt || null;
+          const contentChanged = fingerprint !== ratesFingerprintRef.current;
+          if (contentChanged) {
+            ratesFingerprintRef.current = fingerprint;
+          }
+          const nextStamp =
+            contentChanged
+              ? serverChangedAt || new Date().toISOString()
+              : serverChangedAt && serverChangedAt !== lastUpdatedRef.current
+                ? serverChangedAt
+                : null;
+
+          if (nextStamp && nextStamp !== lastUpdatedRef.current) {
+            lastUpdatedRef.current = nextStamp;
+            setLastUpdated(nextStamp);
+          } else if (!lastUpdatedRef.current && serverChangedAt) {
+            lastUpdatedRef.current = serverChangedAt;
+            setLastUpdated(serverChangedAt);
+          }
+
           console.log(`[DASHBOARD] ${mappedBanks.length} banka yüklendi, FirstBank: ${mappedBanks[0]?.name || "N/A"}`);
         }
       } catch (error) {
@@ -1879,8 +2069,45 @@ export function V0FinancialDashboard() {
     ? "rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-all duration-300"
     : "rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-300";
 
+  const homeTitle =
+    lang === "en"
+      ? "AdaDöviz | KKTC Live Exchange Rates & Currency Converter"
+      : "AdaDöviz | KKTC Canlı Döviz Kurları ve Çevirici";
+  const homeDescription =
+    lang === "en"
+      ? "Compare live USD, EUR and GBP rates across Northern Cyprus (KKTC) exchange offices. Instant currency converter for Lefkoşa, Girne and Gazimağusa."
+      : "KKTC döviz bürolarının güncel USD, EUR ve GBP kurlarını karşılaştırın. Lefkoşa, Girne ve Gazimağusa için anlık döviz çevirici.";
+
+  const marketPeriodLabel =
+    {
+      Saatlik: lang === "en" ? "hourly" : "saatlik",
+      Günlük: lang === "en" ? "daily" : "günlük",
+      Haftalık: lang === "en" ? "weekly" : "haftalık",
+      Aylık: lang === "en" ? "monthly" : "aylık",
+      Yıllık: lang === "en" ? "yearly" : "yıllık",
+    }[chartPeriod] || chartPeriod;
+
+  const currencyConversionLd = useMemo(
+    () => JSON.stringify(buildCurrencyConversionJsonLd({ lang, banksCount: banks.length })),
+    [lang, banks.length]
+  );
+  const financialProductLd = useMemo(() => JSON.stringify(buildFinancialProductJsonLd(lang)), [lang]);
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 relative dark:bg-[#020617] dark:text-white">
+      <Helmet prioritizeSeoTags>
+        <title>{homeTitle}</title>
+        <meta name="description" content={homeDescription} />
+        <meta property="og:title" content={homeTitle} />
+        <meta property="og:description" content={homeDescription} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={`${SEO_SITE_URL}/`} />
+        <meta name="twitter:title" content={homeTitle} />
+        <meta name="twitter:description" content={homeDescription} />
+        <link rel="canonical" href={`${SEO_SITE_URL}/`} />
+        <script type="application/ld+json">{currencyConversionLd}</script>
+        <script type="application/ld+json">{financialProductLd}</script>
+      </Helmet>
       <header
         className={`sticky top-0 z-[100] w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-[#020617]/80 ${
           headerCompact ? "px-3 py-2 shadow-sm sm:px-6 sm:py-2.5" : "px-3 py-3 sm:px-6 sm:py-4 md:py-5"
@@ -1965,6 +2192,29 @@ export function V0FinancialDashboard() {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-xl backdrop-blur-lg transition-all hover:border-teal-500/30 dark:border-white/10 dark:bg-slate-900/60 md:p-6">
+        <Helmet>
+          <title>
+            {lang === "en"
+              ? `AdaDöviz | KKTC Live Rates & Converter – ${marketPeriodLabel} Market Summary`
+              : `AdaDöviz | KKTC Canlı Döviz Kurları ve Çevirici – ${marketPeriodLabel} Piyasa Özeti`}
+          </title>
+          <meta
+            name="description"
+            content={
+              lang === "en"
+                ? `Northern Cyprus (KKTC) market summary: live ${marketPeriodLabel} USD/TRY, EUR/TRY and GBP/TRY charts based on central bank reference rates.`
+                : `KKTC Piyasa Özeti: Merkez Bankası referanslı ${marketPeriodLabel} USD/TRY, EUR/TRY ve GBP/TRY canlı döviz kuru grafikleri.`
+            }
+          />
+          <meta
+            property="og:title"
+            content={
+              lang === "en"
+                ? "AdaDöviz | KKTC Market Summary – Live FX Charts"
+                : "AdaDöviz | KKTC Piyasa Özeti – Canlı Döviz Grafikleri"
+            }
+          />
+        </Helmet>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">{t("marketSummary")}</h3>
@@ -2009,6 +2259,52 @@ export function V0FinancialDashboard() {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 sm:p-6 shadow-xl backdrop-blur-lg transition-all hover:border-teal-500/30 dark:border-white/10 dark:bg-slate-900/60">
+        {mode === "exchange" && exchangeCurrency ? (
+          <Helmet prioritizeSeoTags>
+            <title>
+              {lang === "en"
+                ? `AdaDöviz | ${exchangeCurrency}/TRY Currency Converter – KKTC Live Rates`
+                : `AdaDöviz | ${exchangeCurrency}/TRY Döviz Çevirici – KKTC Canlı Kur`}
+            </title>
+            <meta
+              name="description"
+              content={
+                lang === "en"
+                  ? `Convert ${exchangeCurrency} to TRY with live Northern Cyprus (KKTC) exchange office rates on AdaDöviz.`
+                  : `AdaDöviz ile KKTC döviz bürosu canlı kurlarıyla ${exchangeCurrency}/TRY çevirisi yapın.`
+              }
+            />
+            <meta
+              property="og:title"
+              content={
+                lang === "en"
+                  ? `AdaDöviz | ${exchangeCurrency}/TRY Currency Converter`
+                  : `AdaDöviz | ${exchangeCurrency}/TRY Döviz Çevirici`
+              }
+            />
+          </Helmet>
+        ) : mode === "exchange" ? (
+          <Helmet>
+            <title>{homeTitle}</title>
+            <meta
+              name="description"
+              content={
+                lang === "en"
+                  ? "Free KKTC currency converter: convert USD, EUR and GBP to TRY using live exchange office buy/sell rates. Compare Northern Cyprus exchange offices."
+                  : "Ücretsiz KKTC döviz çevirici: USD, EUR ve GBP’yi canlı alış/satış kurlarıyla TL’ye çevirin. Kuzey Kıbrıs döviz bürolarını karşılaştırın."
+              }
+            />
+            <meta
+              property="og:title"
+              content={
+                lang === "en"
+                  ? "AdaDöviz | KKTC Currency Converter"
+                  : "AdaDöviz | KKTC Döviz Çevirici"
+              }
+            />
+            <meta property="og:description" content={homeDescription} />
+          </Helmet>
+        ) : null}
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
             {mode === "exchange"
@@ -2423,7 +2719,15 @@ export function V0FinancialDashboard() {
                   .replace(/\s*\([Tt]est\)\s*/g, "")
                   .trim();
                 trackBusinessClick(name || biz?.name);
-                setSelectedBusiness(biz);
+                const nearest = biz?.nearestBranch;
+                const slug = nearest?.id
+                  ? buildBranchSlug(nearest, name || biz?.name)
+                  : biz?.slug ||
+                    buildBusinessSlug({
+                      institutionId: biz?.institutionId,
+                      name: name || biz?.name,
+                    });
+                navigate(exchangeOfficePath(slug));
               }}
             />
           ))}
@@ -2434,23 +2738,10 @@ export function V0FinancialDashboard() {
         </div>
       )}
 
-      {selectedBusiness ? (
-        <BusinessDetailModal
-          business={selectedBusiness}
-          initialBranchId={selectedBusiness?.nearestBranch?.id ?? null}
-          initialView={
-            sortBy === "nearest" && selectedBusiness?.nearestBranch?.id
-              ? "konum"
-              : "grafik"
-          }
-          onClose={() => setSelectedBusiness(null)}
-        />
-      ) : null}
-
-      {lastUpdateTime ? (
+      {lastUpdated ? (
         <div className="mt-10 flex justify-center px-2">
           <div className="rounded-lg border border-slate-200 bg-white/80 px-4 py-2.5 text-center text-xs tracking-wide text-slate-500 shadow-sm dark:border-slate-700/80 dark:bg-slate-950/60">
-            {`${t("lastUpdate")}: ${new Date().toLocaleDateString(localeCode)} - ${lastUpdateTime}`}
+            {`${t("lastUpdate")}: ${new Date(lastUpdated).toLocaleDateString(localeCode)} - ${new Date(lastUpdated).toLocaleTimeString(localeCode)}`}
           </div>
         </div>
       ) : null}

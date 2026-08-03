@@ -304,6 +304,26 @@ function initDb({ skipBusinessSeed = false } = {}) {
   if (!columnExists("institutions", "branch_limit")) {
     db.exec(`ALTER TABLE institutions ADD COLUMN branch_limit INTEGER NOT NULL DEFAULT 1`);
   }
+  if (!columnExists("institutions", "contact_person")) {
+    db.exec(`ALTER TABLE institutions ADD COLUMN contact_person TEXT`);
+  }
+  if (!columnExists("branch_requests", "request_type")) {
+    db.exec(
+      `ALTER TABLE branch_requests ADD COLUMN request_type TEXT NOT NULL DEFAULT 'new'`
+    );
+  }
+  if (!columnExists("branch_requests", "branch_id")) {
+    db.exec(`ALTER TABLE branch_requests ADD COLUMN branch_id INTEGER`);
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   if (!columnExists("branches", "whatsapp")) {
     db.exec(`ALTER TABLE branches ADD COLUMN whatsapp TEXT NOT NULL DEFAULT ''`);
   }
@@ -779,6 +799,7 @@ function mapBusinessRow(row) {
     subscription_type: synced.subscription_type || "Test",
     logo_url: synced.logo_url || null,
     phone: synced.phone || null,
+    contact_person: synced.contact_person || null,
     working_hours,
     days_remaining,
     branch_limit,
@@ -866,6 +887,7 @@ function listBusinesses() {
               COALESCE(branch_limit, 1) AS branch_limit,
               logo_url,
               phone,
+              contact_person,
               working_hours,
               created_at
        FROM institutions
@@ -933,6 +955,7 @@ function createBusiness({
   username,
   password,
   institution_name,
+  contact_person,
   subscription_type = "Test",
   remaining_days,
   is_active = true,
@@ -941,6 +964,7 @@ function createBusiness({
 }) {
   const cleanUsername = String(username || "").trim();
   const cleanName = String(institution_name || "").trim();
+  const cleanContactPerson = String(contact_person || "").trim() || null;
   const type = normalizeSubscriptionType(subscription_type);
   const label = buildSubscriptionLabel(type);
   const limit = normalizeBranchLimit(branch_limit);
@@ -978,15 +1002,27 @@ function createBusiness({
     const result = db
       .prepare(
         `INSERT INTO institutions
-          (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit)
-         VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?)`
+          (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit, contact_person)
+         VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(cleanUsername, passwordHash, institutionId, cleanName, label, type, endDate, active, logo, limit);
+      .run(
+        cleanUsername,
+        passwordHash,
+        institutionId,
+        cleanName,
+        label,
+        type,
+        endDate,
+        active,
+        logo,
+        limit,
+        cleanContactPerson
+      );
 
     return mapBusinessRow(
       db
         .prepare(
-          `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, created_at
+          `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, contact_person, created_at
            FROM institutions WHERE id = ?`
         )
         .get(result.lastInsertRowid)
@@ -999,14 +1035,26 @@ function createBusiness({
           const result = db
             .prepare(
               `INSERT INTO institutions
-                (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit)
-               VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?)`
+                (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit, contact_person)
+               VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?)`
             )
-            .run(cleanUsername, passwordHash, slug, cleanName, label, type, endDate, active, logo, limit);
+            .run(
+              cleanUsername,
+              passwordHash,
+              slug,
+              cleanName,
+              label,
+              type,
+              endDate,
+              active,
+              logo,
+              limit,
+              cleanContactPerson
+            );
           return mapBusinessRow(
             db
               .prepare(
-                `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, created_at
+                `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, contact_person, created_at
                  FROM institutions WHERE id = ?`
               )
               .get(result.lastInsertRowid)
@@ -1028,6 +1076,7 @@ function updateBusiness(id, {
   username,
   password,
   institution_name,
+  contact_person,
   subscription_type,
   remaining_days,
   is_active,
@@ -1036,7 +1085,7 @@ function updateBusiness(id, {
 }) {
   const row = db
     .prepare(
-      `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, COALESCE(branch_limit, 1) AS branch_limit
+      `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, contact_person, COALESCE(branch_limit, 1) AS branch_limit
        FROM institutions WHERE id = ?`
     )
     .get(id);
@@ -1046,6 +1095,10 @@ function updateBusiness(id, {
 
   const nextUsername = username != null ? String(username).trim() : row.username;
   const nextName = institution_name != null ? String(institution_name).trim() : row.institution_name;
+  const nextContactPerson =
+    contact_person === undefined
+      ? row.contact_person || null
+      : String(contact_person || "").trim() || null;
   const typeChanged = subscription_type != null || remaining_days != null;
   const nextType = typeChanged
     ? normalizeSubscriptionType(subscription_type ?? row.subscription_type)
@@ -1089,16 +1142,39 @@ function updateBusiness(id, {
       db.prepare(
         `UPDATE institutions
          SET username = ?, institution_name = ?, subscription = ?, subscription_type = ?,
-             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, password_hash = ?
+             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, contact_person = ?, password_hash = ?
          WHERE id = ?`
-      ).run(nextUsername, nextName, nextLabel, nextType, endDate, active, nextLogo, nextBranchLimit, passwordHash, id);
+      ).run(
+        nextUsername,
+        nextName,
+        nextLabel,
+        nextType,
+        endDate,
+        active,
+        nextLogo,
+        nextBranchLimit,
+        nextContactPerson,
+        passwordHash,
+        id
+      );
     } else {
       db.prepare(
         `UPDATE institutions
          SET username = ?, institution_name = ?, subscription = ?, subscription_type = ?,
-             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?
+             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, contact_person = ?
          WHERE id = ?`
-      ).run(nextUsername, nextName, nextLabel, nextType, endDate, active, nextLogo, nextBranchLimit, id);
+      ).run(
+        nextUsername,
+        nextName,
+        nextLabel,
+        nextType,
+        endDate,
+        active,
+        nextLogo,
+        nextBranchLimit,
+        nextContactPerson,
+        id
+      );
     }
   } catch (err) {
     if (String(err.message || "").includes("UNIQUE")) {
@@ -1110,7 +1186,7 @@ function updateBusiness(id, {
   return mapBusinessRow(
     db
       .prepare(
-        `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, created_at
+        `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, contact_person, created_at
          FROM institutions WHERE id = ?`
       )
       .get(id)
@@ -1328,6 +1404,154 @@ function listBranchesByInstitutionKey(institutionKey) {
     )
     .all(business.id)
     .map(mapBranchRow);
+}
+
+const {
+  slugify,
+  buildBusinessSlug,
+  buildBranchSlug,
+  extractCitySlug,
+} = require("./slug");
+
+/**
+ * Public SEO: slug ile döviz bürosu + şubeler.
+ * Eşleşme: institution_id, işletme adı slug'ı veya şube slug'ı (örn. lefkosa-merkez-doviz).
+ */
+function getPublicExchangeOfficeBySlug(rawSlug) {
+  const slug = slugify(rawSlug);
+  if (!slug) return null;
+
+  const rows = db
+    .prepare(
+      `SELECT id, username, institution_id, institution_name,
+              COALESCE(role, 'business') AS role,
+              COALESCE(subscription, 'Test') AS subscription,
+              COALESCE(subscription_type, 'Test') AS subscription_type,
+              subscription_end_date,
+              COALESCE(is_active, 1) AS is_active,
+              COALESCE(branch_limit, 1) AS branch_limit,
+              logo_url, email, phone, contact_person, working_hours, created_at
+       FROM institutions
+       WHERE COALESCE(role, 'business') != 'superadmin'`
+    )
+    .all()
+    .filter((row) => isInstitutionPubliclyVisible(row));
+
+  let matched = null;
+  let matchedBranchId = null;
+  let matchedVia = null;
+
+  for (const row of rows) {
+    const businessSlug = buildBusinessSlug({
+      institution_id: row.institution_id,
+      institution_name: row.institution_name,
+    });
+    const nameSlug = slugify(
+      String(row.institution_name || "")
+        .replace(/\s*\([Tt]est\)\s*/g, " ")
+        .trim()
+    );
+
+    if (businessSlug === slug || nameSlug === slug || slugify(row.institution_id) === slug) {
+      matched = row;
+      matchedVia = "business";
+      break;
+    }
+
+    const branches = listBranchesByBusiness(row.id);
+    for (const branch of branches) {
+      if (!branch.is_active) continue;
+      const bSlug = buildBranchSlug(branch, row.institution_name);
+      if (bSlug === slug) {
+        matched = row;
+        matchedBranchId = branch.id;
+        matchedVia = "branch";
+        break;
+      }
+    }
+    if (matched) break;
+  }
+
+  if (!matched) return null;
+
+  const business = mapBusinessRow(matched);
+  const branches = listBranchesByBusiness(matched.id)
+    .filter((b) => b.is_active)
+    .map((branch) => {
+      const city = extractCitySlug(branch.address);
+      return {
+        ...branch,
+        city,
+        slug: buildBranchSlug(branch, matched.institution_name),
+      };
+    });
+
+  const canonicalSlug =
+    matchedVia === "branch" && matchedBranchId
+      ? branches.find((b) => b.id === matchedBranchId)?.slug ||
+        buildBusinessSlug({
+          institution_id: matched.institution_id,
+          institution_name: matched.institution_name,
+        })
+      : buildBusinessSlug({
+          institution_id: matched.institution_id,
+          institution_name: matched.institution_name,
+        });
+
+  return {
+    business,
+    branches,
+    matchedBranchId,
+    matchedVia,
+    slug: canonicalSlug,
+    businessSlug: buildBusinessSlug({
+      institution_id: matched.institution_id,
+      institution_name: matched.institution_name,
+    }),
+  };
+}
+
+/** Sitemap / liste: tüm public işletme + şube slug'ları */
+function listPublicExchangeOfficeSlugs() {
+  const rows = listBusinesses().filter((biz) =>
+    isInstitutionPubliclyVisible({
+      role: biz.role,
+      is_active: biz.is_active,
+      subscription_end_date: biz.subscription_end_date,
+    })
+  );
+
+  const items = [];
+  for (const biz of rows) {
+    const businessSlug = buildBusinessSlug({
+      institution_id: biz.institution_id,
+      institution_name: biz.institution_name,
+    });
+    items.push({
+      type: "business",
+      slug: businessSlug,
+      name: biz.institution_name,
+      institution_id: biz.institution_id,
+      path: `/doviz-burosu/${businessSlug}`,
+    });
+
+    const branches = listBranchesByBusiness(biz.id).filter((b) => b.is_active);
+    for (const branch of branches) {
+      const bSlug = buildBranchSlug(branch, biz.institution_name);
+      items.push({
+        type: "branch",
+        slug: bSlug,
+        name: branch.name,
+        institution_id: biz.institution_id,
+        institution_name: biz.institution_name,
+        address: branch.address,
+        city: extractCitySlug(branch.address),
+        path: `/doviz-burosu/${bSlug}`,
+        branch_id: branch.id,
+      });
+    }
+  }
+  return items;
 }
 
 /**
@@ -2298,7 +2522,7 @@ function getInstitutionFullById(id) {
                 subscription_end_date,
                 COALESCE(is_active, 1) AS is_active,
                 COALESCE(branch_limit, 1) AS branch_limit,
-                logo_url, email, phone, working_hours, created_at
+                logo_url, email, phone, contact_person, working_hours, created_at
          FROM institutions WHERE id = ?`
       )
       .get(id) || null
@@ -2318,7 +2542,7 @@ function getInstitutionFullBySlug(institutionId) {
                 subscription_end_date,
                 COALESCE(is_active, 1) AS is_active,
                 COALESCE(branch_limit, 1) AS branch_limit,
-                logo_url, email, phone, working_hours, created_at
+                logo_url, email, phone, contact_person, working_hours, created_at
          FROM institutions
          WHERE lower(institution_id) = ? AND COALESCE(role, 'business') != 'superadmin'
          LIMIT 1`
@@ -2376,7 +2600,7 @@ function listAllInstitutionsForSync() {
               subscription_end_date,
               COALESCE(is_active, 1) AS is_active,
               COALESCE(branch_limit, 1) AS branch_limit,
-              logo_url, email, phone, working_hours, created_at
+              logo_url, email, phone, contact_person, working_hours, created_at
        FROM institutions
        WHERE COALESCE(role, 'business') != 'superadmin'`
     )
@@ -2426,6 +2650,7 @@ function applySupabaseInstitutionRow(row) {
          logo_url = COALESCE(?, logo_url),
          email = COALESCE(?, email),
          phone = COALESCE(?, phone),
+         contact_person = COALESCE(?, contact_person),
          working_hours = COALESCE(?, working_hours),
          branch_limit = COALESCE(?, branch_limit),
          created_at = COALESCE(created_at, ?)
@@ -2441,6 +2666,7 @@ function applySupabaseInstitutionRow(row) {
       row.logo_url || null,
       row.email || null,
       row.phone || null,
+      row.contact_person || null,
       row.working_hours || null,
       row.branch_limit != null ? normalizeBranchLimit(row.branch_limit) : null,
       row.created_at || null,
@@ -2450,8 +2676,8 @@ function applySupabaseInstitutionRow(row) {
     db.prepare(
       `INSERT INTO institutions
         (username, password_hash, institution_id, institution_name, role, subscription,
-         subscription_type, subscription_end_date, is_active, logo_url, email, phone, working_hours, branch_limit, created_at)
-       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         subscription_type, subscription_end_date, is_active, logo_url, email, phone, contact_person, working_hours, branch_limit, created_at)
+       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       row.username || row.institution_id,
       row.password_hash || bcrypt.hashSync("123", 10),
@@ -2464,6 +2690,7 @@ function applySupabaseInstitutionRow(row) {
       row.logo_url || null,
       row.email || null,
       row.phone || null,
+      row.contact_person || null,
       row.working_hours || null,
       normalizeBranchLimit(row.branch_limit ?? 1),
       row.created_at || new Date().toISOString()
@@ -2581,6 +2808,8 @@ function mapBranchRequestRow(row) {
     address: row.address || "",
     lat: row.lat == null ? null : Number(row.lat),
     lng: row.lng == null ? null : Number(row.lng),
+    request_type: row.request_type === "reactivate" ? "reactivate" : "new",
+    branch_id: row.branch_id == null ? null : Number(row.branch_id),
     status: row.status || "pending",
     is_read: row.is_read === 1 || row.is_read === true,
     admin_note: row.admin_note || null,
@@ -2614,21 +2843,67 @@ function createBranchRequest({
   address,
   lat,
   lng,
+  request_type = "new",
+  branch_id = null,
 }) {
   const businessId = Number(business_id);
   if (!Number.isFinite(businessId)) throw new Error("business_id zorunludur.");
   assertBusinessExists(businessId);
 
-  const name = String(branch_name || "").trim();
+  const type = String(request_type || "new").trim() === "reactivate" ? "reactivate" : "new";
+  let linkedBranchId = null;
+  let name = String(branch_name || "").trim();
+  let nextPhone = String(phone || "").trim();
+  let nextAddress = String(address || "").trim();
+  let nextLat = lat == null || lat === "" ? null : Number(lat);
+  let nextLng = lng == null || lng === "" ? null : Number(lng);
+
+  if (type === "reactivate") {
+    const bid = Number(branch_id);
+    if (!Number.isFinite(bid)) throw new Error("Yenileme talebi için şube seçilmelidir.");
+    const existingBranch = db
+      .prepare(`SELECT ${BRANCH_SELECT_SQL} FROM branches WHERE id = ? AND business_id = ?`)
+      .get(bid, businessId);
+    if (!existingBranch) throw new Error("Şube bulunamadı veya bu işletmeye ait değil.");
+    const mapped = mapBranchRow(existingBranch);
+    if (mapped.is_active && (mapped.days_remaining == null || mapped.days_remaining > 0)) {
+      throw new Error("Bu şube zaten aktif; yenileme talebi gönderilemez.");
+    }
+    const pending = db
+      .prepare(
+        `SELECT id FROM branch_requests
+         WHERE branch_id = ? AND request_type = 'reactivate' AND status = 'pending'
+         LIMIT 1`
+      )
+      .get(bid);
+    if (pending) throw new Error("Bu şube için zaten bekleyen bir yenileme talebi var.");
+
+    linkedBranchId = bid;
+    name = name || String(existingBranch.name || "").trim();
+    nextPhone = nextPhone || String(existingBranch.phone || "").trim();
+    nextAddress = nextAddress || String(existingBranch.address || "").trim();
+    if (!Number.isFinite(nextLat)) {
+      nextLat = existingBranch.lat == null ? null : Number(existingBranch.lat);
+    }
+    if (!Number.isFinite(nextLng)) {
+      nextLng = existingBranch.lng == null ? null : Number(existingBranch.lng);
+    }
+  }
+
   if (!name) throw new Error("Şube adı zorunludur.");
-  const nextPhone = String(phone || "").trim();
   if (!nextPhone) throw new Error("Telefon numarası zorunludur.");
-  const nextAddress = String(address || "").trim();
-  if (!nextAddress) throw new Error("Adres / konum zorunludur.");
-  const nextLat = lat == null || lat === "" ? null : Number(lat);
-  const nextLng = lng == null || lng === "" ? null : Number(lng);
-  if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
-    throw new Error("Haritadan konum seçilmesi zorunludur.");
+  if (type === "new") {
+    if (!nextAddress) throw new Error("Adres / konum zorunludur.");
+    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+      throw new Error("Haritadan konum seçilmesi zorunludur.");
+    }
+  } else {
+    // Yenileme: mevcut şube verisi yeterli; konum yoksa varsayılan KKTC merkezi
+    if (!nextAddress) nextAddress = name;
+    if (!Number.isFinite(nextLat) || !Number.isFinite(nextLng)) {
+      nextLat = 35.1856;
+      nextLng = 33.3823;
+    }
   }
 
   const nowIso = new Date().toISOString();
@@ -2636,8 +2911,8 @@ function createBranchRequest({
     .prepare(
       `INSERT INTO branch_requests (
          business_id, institution_id, business_name, branch_name, phone, address, lat, lng,
-         status, is_read, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`
+         request_type, branch_id, status, is_read, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`
     )
     .run(
       businessId,
@@ -2648,6 +2923,8 @@ function createBranchRequest({
       nextAddress,
       nextLat,
       nextLng,
+      type,
+      linkedBranchId,
       nowIso,
       nowIso
     );
@@ -2810,6 +3087,74 @@ function markBusinessNotificationsRead(businessId, ids) {
   return { ok: true, unread: countUnreadBusinessNotifications(id) };
 }
 
+const DEFAULT_SEO_SETTINGS = {
+  site_name: "AdaDöviz",
+  title: "AdaDöviz | KKTC Döviz Kurları, Dolar TL, Euro Kur ve Döviz Bürosu",
+  description:
+    "Kuzey Kıbrıs (KKTC) güncel döviz kurları: dolar TL, euro, sterlin. Lefkoşa, Girne ve Gazimağusa döviz bürolarını karşılaştırın. Canlı exchange rates.",
+  keywords:
+    "kktc döviz, dolar tl, döviz bürosu, exchange, kktc exchange, lefkoşa döviz, girne döviz, gazimağusa döviz, euro kuru, sterlin kuru, kuzey kıbrıs döviz, adadöviz, ada döviz",
+  canonical_url: "https://adadoviz.tunahangul.com/",
+  og_image: "https://adadoviz.tunahangul.com/adadoviz-logo.svg",
+  robots: "index, follow, max-image-preview:large",
+  geo_region: "CY-Nicosia",
+  geo_placename: "Northern Cyprus, KKTC",
+  locale: "tr_TR",
+  focus_queries:
+    "döviz, dolar tl, döviz bürosu, exchange, kktc döviz, lefkoşa exchange, euro tl",
+  structured_data_enabled: true,
+};
+
+function getSeoSettings() {
+  const row = db.prepare(`SELECT value FROM site_settings WHERE key = 'seo'`).get();
+  if (!row?.value) return { ...DEFAULT_SEO_SETTINGS };
+  try {
+    const parsed = JSON.parse(row.value);
+    return { ...DEFAULT_SEO_SETTINGS, ...(parsed && typeof parsed === "object" ? parsed : {}) };
+  } catch (_e) {
+    return { ...DEFAULT_SEO_SETTINGS };
+  }
+}
+
+function updateSeoSettings(payload = {}) {
+  const current = getSeoSettings();
+  const next = {
+    ...current,
+    site_name: String(payload.site_name ?? current.site_name ?? "").trim() || DEFAULT_SEO_SETTINGS.site_name,
+    title: String(payload.title ?? current.title ?? "").trim() || DEFAULT_SEO_SETTINGS.title,
+    description:
+      String(payload.description ?? current.description ?? "").trim() ||
+      DEFAULT_SEO_SETTINGS.description,
+    keywords: String(payload.keywords ?? current.keywords ?? "").trim(),
+    canonical_url:
+      String(payload.canonical_url ?? current.canonical_url ?? "").trim() ||
+      DEFAULT_SEO_SETTINGS.canonical_url,
+    og_image: String(payload.og_image ?? current.og_image ?? "").trim(),
+    robots: String(payload.robots ?? current.robots ?? "").trim() || DEFAULT_SEO_SETTINGS.robots,
+    geo_region: String(payload.geo_region ?? current.geo_region ?? "").trim(),
+    geo_placename: String(payload.geo_placename ?? current.geo_placename ?? "").trim(),
+    locale: String(payload.locale ?? current.locale ?? "").trim() || "tr_TR",
+    focus_queries: String(payload.focus_queries ?? current.focus_queries ?? "").trim(),
+    structured_data_enabled:
+      payload.structured_data_enabled === undefined
+        ? current.structured_data_enabled !== false
+        : !(
+            payload.structured_data_enabled === false ||
+            payload.structured_data_enabled === 0 ||
+            payload.structured_data_enabled === "0" ||
+            payload.structured_data_enabled === "false"
+          ),
+  };
+
+  db.prepare(
+    `INSERT INTO site_settings (key, value, updated_at)
+     VALUES ('seo', ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+  ).run(JSON.stringify(next));
+
+  return next;
+}
+
 module.exports = {
   initDb,
   seedAdminsIfNeeded,
@@ -2826,6 +3171,8 @@ module.exports = {
   listBranchesByBusiness,
   listBranchesByInstitutionKey,
   listPublicBranches,
+  getPublicExchangeOfficeBySlug,
+  listPublicExchangeOfficeSlugs,
   purgeOrphanBranches,
   replaceBusinessBranchesFromSupabase,
   createBranch,
@@ -2872,4 +3219,6 @@ module.exports = {
   findValidPasswordReset,
   markPasswordResetUsed,
   updateInstitutionPassword,
+  getSeoSettings,
+  updateSeoSettings,
 };

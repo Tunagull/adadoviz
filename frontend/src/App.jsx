@@ -6,14 +6,17 @@ import { V0FinancialDashboard } from "./components/V0FinancialDashboard";
 import { InstitutionAdminPage } from "./pages/InstitutionAdminPage";
 import { SuperAdminDashboard } from "./pages/SuperAdminDashboard";
 import { ResetPasswordPage } from "./pages/ResetPassword";
+import { ExchangeOfficePage } from "./pages/ExchangeOfficePage";
 import { Footer } from "./components/Footer";
 import { CookieConsent } from "./components/CookieConsent";
+import { SeoHead } from "./components/SeoHead";
 
 function App() {
   return (
     <ThemeProvider>
       <LanguageProvider>
         <AuthProvider>
+          <SeoHead />
           <main className="min-h-screen bg-slate-50 text-slate-900 flex flex-col dark:bg-slate-950 dark:text-slate-100">
             <div className="flex-1">
               <Routes>
@@ -25,6 +28,7 @@ function App() {
                     </div>
                   }
                 />
+                <Route path="/doviz-burosu/:slug" element={<ExchangeOfficePage />} />
                 <Route path="/admin" element={<InstitutionAdminPage />} />
                 <Route path="/super-admin" element={<SuperAdminDashboard />} />
                 <Route path="/reset-password" element={<ResetPasswordPage />} />

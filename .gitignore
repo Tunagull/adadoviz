@@ -2,8 +2,11 @@ node_modules/
 backend/node_modules/
 frontend/node_modules/
 frontend/dist/
+frontend/frontend/
+frontend/.git/
 backend/data/
 backend/.git/
+UI/
 .env
 .env.local
 frontend/.env

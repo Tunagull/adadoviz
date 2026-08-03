@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /super-admin
+Disallow: /reset-password
+
+Sitemap: https://adadoviz.tunahangul.com/sitemap.xml

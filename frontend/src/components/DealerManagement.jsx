@@ -577,7 +577,14 @@ export function BusinessBranchesPanel({
         ? createPortal(
             <div
               className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
-              onClick={() => setLimitModalOpen(false)}
+              onMouseDown={(e) => {
+                e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+              }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+                  setLimitModalOpen(false);
+                }
+              }}
             >
               <div
                 className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"

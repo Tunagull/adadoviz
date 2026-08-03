@@ -168,6 +168,22 @@ export async function fetchBusinessProfile(token) {
   if (!response.ok) {
     throw new Error(data?.error || "Profil alınamadı.");
   }
+  return data?.profile || data;
+}
+
+export async function createBusinessBranch(token, payload) {
+  const response = await fetch(apiUrl("/api/business/branches"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Şube oluşturulamadı.");
+  }
   return data;
 }
 
@@ -469,4 +485,31 @@ export async function fetchAdminAnalytics(token, limit = 50) {
     throw new Error(data?.error || "Analitik alınamadı.");
   }
   return data;
+}
+
+export async function fetchAdminSeo(token) {
+  const response = await fetch(apiUrl("/api/admin/seo"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "SEO ayarları alınamadı.");
+  }
+  return data?.seo || data;
+}
+
+export async function updateAdminSeo(token, payload) {
+  const response = await fetch(apiUrl("/api/admin/seo"), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "SEO ayarları kaydedilemedi.");
+  }
+  return data?.seo || data;
 }

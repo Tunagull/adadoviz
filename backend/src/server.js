@@ -58,6 +58,8 @@ const {
   getHistoricalRates,
   getHistoricalRatesCount,
   listPublicBranches,
+  getPublicExchangeOfficeBySlug,
+  listPublicExchangeOfficeSlugs,
   getVisitorStats,
   incrementVisitorCount,
   startVisitorSession,
@@ -68,13 +70,16 @@ const {
   findValidPasswordReset,
   markPasswordResetUsed,
   updateInstitutionPassword,
+  getSeoSettings,
+  updateSeoSettings,
 } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
 const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./institutions");
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, buildPartnershipDefaultMessage } = require("./email");
+const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
 const {
   insertHistoricalRate,
@@ -104,6 +109,8 @@ const PORT = process.env.PORT || 5000;
 /** Scrape edilmiş ham KUR verisi (marj uygulanmadan önce). */
 let cachedRates = {
   updatedAt: null,
+  /** Kur veya kâr marjında son gerçek değişim zamanı (UI "Son Güncelleme") */
+  ratesChangedAt: null,
   totalBanks: 0,
   banks: [],
   centralBankUpdatedAt: null,
@@ -359,12 +366,17 @@ app.get("/api/kurlar", (_req, res) => {
           logo_url: biz.logo_url || null,
           working_hours: biz.working_hours || null,
           branch_count: Number(biz.branch_count) || 0,
+          slug: buildBusinessSlug({
+            institution_id: institutionId,
+            institution_name: biz.institution_name,
+          }),
           is_active: true,
         };
       });
 
     res.json({
-      updatedAt: cachedRates.centralBankUpdatedAt || new Date().toISOString(),
+      updatedAt: cachedRates.ratesChangedAt || cachedRates.centralBankUpdatedAt || cachedRates.updatedAt,
+      ratesChangedAt: cachedRates.ratesChangedAt || cachedRates.centralBankUpdatedAt || cachedRates.updatedAt,
       totalBanks: banks.length,
       banks,
       centralBankUpdatedAt: cachedRates.centralBankUpdatedAt,
@@ -688,6 +700,7 @@ app.get("/api/business/profile", requireAuth, (req, res) => {
     }
     const row = getInstitutionFullBySlug(req.user.institution_id);
     if (!row) return res.status(404).json({ error: "İşletme bulunamadı." });
+    const branches = listBranchesByBusiness(row.id);
     return res.json({
       profile: {
         institution_id: row.institution_id,
@@ -695,6 +708,8 @@ app.get("/api/business/profile", requireAuth, (req, res) => {
         logo_url: row.logo_url || null,
         phone: row.phone || null,
         email: row.email || null,
+        branch_limit: Number(row.branch_limit) || 1,
+        branch_count: branches.length,
         working_hours: row.working_hours
           ? (() => {
               try {
@@ -780,6 +795,53 @@ app.put("/api/business/branches/:id", requireAuth, async (req, res) => {
   }
 });
 
+/** İşletme, şube limiti dolmadıysa doğrudan şube ekler */
+app.post("/api/business/branches", requireAuth, async (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+
+    const name = String(req.body?.branch_name || req.body?.name || "").trim();
+    const phone = String(req.body?.phone || "").trim();
+    const address = String(req.body?.address || "").trim();
+    const lat = req.body?.lat == null || req.body?.lat === "" ? null : Number(req.body.lat);
+    const lng = req.body?.lng == null || req.body?.lng === "" ? null : Number(req.body.lng);
+
+    if (!name) return res.status(400).json({ error: "Şube adı zorunludur." });
+    if (!phone) return res.status(400).json({ error: "Telefon numarası zorunludur." });
+    if (!address) return res.status(400).json({ error: "Adres / konum zorunludur." });
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: "Haritadan konum seçilmesi zorunludur." });
+    }
+
+    const branch = createBranch({
+      business_id: full.id,
+      name,
+      phone,
+      whatsapp: String(req.body?.whatsapp || phone).trim(),
+      address,
+      lat,
+      lng,
+    });
+    await syncBranchUpsert(branch, full.institution_id);
+    const branches = listBranchesByBusiness(full.id);
+    return res.status(201).json({
+      branch,
+      branch_limit: Number(full.branch_limit) || 1,
+      branch_count: branches.length,
+    });
+  } catch (err) {
+    const status = err.statusCode || (err.code === "BRANCH_LIMIT_REACHED" ? 403 : 400);
+    return res.status(status).json({
+      error: err.message || "Şube oluşturulamadı.",
+      code: err.code || undefined,
+    });
+  }
+});
+
 /** İşletme yeni şube talebi oluşturur */
 app.post("/api/business/branch-requests", requireAuth, (req, res) => {
   try {
@@ -798,6 +860,8 @@ app.post("/api/business/branch-requests", requireAuth, (req, res) => {
       address: req.body?.address,
       lat: req.body?.lat,
       lng: req.body?.lng,
+      request_type: req.body?.request_type,
+      branch_id: req.body?.branch_id,
     });
     return res.status(201).json({ request });
   } catch (err) {
@@ -877,18 +941,29 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
 
     const nextStatus = String(req.body?.status || "").trim();
     let createdBranch = null;
+    let renewedBranch = null;
 
     if (nextStatus === "approved") {
-      createdBranch = createBranch({
-        business_id: existing.business_id,
-        name: existing.branch_name,
-        phone: existing.phone,
-        address: existing.address,
-        lat: existing.lat,
-        lng: existing.lng,
-      });
-      const biz = getInstitutionFullById(existing.business_id);
-      if (biz) await syncBranchUpsert(createdBranch, biz.institution_id);
+      if (existing.request_type === "reactivate" && existing.branch_id) {
+        renewedBranch = updateBranch(existing.branch_id, {
+          is_active: true,
+          subscription_type: "Aylık",
+          remaining_days: 30,
+        });
+        const biz = getInstitutionFullById(existing.business_id);
+        if (biz) await syncBranchUpsert(renewedBranch, biz.institution_id);
+      } else {
+        createdBranch = createBranch({
+          business_id: existing.business_id,
+          name: existing.branch_name,
+          phone: existing.phone,
+          address: existing.address,
+          lat: existing.lat,
+          lng: existing.lng,
+        });
+        const biz = getInstitutionFullById(existing.business_id);
+        if (biz) await syncBranchUpsert(createdBranch, biz.institution_id);
+      }
     }
 
     const request = updateBranchRequestStatus(id, {
@@ -898,21 +973,34 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
 
     if (nextStatus === "approved" || nextStatus === "rejected") {
       const branchLabel = existing.branch_name || "şube";
+      const isRenew = existing.request_type === "reactivate";
       try {
         createBusinessNotification({
           business_id: existing.business_id,
           type:
             nextStatus === "approved"
-              ? "branch_request_approved"
-              : "branch_request_rejected",
+              ? isRenew
+                ? "branch_renewal_approved"
+                : "branch_request_approved"
+              : isRenew
+                ? "branch_renewal_rejected"
+                : "branch_request_rejected",
           title:
             nextStatus === "approved"
-              ? "Şube talebi onaylandı"
-              : "Şube talebi reddedildi",
+              ? isRenew
+                ? "Şube yenileme onaylandı"
+                : "Şube talebi onaylandı"
+              : isRenew
+                ? "Şube yenileme reddedildi"
+                : "Şube talebi reddedildi",
           message:
             nextStatus === "approved"
-              ? `Yönetici "${branchLabel}" şube başvurunuzu onayladı.`
-              : `Yönetici "${branchLabel}" şube başvurunuzu reddetti.`,
+              ? isRenew
+                ? `Yönetici "${branchLabel}" şubesinin yenileme talebini onayladı (30 gün).`
+                : `Yönetici "${branchLabel}" şube başvurunuzu onayladı.`
+              : isRenew
+                ? `Yönetici "${branchLabel}" şubesinin yenileme talebini reddetti.`
+                : `Yönetici "${branchLabel}" şube başvurunuzu reddetti.`,
           related_request_id: existing.id,
         });
       } catch (notifyErr) {
@@ -920,7 +1008,7 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
       }
     }
 
-    return res.json({ request, branch: createdBranch });
+    return res.json({ request, branch: createdBranch || renewedBranch });
   } catch (err) {
     const status =
       err.statusCode ||
@@ -955,6 +1043,7 @@ app.post("/api/admin/businesses", requireSuperAdmin, (req, res) => {
       username: req.body?.username,
       password: req.body?.password,
       institution_name: req.body?.institution_name,
+      contact_person: req.body?.contact_person,
       subscription_type: req.body?.subscription_type || "Test",
       remaining_days: req.body?.remaining_days,
       is_active: isActive,
@@ -979,6 +1068,7 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
       username: req.body?.username,
       password: req.body?.password,
       institution_name: req.body?.institution_name,
+      contact_person: req.body?.contact_person,
       subscription_type: req.body?.subscription_type,
       remaining_days: req.body?.remaining_days,
       is_active: req.body?.is_active,
@@ -1055,6 +1145,158 @@ app.get("/api/admin/businesses/:id/branches", requireSuperAdmin, (req, res) => {
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
     return res.status(status).json({ error: err.message || "Şubeler alınamadı." });
+  }
+});
+
+/** Public: SEO meta ayarları (anasayfa head) */
+app.get("/api/seo", (_req, res) => {
+  try {
+    return res.json({ seo: getSeoSettings() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "SEO ayarları alınamadı." });
+  }
+});
+
+/** Public: dinamik sitemap */
+app.get("/sitemap.xml", (_req, res) => {
+  try {
+    const seo = getSeoSettings();
+    const base = String(seo.canonical_url || "https://adadoviz.tunahangul.com/")
+      .replace(/\/$/, "");
+    const lastmod = new Date().toISOString().slice(0, 10);
+    const officeUrls = listPublicExchangeOfficeSlugs()
+      .map(
+        (item) => `  <url>
+    <loc>${base}${item.path}</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>${item.type === "business" ? "0.9" : "0.8"}</priority>
+  </url>`
+      )
+      .join("\n");
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${base}/</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>hourly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>${base}/#partnership</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+${officeUrls}
+</urlset>`;
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    return res.send(xml);
+  } catch (err) {
+    return res.status(500).send("<!-- sitemap error -->");
+  }
+});
+
+/** Public: döviz bürosu slug listesi (SEO / keşif) */
+app.get("/api/doviz-burosu", (_req, res) => {
+  try {
+    return res.json({ offices: listPublicExchangeOfficeSlugs() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Liste alınamadı." });
+  }
+});
+
+/** Public: slug ile döviz bürosu detayı (örn. lefkosa-merkez-doviz) */
+app.get("/api/doviz-burosu/:slug", (req, res) => {
+  try {
+    const found = getPublicExchangeOfficeBySlug(req.params.slug);
+    if (!found) {
+      return res.status(404).json({ error: "Döviz bürosu bulunamadı." });
+    }
+
+    const biz = found.business;
+    const institutionId = biz.institution_id;
+    let exchangeRates = [];
+    if (cachedRates.centralBankRates && Object.keys(cachedRates.centralBankRates).length) {
+      const adjustmentsMap = getAllAdjustmentsMap();
+      const adj = adjustmentsMap.get(institutionId) || {};
+      exchangeRates = ["EUR", "USD", "GBP"].map((currency) => {
+        const kur = cachedRates.centralBankRates[currency];
+        const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
+        const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
+        const priced = enforceSellGteBuy(
+          applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type),
+          applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type)
+        );
+        return { currency, buy: priced.buy, sell: priced.sell };
+      });
+    }
+
+    const displayName = String(biz.institution_name || "")
+      .replace(/\s*\([Tt]est\)\s*/g, "")
+      .trim();
+
+    return res.json({
+      slug: found.slug,
+      businessSlug: found.businessSlug,
+      matchedBranchId: found.matchedBranchId,
+      matchedVia: found.matchedVia,
+      path: `/doviz-burosu/${found.slug}`,
+      business: {
+        id: biz.id,
+        name: displayName,
+        institutionId,
+        logo_url: biz.logo_url || null,
+        phone: biz.phone || null,
+        email: biz.email || null,
+        workingHours: biz.working_hours || null,
+        working_hours: biz.working_hours || null,
+        exchangeRates,
+        subscription_type: biz.subscription_type || null,
+        branch_count: Number(biz.branch_count) || found.branches.length,
+      },
+      branches: found.branches,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Döviz bürosu alınamadı." });
+  }
+});
+
+/** Public: robots.txt */
+app.get("/robots.txt", (_req, res) => {
+  try {
+    const seo = getSeoSettings();
+    const base = String(seo.canonical_url || "https://adadoviz.tunahangul.com/")
+      .replace(/\/$/, "");
+    const body = `User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /super-admin
+Disallow: /reset-password
+
+Sitemap: ${base}/sitemap.xml
+`;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.send(body);
+  } catch (err) {
+    return res.status(500).send("User-agent: *\nAllow: /\n");
+  }
+});
+
+app.get("/api/admin/seo", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({ seo: getSeoSettings() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "SEO ayarları alınamadı." });
+  }
+});
+
+app.put("/api/admin/seo", requireSuperAdmin, (req, res) => {
+  try {
+    const seo = updateSeoSettings(req.body || {});
+    return res.json({ success: true, seo });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "SEO ayarları kaydedilemedi." });
   }
 });
 
@@ -1421,6 +1663,10 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
 
     const { historyWrites } = upsertAdjustments(institution_id, adjustments);
     syncRateAdjustmentsMap(institution_id, adjustments);
+    // Public board "Son Güncelleme" — kâr marjı değişince damgayı ilerlet
+    if (historyWrites.length > 0) {
+      touchRatesChangedAt("margin");
+    }
 
     // Kalıcı marj geçmişi → Supabase (Render ephemeral SQLite'a ek).
     // ⚠️ MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.2 Kâr marjı geçmiş
@@ -1477,14 +1723,23 @@ app.post("/api/partnership-apply", async (req, res) => {
     return res.status(400).json({ error: "Tüm alanlar zorunludur." });
   }
 
+  const finalMessage =
+    String(message || "").trim() ||
+    buildPartnershipDefaultMessage({
+      institution_name,
+      contact_person,
+      email,
+      phone,
+    });
+
   try {
-    // E-posta gönder
+    // E-posta gönder → tunahan.guul@gmail.com (email.js PARTNERSHIP_INBOX)
     await sendPartnershipEmail({
       institution_name,
       contact_person,
       email,
       phone,
-      message,
+      message: finalMessage,
     });
 
     // Veritabanına kaydet (opsiyonel)
@@ -1493,13 +1748,13 @@ app.post("/api/partnership-apply", async (req, res) => {
       db.prepare(`
         INSERT INTO partnership_applications (institution_name, contact_person, email, phone, message)
         VALUES (?, ?, ?, ?, ?)
-      `).run(institution_name, contact_person, email, phone, message || null);
+      `).run(institution_name, contact_person, email, phone, finalMessage);
       syncPartnershipApplication({
         institution_name,
         contact_person,
         email,
         phone,
-        message,
+        message: finalMessage,
       });
     } catch (dbError) {
       console.warn("[PARTNERSHIP] Veritabanına kaydetme başarısız (e-posta gönderildi):", dbError.message);
@@ -1766,6 +2021,29 @@ app.post("/api/admin/migrate-legacy-data", requireSuperAdmin, async (req, res) =
 /**
  * ✅ ADIM 1: Kur verilerinde değişim var mı kontrol et ve broadcast yap
  */
+function touchRatesChangedAt(reason = "update") {
+  const at = new Date().toISOString();
+  cachedRates = {
+    ...cachedRates,
+    ratesChangedAt: at,
+    updatedAt: at,
+  };
+  const message = {
+    type: "data_changed",
+    ratesChangedAt: at,
+    reason,
+  };
+  sseClients.forEach((client) => {
+    try {
+      client.res.write(`data: ${JSON.stringify(message)}\n\n`);
+    } catch (err) {
+      console.warn(`[SSE] data_changed yazma hatası: ${err.message}`);
+    }
+  });
+  console.log(`[RATES] Son değişim damgası güncellendi (${reason}): ${at}`);
+  return at;
+}
+
 function broadcastRateChange(newRates) {
   // Değişim var mı kontrol et
   const hasChanged = previousRates ? 
@@ -1781,12 +2059,14 @@ function broadcastRateChange(newRates) {
 
   // Değişikliği tespitle önceki kurları güncelle
   previousRates = JSON.parse(JSON.stringify(newRates));
+  const at = touchRatesChangedAt("central_bank");
 
   // Tüm bağlı istemcilere gönder
   const message = {
     type: "rate_update",
     rates: newRates,
-    timestamp: new Date().toISOString(),
+    timestamp: at,
+    ratesChangedAt: at,
   };
 
   sseClients.forEach((client) => {
@@ -1821,7 +2101,11 @@ async function refreshRatesCacheWithChangeDetection() {
     }
 
     // ✅ Değişim tespiti
-    if (newCentralRates && JSON.stringify(newCentralRates) !== JSON.stringify(cachedRates.centralBankRates)) {
+    const ratesChanged =
+      !!newCentralRates &&
+      JSON.stringify(newCentralRates) !== JSON.stringify(cachedRates.centralBankRates);
+
+    if (ratesChanged) {
       console.log("[REFRESH] ✅ Merkez Bankası kurlarında DEĞIŞIM TESPIT EDİLDİ!");
       
       // Gerçek verileri geçmiş tablosuna kaydet
@@ -1851,7 +2135,7 @@ async function refreshRatesCacheWithChangeDetection() {
         console.log(`[HISTORICAL] ${historicalData.length} kur kaydedildi (SQLite + Supabase).`);
       }
 
-      // SSE ile tüm istemcilere broadcast et
+      // SSE ile tüm istemcilere broadcast et (ratesChangedAt burada da güncellenir)
       broadcastRateChange(newCentralRates);
     } else {
       console.log("[REFRESH] Merkez Bankası kurlarında değişim yok.");
@@ -1859,10 +2143,12 @@ async function refreshRatesCacheWithChangeDetection() {
 
     // Merkez Bankası kurlarını kullanarak banka snapshot'ları oluştur
     const banks = buildBanksFromCentralRates(newCentralRates);
+    const fetchedAt = new Date().toISOString();
 
-    // Cache güncelle
+    // Cache güncelle — ratesChangedAt yalnızca gerçek değişimde (broadcast/touch) ilerler
     cachedRates = {
-      updatedAt: new Date().toISOString(),
+      updatedAt: fetchedAt,
+      ratesChangedAt: cachedRates.ratesChangedAt || fetchedAt,
       totalBanks: banks.length,
       banks: banks,
       centralBankUpdatedAt: central.updatedAt || central.fetchedAt || null,
@@ -1870,7 +2156,7 @@ async function refreshRatesCacheWithChangeDetection() {
       centralBankRates: newCentralRates,
     };
 
-    console.log(`[SCRAPER] ✅ Cache güncellendi — totalBanks=${cachedRates.totalBanks}, MB=${cachedRates.centralBankUpdatedAt}`);
+    console.log(`[SCRAPER] ✅ Cache güncellendi — totalBanks=${cachedRates.totalBanks}, MB=${cachedRates.centralBankUpdatedAt}, changedAt=${cachedRates.ratesChangedAt}`);
   } catch (error) {
     console.error("[SCRAPER] ❌ Refresh başarısız:", error.message);
     cachedRates = {

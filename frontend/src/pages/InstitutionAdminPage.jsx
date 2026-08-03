@@ -242,6 +242,13 @@ export function InstitutionAdminPage() {
     lat: null,
     lng: null,
   });
+  const [branchLimit, setBranchLimit] = useState(1);
+  const [branchCount, setBranchCount] = useState(0);
+  const canAddBranchDirectly = branchCount < branchLimit;
+  const [renewRequestLoadingId, setRenewRequestLoadingId] = useState(null);
+  const [renewRequestError, setRenewRequestError] = useState("");
+  const [renewRequestSuccess, setRenewRequestSuccess] = useState("");
+  const [renewConfirmBranch, setRenewConfirmBranch] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [notifUnread, setNotifUnread] = useState(0);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
@@ -302,6 +309,8 @@ export function InstitutionAdminPage() {
         const profile = await fetchBusinessProfile(auth.token);
         if (!mounted || !profile) return;
         if (profile.logo_url) setProfileLogoUrl(profile.logo_url);
+        if (profile.branch_limit != null) setBranchLimit(Number(profile.branch_limit) || 1);
+        if (profile.branch_count != null) setBranchCount(Number(profile.branch_count) || 0);
         if (profile.working_hours && typeof profile.working_hours === "object") {
           setBusinessHours((prev) => ({ ...prev, ...profile.working_hours }));
         }
@@ -567,6 +576,15 @@ export function InstitutionAdminPage() {
     resetBranchRequestForm();
     setShowSubscriptionPanel(false);
     setShowBranchRequestModal(true);
+    if (auth?.token) {
+      fetchBusinessProfile(auth.token)
+        .then((profile) => {
+          if (!profile) return;
+          if (profile.branch_limit != null) setBranchLimit(Number(profile.branch_limit) || 1);
+          if (profile.branch_count != null) setBranchCount(Number(profile.branch_count) || 0);
+        })
+        .catch(() => {});
+    }
   };
 
   const closeBranchRequestModal = () => {
@@ -622,16 +640,24 @@ export function InstitutionAdminPage() {
     if (!auth?.token) return;
     setBranchRequestLoading(true);
     setBranchRequestError("");
+    const payload = {
+      branch_name: String(branchRequestForm.name || "").trim(),
+      phone: String(branchRequestForm.phone || "").trim(),
+      address: String(branchRequestForm.address || "").trim(),
+      lat: branchRequestForm.lat,
+      lng: branchRequestForm.lng,
+    };
     try {
+      // Sarı ünlem (limit altında) olsa bile şube hemen eklenmez;
+      // Super Admin Talepler sekmesinde onay/red bekler.
       await createBusinessBranchRequest(auth.token, {
-        branch_name: String(branchRequestForm.name || "").trim(),
-        phone: String(branchRequestForm.phone || "").trim(),
-        address: String(branchRequestForm.address || "").trim(),
-        lat: branchRequestForm.lat,
-        lng: branchRequestForm.lng,
+        ...payload,
+        request_type: "new",
       });
       setShowBranchRequestConfirm(false);
-      setBranchRequestSuccess(t("newBranchRequestSuccess"));
+      setBranchRequestSuccess(
+        canAddBranchDirectly ? t("addBranchAwaitingAdminSuccess") : t("newBranchRequestSuccess")
+      );
       setTimeout(() => {
         setShowBranchRequestModal(false);
         resetBranchRequestForm();
@@ -641,6 +667,47 @@ export function InstitutionAdminPage() {
       setBranchRequestError(err.message || "Talep oluşturulamadı.");
     } finally {
       setBranchRequestLoading(false);
+    }
+  };
+
+  const isBranchInactive = (branch) => {
+    if (!branch) return false;
+    if (branch.is_active === false || branch.is_active === 0 || branch.is_active === "0") {
+      return true;
+    }
+    const days = branchRemainingDays(branch);
+    return days != null && days <= 0;
+  };
+
+  const handleRenewBranchRequest = async () => {
+    if (!auth?.token || !renewConfirmBranch) return;
+    const branch = renewConfirmBranch;
+    setRenewRequestLoadingId(branch.id);
+    setRenewRequestError("");
+    try {
+      await createBusinessBranchRequest(auth.token, {
+        request_type: "reactivate",
+        branch_id: branch.id,
+        branch_name: branch.name,
+        phone: branch.phone || branch.whatsapp || "05000000000",
+        address: branch.address || "Konum güncellenecek",
+        lat: branch.lat,
+        lng: branch.lng,
+      });
+      setRenewConfirmBranch(null);
+      setRenewRequestError("");
+      setRenewRequestSuccess(t("renewBranchRequestSuccess"));
+      try {
+        const rows = await fetchBusinessBranches(auth.token);
+        setSubscriptionBranches(rows);
+      } catch (_e) {
+        /* ignore */
+      }
+      setTimeout(() => setRenewRequestSuccess(""), 2500);
+    } catch (err) {
+      setRenewRequestError(err.message || "Yenileme talebi gönderilemedi.");
+    } finally {
+      setRenewRequestLoadingId(null);
     }
   };
 
@@ -1548,14 +1615,33 @@ export function InstitutionAdminPage() {
                       {t("subscriptionListEmpty")}
                     </p>
                   ) : (
-                    subscriptionBranches.map((branch) => (
+                    subscriptionBranches.map((branch) => {
+                      const inactive = isBranchInactive(branch);
+                      return (
                       <div
                         key={branch.id}
                         className="grid grid-cols-3 gap-2 border-b border-slate-100 px-3 py-2.5 text-sm last:border-b-0 dark:border-slate-800"
                       >
-                        <span className="truncate font-medium text-slate-800 dark:text-slate-100">
-                          {branch.name || "—"}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="block truncate font-medium text-slate-800 dark:text-slate-100">
+                            {branch.name || "—"}
+                          </span>
+                          {inactive ? (
+                            <button
+                              type="button"
+                              disabled={renewRequestLoadingId === branch.id}
+                              onClick={() => {
+                                setRenewRequestError("");
+                                setRenewConfirmBranch(branch);
+                              }}
+                              className="mt-1 text-[10px] font-semibold text-amber-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-amber-300"
+                            >
+                              {renewRequestLoadingId === branch.id
+                                ? t("sending")
+                                : t("renewBranchRequestBtn")}
+                            </button>
+                          ) : null}
+                        </div>
                         <span className="text-slate-600 dark:text-slate-300">
                           {formatDateShort(
                             branch.subscription_start_date || branch.created_at
@@ -1563,21 +1649,36 @@ export function InstitutionAdminPage() {
                         </span>
                         <span
                           className={`font-semibold ${
-                            branch.subscription_type === "Test" ||
-                            (branchRemainingDays(branch) != null &&
-                              branchRemainingDays(branch) > 30)
-                              ? "text-cyan-700 dark:text-cyan-300"
-                              : branchRemainingDays(branch) == null
-                                ? "text-slate-700 dark:text-slate-200"
-                                : "text-red-700 dark:text-red-400"
+                            inactive
+                              ? "text-rose-700 dark:text-rose-400"
+                              : branch.subscription_type === "Test" ||
+                                  (branchRemainingDays(branch) != null &&
+                                    branchRemainingDays(branch) > 30)
+                                ? "text-cyan-700 dark:text-cyan-300"
+                                : branchRemainingDays(branch) == null
+                                  ? "text-slate-700 dark:text-slate-200"
+                                  : "text-red-700 dark:text-red-400"
                           }`}
                         >
-                          {formatBranchRemainingLabel(branch, t)}
+                          {inactive
+                            ? t("branchInactiveLabel")
+                            : formatBranchRemainingLabel(branch, t)}
                         </span>
                       </div>
-                    ))
+                    );
+                    })
                   )}
                 </div>
+                {renewRequestError ? (
+                  <p className="border-t border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
+                    {renewRequestError}
+                  </p>
+                ) : null}
+                {renewRequestSuccess ? (
+                  <p className="border-t border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                    {renewRequestSuccess}
+                  </p>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -1588,7 +1689,7 @@ export function InstitutionAdminPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
             <Plus className="size-4" />
-            {t("newBranchRequestBtn")}
+            {canAddBranchDirectly ? t("addBranchDirectBtn") : t("newBranchRequestBtn")}
           </button>
         </div>
 
@@ -1857,7 +1958,19 @@ export function InstitutionAdminPage() {
         {showLogoModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => !logoLoading && !logoCropStep && setShowLogoModal(false)}
+            onMouseDown={(e) => {
+              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+            }}
+            onClick={(e) => {
+              if (
+                e.target === e.currentTarget &&
+                e.currentTarget.dataset.backdropDown === "1" &&
+                !logoLoading &&
+                !logoCropStep
+              ) {
+                setShowLogoModal(false);
+              }
+            }}
           >
             <div
               className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
@@ -2035,7 +2148,18 @@ export function InstitutionAdminPage() {
         {showInfoModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={() => !infoLoading && closeInfoModal()}
+            onMouseDown={(e) => {
+              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+            }}
+            onClick={(e) => {
+              if (
+                e.target === e.currentTarget &&
+                e.currentTarget.dataset.backdropDown === "1" &&
+                !infoLoading
+              ) {
+                closeInfoModal();
+              }
+            }}
           >
             <div
               className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
@@ -2323,7 +2447,14 @@ export function InstitutionAdminPage() {
         {showBranchRequestModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={closeBranchRequestModal}
+            onMouseDown={(e) => {
+              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+                closeBranchRequestModal();
+              }
+            }}
           >
             <div
               className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
@@ -2346,7 +2477,7 @@ export function InstitutionAdminPage() {
                   <Plus className="size-5" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  {t("newBranchRequestTitle")}
+                  {canAddBranchDirectly ? t("addBranchDirectTitle") : t("newBranchRequestTitle")}
                 </h3>
               </div>
 
@@ -2478,10 +2609,10 @@ export function InstitutionAdminPage() {
                 <HeaderActions compact />
               </div>
               <h4 className="pt-10 sm:pt-0 sm:pr-[6.5rem] text-base font-bold text-slate-800 dark:text-slate-100">
-                {t("newBranchRequestTitle")}
+                {canAddBranchDirectly ? t("addBranchDirectTitle") : t("newBranchRequestTitle")}
               </h4>
               <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                {t("newBranchRequestConfirm")}
+                {canAddBranchDirectly ? t("addBranchDirectConfirm") : t("newBranchRequestConfirm")}
               </p>
               <div className="mt-5 flex gap-3">
                 <button
@@ -2498,7 +2629,54 @@ export function InstitutionAdminPage() {
                   disabled={branchRequestLoading}
                   className="flex-1 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-50"
                 >
-                  {branchRequestLoading ? t("sending") : t("confirmRequestBtn")}
+                  {branchRequestLoading
+                    ? t("sending")
+                    : canAddBranchDirectly
+                      ? t("confirmAddBranchBtn")
+                      : t("confirmRequestBtn")}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {renewConfirmBranch && (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <HeaderActions compact />
+              </div>
+              <h4 className="pt-10 sm:pt-0 sm:pr-[6.5rem] text-base font-bold text-slate-800 dark:text-slate-100">
+                {t("renewBranchRequestBtn")}
+              </h4>
+              <p className="mt-1 text-sm font-medium text-cyan-700 dark:text-cyan-300">
+                {renewConfirmBranch.name}
+              </p>
+              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+                {t("renewBranchRequestConfirm")}
+              </p>
+              {renewRequestError ? (
+                <p className="mt-3 text-xs text-rose-600 dark:text-rose-300">{renewRequestError}</p>
+              ) : null}
+              <div className="mt-5 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRenewConfirmBranch(null);
+                    setRenewRequestError("");
+                  }}
+                  disabled={renewRequestLoadingId != null}
+                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                >
+                  {t("cancel")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRenewBranchRequest}
+                  disabled={renewRequestLoadingId != null}
+                  className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+                >
+                  {renewRequestLoadingId != null ? t("sending") : t("confirmRequestBtn")}
                 </button>
               </div>
             </div>
@@ -2508,7 +2686,14 @@ export function InstitutionAdminPage() {
         {showPasswordModal && (
           <div
             className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onClick={closePasswordModal}
+            onMouseDown={(e) => {
+              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+                closePasswordModal();
+              }
+            }}
           >
             <div
               className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"

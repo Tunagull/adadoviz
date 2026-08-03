@@ -37,6 +37,7 @@ function institutionPayload(row) {
     logo_url: row.logo_url || null,
     email: row.email || null,
     phone: row.phone || null,
+    contact_person: row.contact_person || null,
     working_hours: row.working_hours
       ? typeof row.working_hours === "string"
         ? row.working_hours

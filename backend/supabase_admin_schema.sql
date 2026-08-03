@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS public.institutions (
   logo_url TEXT,
   email TEXT,
   phone TEXT,
+  contact_person TEXT,
   working_hours TEXT,
   branch_limit INTEGER NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -132,6 +133,9 @@ ALTER TABLE public.site_stats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.institutions
   ADD COLUMN IF NOT EXISTS branch_limit INTEGER NOT NULL DEFAULT 1;
 
+ALTER TABLE public.institutions
+  ADD COLUMN IF NOT EXISTS contact_person TEXT;
+
 ALTER TABLE public.branches
   ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT '';
 
@@ -155,6 +159,8 @@ CREATE TABLE IF NOT EXISTS public.branch_requests (
   address TEXT DEFAULT '',
   lat DOUBLE PRECISION,
   lng DOUBLE PRECISION,
+  request_type TEXT NOT NULL DEFAULT 'new',
+  branch_id INTEGER,
   status TEXT NOT NULL DEFAULT 'pending',
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   admin_note TEXT,
@@ -163,6 +169,12 @@ CREATE TABLE IF NOT EXISTS public.branch_requests (
 );
 
 ALTER TABLE public.branch_requests ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.branch_requests
+  ADD COLUMN IF NOT EXISTS request_type TEXT NOT NULL DEFAULT 'new';
+
+ALTER TABLE public.branch_requests
+  ADD COLUMN IF NOT EXISTS branch_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS public.business_notifications (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
