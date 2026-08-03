@@ -855,6 +855,10 @@ function backfillSubscriptionFieldsIfNeeded() {
 }
 
 function findAdminByUsername(username) {
+  const clean = String(username || "").trim();
+  // E-posta ile giriş engeli — yalnızca Giriş ID
+  if (!clean || clean.includes("@")) return null;
+
   const row = db
     .prepare(
       `SELECT id, username, password_hash, institution_id, institution_name,
@@ -865,7 +869,7 @@ function findAdminByUsername(username) {
               COALESCE(is_active, 1) AS is_active
        FROM institutions WHERE username = ?`
     )
-    .get(username);
+    .get(clean);
 
   if (!row) return null;
   const synced = deactivateIfExpired(row);
@@ -887,6 +891,7 @@ function listBusinesses() {
               COALESCE(branch_limit, 1) AS branch_limit,
               logo_url,
               phone,
+              email,
               contact_person,
               working_hours,
               created_at
@@ -951,18 +956,44 @@ function getMarginHistoryForInstitution(institutionId, currency, type) {
     .all(id, currency, type);
 }
 
+function normalizeLoginId(username) {
+  const clean = String(username || "").trim();
+  if (!clean) throw new Error("Giriş ID zorunludur.");
+  if (clean.includes("@") || /^.+@.+\..+$/.test(clean)) {
+    throw new Error("Giriş ID e-posta olamaz. E-posta alanını ayrı kullanın.");
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(clean)) {
+    throw new Error("Giriş ID yalnızca harf, rakam, nokta, tire ve alt çizgi içerebilir.");
+  }
+  return clean;
+}
+
+function normalizeContactEmail(email, { required = false } = {}) {
+  const clean = String(email || "").trim();
+  if (!clean) {
+    if (required) throw new Error("E-posta zorunludur.");
+    return null;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(clean)) {
+    throw new Error("Geçerli bir e-posta adresi girin.");
+  }
+  return clean.toLowerCase();
+}
+
 function createBusiness({
   username,
   password,
   institution_name,
   contact_person,
+  email,
   subscription_type = "Test",
   remaining_days,
   is_active = true,
   logo_url,
   branch_limit = 1,
 }) {
-  const cleanUsername = String(username || "").trim();
+  const cleanUsername = normalizeLoginId(username);
+  const cleanEmail = normalizeContactEmail(email, { required: true });
   const cleanName = String(institution_name || "").trim();
   const cleanContactPerson = String(contact_person || "").trim() || null;
   const type = normalizeSubscriptionType(subscription_type);
@@ -985,8 +1016,8 @@ function createBusiness({
   const passwordHash = bcrypt.hashSync(String(password || ""), 10);
   const logo = sanitizeLogoUrl(logo_url === undefined ? null : logo_url);
 
-  if (!cleanUsername || !password || !cleanName) {
-    throw new Error("İşletme adı, giriş ID ve şifre zorunludur.");
+  if (!password || !cleanName) {
+    throw new Error("İşletme adı, giriş ID, e-posta ve şifre zorunludur.");
   }
 
   // Bilinen banka adına eşleşirse dashboard kartıyla aynı institution_id kullan
@@ -998,12 +1029,15 @@ function createBusiness({
       .replace(/^_|_$/g, "") || `biz_${Date.now()}`;
   const institutionId = known?.id || slug;
 
+  const selectAfterInsert = `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, email, contact_person, created_at
+           FROM institutions WHERE id = ?`;
+
   try {
     const result = db
       .prepare(
         `INSERT INTO institutions
-          (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit, contact_person)
-         VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?)`
+          (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit, contact_person, email)
+         VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         cleanUsername,
@@ -1016,16 +1050,12 @@ function createBusiness({
         active,
         logo,
         limit,
-        cleanContactPerson
+        cleanContactPerson,
+        cleanEmail
       );
 
     return mapBusinessRow(
-      db
-        .prepare(
-          `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, contact_person, created_at
-           FROM institutions WHERE id = ?`
-        )
-        .get(result.lastInsertRowid)
+      db.prepare(selectAfterInsert).get(result.lastInsertRowid)
     );
   } catch (err) {
     if (String(err.message || "").includes("UNIQUE")) {
@@ -1035,8 +1065,8 @@ function createBusiness({
           const result = db
             .prepare(
               `INSERT INTO institutions
-                (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit, contact_person)
-               VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?)`
+                (username, password_hash, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, branch_limit, contact_person, email)
+               VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?)`
             )
             .run(
               cleanUsername,
@@ -1049,24 +1079,20 @@ function createBusiness({
               active,
               logo,
               limit,
-              cleanContactPerson
+              cleanContactPerson,
+              cleanEmail
             );
           return mapBusinessRow(
-            db
-              .prepare(
-                `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, contact_person, created_at
-                 FROM institutions WHERE id = ?`
-              )
-              .get(result.lastInsertRowid)
+            db.prepare(selectAfterInsert).get(result.lastInsertRowid)
           );
         } catch (err2) {
           if (String(err2.message || "").includes("UNIQUE")) {
-            throw new Error("Bu kullanıcı adı veya kurum ID zaten kayıtlı.");
+            throw new Error("Bu giriş ID veya kurum ID zaten kayıtlı.");
           }
           throw err2;
         }
       }
-      throw new Error("Bu kullanıcı adı veya kurum ID zaten kayıtlı.");
+      throw new Error("Bu giriş ID veya kurum ID zaten kayıtlı.");
     }
     throw err;
   }
@@ -1077,6 +1103,7 @@ function updateBusiness(id, {
   password,
   institution_name,
   contact_person,
+  email,
   subscription_type,
   remaining_days,
   is_active,
@@ -1085,7 +1112,7 @@ function updateBusiness(id, {
 }) {
   const row = db
     .prepare(
-      `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, contact_person, COALESCE(branch_limit, 1) AS branch_limit
+      `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, logo_url, email, contact_person, COALESCE(branch_limit, 1) AS branch_limit
        FROM institutions WHERE id = ?`
     )
     .get(id);
@@ -1093,12 +1120,17 @@ function updateBusiness(id, {
   if (!row) throw new Error("İşletme bulunamadı.");
   if (row.role === "superadmin") throw new Error("Super admin hesabı bu uçtan düzenlenemez.");
 
-  const nextUsername = username != null ? String(username).trim() : row.username;
+  const nextUsername =
+    username != null ? normalizeLoginId(username) : normalizeLoginId(row.username);
   const nextName = institution_name != null ? String(institution_name).trim() : row.institution_name;
   const nextContactPerson =
     contact_person === undefined
       ? row.contact_person || null
       : String(contact_person || "").trim() || null;
+  const nextEmail =
+    email === undefined
+      ? row.email || null
+      : normalizeContactEmail(email, { required: true });
   const typeChanged = subscription_type != null || remaining_days != null;
   const nextType = typeChanged
     ? normalizeSubscriptionType(subscription_type ?? row.subscription_type)
@@ -1129,7 +1161,10 @@ function updateBusiness(id, {
       : normalizeBranchLimit(branch_limit);
 
   if (!nextUsername || !nextName) {
-    throw new Error("Kullanıcı adı ve işletme adı zorunludur.");
+    throw new Error("Giriş ID ve işletme adı zorunludur.");
+  }
+  if (!nextEmail) {
+    throw new Error("E-posta zorunludur.");
   }
 
   const passwordHash =
@@ -1142,7 +1177,7 @@ function updateBusiness(id, {
       db.prepare(
         `UPDATE institutions
          SET username = ?, institution_name = ?, subscription = ?, subscription_type = ?,
-             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, contact_person = ?, password_hash = ?
+             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, contact_person = ?, email = ?, password_hash = ?
          WHERE id = ?`
       ).run(
         nextUsername,
@@ -1154,6 +1189,7 @@ function updateBusiness(id, {
         nextLogo,
         nextBranchLimit,
         nextContactPerson,
+        nextEmail,
         passwordHash,
         id
       );
@@ -1161,7 +1197,7 @@ function updateBusiness(id, {
       db.prepare(
         `UPDATE institutions
          SET username = ?, institution_name = ?, subscription = ?, subscription_type = ?,
-             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, contact_person = ?
+             subscription_end_date = ?, is_active = ?, logo_url = ?, branch_limit = ?, contact_person = ?, email = ?
          WHERE id = ?`
       ).run(
         nextUsername,
@@ -1173,12 +1209,13 @@ function updateBusiness(id, {
         nextLogo,
         nextBranchLimit,
         nextContactPerson,
+        nextEmail,
         id
       );
     }
   } catch (err) {
     if (String(err.message || "").includes("UNIQUE")) {
-      throw new Error("Bu kullanıcı adı zaten kullanılıyor.");
+      throw new Error("Bu giriş ID zaten kullanılıyor.");
     }
     throw err;
   }
@@ -1186,7 +1223,7 @@ function updateBusiness(id, {
   return mapBusinessRow(
     db
       .prepare(
-        `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, contact_person, created_at
+        `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, email, contact_person, created_at
          FROM institutions WHERE id = ?`
       )
       .get(id)
@@ -2454,13 +2491,14 @@ function findInstitutionForPasswordReset(identifier) {
   const value = String(identifier || "").trim().toLowerCase();
   if (!value) return null;
 
+  // Önce kayıtlı e-posta, yoksa Giriş ID ile hesabı bul (şifre maili yalnızca email alanına gider)
   return (
     db
       .prepare(
-        `SELECT id, username, email, institution_name, role, password_hash
+        `SELECT id, username, email, institution_id, institution_name, role, password_hash
          FROM institutions
-         WHERE lower(username) = ?
-            OR (email IS NOT NULL AND lower(email) = ?)
+         WHERE (email IS NOT NULL AND lower(email) = ?)
+            OR lower(username) = ?
          LIMIT 1`
       )
       .get(value, value) || null

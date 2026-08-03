@@ -93,10 +93,8 @@ const emptyCreateForm = {
   institution_name: "",
   contact_person: "",
   username: "",
+  email: "",
   password: "",
-  subscriptionType: "Test",
-  manualDays: "0",
-  price: "0",
   branchLimit: "1",
   logo_url: null,
 };
@@ -106,6 +104,7 @@ const emptyEditForm = {
   institution_name: "",
   contact_person: "",
   username: "",
+  email: "",
   password: "",
   subscriptionType: "Test",
   manualDays: "0",
@@ -738,6 +737,7 @@ export function SuperAdminDashboard() {
       institution_name: biz.institution_name || "",
       contact_person: biz.contact_person || "",
       username: biz.username || "",
+      email: biz.email || "",
       password: "",
       subscriptionType: parseSubscriptionType(biz),
       manualDays: "0",
@@ -950,11 +950,6 @@ export function SuperAdminDashboard() {
     }
   };
 
-  const createCalculatedDays = useMemo(
-    () => calculateNewDays(createForm.subscriptionType, 0, createForm.manualDays),
-    [createForm.subscriptionType, createForm.manualDays]
-  );
-
   const handleToggleStatus = async (biz) => {
     setTogglingId(biz.id);
     setError("");
@@ -999,9 +994,9 @@ export function SuperAdminDashboard() {
         institution_name: createForm.institution_name,
         contact_person: createForm.contact_person,
         username: createForm.username,
+        email: createForm.email,
         password: createForm.password,
-        subscription_type: createForm.subscriptionType,
-        remaining_days: createCalculatedDays,
+        subscription_type: "Test",
         is_active: true,
         logo_url: createForm.logo_url || null,
         branch_limit: Math.max(1, parseInt(createForm.branchLimit, 10) || 1),
@@ -1029,6 +1024,7 @@ export function SuperAdminDashboard() {
     try {
       const payload = {
         username: editForm.username,
+        email: editForm.email,
         institution_name: editForm.institution_name,
         contact_person: editForm.contact_person,
         logo_url: editForm.logo_url || null,
@@ -1207,9 +1203,8 @@ export function SuperAdminDashboard() {
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950/80 dark:text-slate-500">
                   <tr>
                     <th className="px-4 py-3 font-medium">{t("colId")}</th>
-                    <th className="px-4 py-3 font-medium">{t("colLoginId")}</th>
                     <th className="px-4 py-3 font-medium">{t("businessName")}</th>
-                    <th className="px-4 py-3 font-medium">{t("contactPerson")}</th>
+                    <th className="px-4 py-3 font-medium">{t("colLoginId")}</th>
                     <th className="px-4 py-3 font-medium">{t("colBranchCount")}</th>
                     <th className="px-4 py-3 font-medium">{t("colRegisteredAt")}</th>
                     <th className="px-4 py-3 font-medium">{t("colStatus")}</th>
@@ -1225,6 +1220,7 @@ export function SuperAdminDashboard() {
                     return (
                       <tr key={biz.id} className="border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800/80 dark:hover:bg-slate-800/40">
                         <td className="px-4 py-3 text-slate-500 font-mono text-xs">{biz.id}</td>
+                        <td className="px-4 py-3 text-slate-800 dark:text-slate-100">{biz.institution_name}</td>
                         <td className="px-4 py-3 text-slate-800 font-mono dark:text-slate-200">
                           <button
                             type="button"
@@ -1234,10 +1230,6 @@ export function SuperAdminDashboard() {
                           >
                             {biz.username}
                           </button>
-                        </td>
-                        <td className="px-4 py-3 text-slate-800 dark:text-slate-100">{biz.institution_name}</td>
-                        <td className="px-4 py-3 text-slate-700 dark:text-slate-200">
-                          {biz.contact_person || "—"}
                         </td>
                         <td className="px-4 py-3">
                           <BranchQuotaBadge used={used} limit={limit} />
@@ -1409,11 +1401,24 @@ export function SuperAdminDashboard() {
                         required
                       />
                     </Field>
-                    <Field label={t("loginIdEmailField")}>
+                    <Field label={t("loginIdField")}>
                       <input
                         value={editForm.username}
                         onChange={(e) => setEditForm((p) => ({ ...p, username: e.target.value }))}
                         className={inputClass}
+                        placeholder={t("loginIdPlaceholder")}
+                        autoComplete="username"
+                        required
+                      />
+                    </Field>
+                    <Field label={t("businessEmailField")}>
+                      <input
+                        type="email"
+                        value={editForm.email}
+                        onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+                        className={inputClass}
+                        placeholder={t("businessEmailPlaceholder")}
+                        autoComplete="email"
                         required
                       />
                     </Field>
@@ -1795,11 +1800,24 @@ export function SuperAdminDashboard() {
                 required
               />
             </Field>
-            <Field label={t("loginIdEmailField")}>
+            <Field label={t("loginIdField")}>
               <input
                 value={createForm.username}
                 onChange={(e) => setCreateForm((p) => ({ ...p, username: e.target.value }))}
                 className={inputClass}
+                placeholder={t("loginIdPlaceholder")}
+                autoComplete="username"
+                required
+              />
+            </Field>
+            <Field label={t("businessEmailField")}>
+              <input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
+                className={inputClass}
+                placeholder={t("businessEmailPlaceholder")}
+                autoComplete="email"
                 required
               />
             </Field>
@@ -1813,7 +1831,6 @@ export function SuperAdminDashboard() {
                 autoComplete="new-password"
               />
             </Field>
-            <SubscriptionFields form={createForm} setForm={setCreateForm} />
             <Field label={t("branchLimitLabel")}>
               <input
                 type="number"
@@ -1827,13 +1844,6 @@ export function SuperAdminDashboard() {
                 required
               />
             </Field>
-            <SubscriptionPreview
-              currentDays={0}
-              newDays={createCalculatedDays}
-              price={createForm.price}
-              lang={lang}
-              t={t}
-            />
             <button type="submit" disabled={saving} className={primaryBtnClass}>
               {saving ? t("creatingBtn") : t("createBusinessBtn")}
             </button>

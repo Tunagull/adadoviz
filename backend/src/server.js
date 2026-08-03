@@ -490,14 +490,19 @@ app.post("/api/auth/login", (req, res) => {
   const password = String(req.body?.password || "");
 
   if (!username || !password) {
-    return res.status(400).json({ error: "Kullanıcı adı ve şifre zorunludur." });
+    return res.status(400).json({ error: "Giriş ID ve şifre zorunludur." });
+  }
+  if (username.includes("@")) {
+    return res.status(400).json({
+      error: "E-posta ile giriş yapılamaz. Lütfen Giriş ID kullanın.",
+    });
   }
 
   console.log(`[AUTH] Login attempt: ${username}`);
   const admin = findAdminByUsername(username);
   console.log(`[AUTH] User found: ${!!admin}`);
   if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
-    return res.status(401).json({ error: "Geçersiz kullanıcı adı veya şifre." });
+    return res.status(401).json({ error: "Geçersiz Giriş ID veya şifre." });
   }
 
   const role = admin.role || "business";
@@ -532,7 +537,7 @@ app.post("/api/forgot-password", async (req, res) => {
   try {
     const emailOrUsername = String(req.body?.email || req.body?.username || "").trim();
     if (!emailOrUsername) {
-      return res.status(400).json({ error: "E-posta veya kullanıcı adı zorunludur." });
+      return res.status(400).json({ error: "E-posta veya Giriş ID zorunludur." });
     }
 
     const institution = findInstitutionForPasswordReset(emailOrUsername);
@@ -540,11 +545,11 @@ app.post("/api/forgot-password", async (req, res) => {
       return res.json({ success: true, message: FORGOT_PASSWORD_OK_MSG });
     }
 
+    // Sıfırlama maili yalnızca kayıtlı iletişim e-postasına gider (e-posta ile giriş yok)
     const destination =
-      (institution.email && String(institution.email).includes("@")
+      institution.email && String(institution.email).includes("@")
         ? String(institution.email).trim()
-        : null) ||
-      (emailOrUsername.includes("@") ? emailOrUsername : null);
+        : null;
 
     if (!destination) {
       // Hesapta e-posta yoksa yine genel mesaj dön (güvenlik)
@@ -1044,6 +1049,7 @@ app.post("/api/admin/businesses", requireSuperAdmin, (req, res) => {
       password: req.body?.password,
       institution_name: req.body?.institution_name,
       contact_person: req.body?.contact_person,
+      email: req.body?.email,
       subscription_type: req.body?.subscription_type || "Test",
       remaining_days: req.body?.remaining_days,
       is_active: isActive,
@@ -1069,6 +1075,7 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
       password: req.body?.password,
       institution_name: req.body?.institution_name,
       contact_person: req.body?.contact_person,
+      email: req.body?.email,
       subscription_type: req.body?.subscription_type,
       remaining_days: req.body?.remaining_days,
       is_active: req.body?.is_active,
