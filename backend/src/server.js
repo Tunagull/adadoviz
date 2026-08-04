@@ -78,7 +78,7 @@ const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./in
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail, buildPartnershipDefaultMessage } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
 const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
 const {
@@ -544,6 +544,9 @@ app.post("/api/forgot-password", async (req, res) => {
 
     const institution = findInstitutionForPasswordReset(emailOrUsername);
     if (!institution || institution.role === "superadmin") {
+      console.warn(
+        `[AUTH] forgot-password: hesap bulunamadı veya superadmin — identifier=${emailOrUsername.slice(0, 48)}`
+      );
       return res.json({ success: true, message: FORGOT_PASSWORD_OK_MSG });
     }
 
@@ -555,7 +558,18 @@ app.post("/api/forgot-password", async (req, res) => {
 
     if (!destination) {
       // Hesapta e-posta yoksa yine genel mesaj dön (güvenlik)
+      console.warn(
+        `[AUTH] forgot-password: kayıtlı e-posta yok — institution=${institution.institution_id || institution.username}`
+      );
       return res.json({ success: true, message: FORGOT_PASSWORD_OK_MSG });
+    }
+
+    if (!isMailConfigured()) {
+      console.error("[AUTH] forgot-password: GMAIL_USER / GMAIL_PASS tanımlı değil.");
+      return res.status(503).json({
+        error:
+          "E-posta servisi yapılandırılmamış. Lütfen yöneticiye bildirin veya daha sonra tekrar deneyin.",
+      });
     }
 
     const token = crypto.randomBytes(32).toString("hex");
@@ -574,11 +588,11 @@ app.post("/api/forgot-password", async (req, res) => {
       token,
       expires_at: expiresAt,
       used: false,
+    }).catch((err) => {
+      console.warn("[AUTH] password_reset sync:", err?.message || err);
     });
 
-    const frontendBase = (
-      process.env.FRONTEND_URL || "http://localhost:5173"
-    ).replace(/\/$/, "");
+    const frontendBase = getFrontendBaseUrl();
     const resetUrl = `${frontendBase}/reset-password?token=${token}`;
 
     await sendPasswordResetEmail({
@@ -2187,6 +2201,8 @@ async function refreshRatesCacheWithChangeDetection() {
 }
 
 async function startServer() {
+  logMailConfigOnBoot();
+
   // ⚠️ MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1 Çift yazım / dual-write):
   // Tek gerçeklik kaynağı (Source of Truth) = Supabase.
   //

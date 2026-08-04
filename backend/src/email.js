@@ -1,16 +1,57 @@
 const nodemailer = require("nodemailer");
 
-// Email konfigürasyonu (Gmail — environment variables'dan yüklenir)
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.GMAIL_USER || "your-email@gmail.com",
-    pass: process.env.GMAIL_PASS || "your-app-password",
-  },
-});
-
 const PARTNERSHIP_INBOX =
   process.env.PARTNERSHIP_TO_EMAIL || "tunahan.guul@gmail.com";
+
+const DEFAULT_FRONTEND_URL = "https://adadoviz.tunahangul.com";
+
+function getGmailUser() {
+  return String(process.env.GMAIL_USER || "").trim();
+}
+
+function getGmailPass() {
+  return String(process.env.GMAIL_PASS || "").trim();
+}
+
+function isMailConfigured() {
+  const user = getGmailUser();
+  const pass = getGmailPass();
+  if (!user || !pass) return false;
+  if (user.includes("your-email")) return false;
+  if (pass.includes("your-gmail-app-password") || pass.includes("your-app-password")) {
+    return false;
+  }
+  return true;
+}
+
+function getFrontendBaseUrl() {
+  const raw = String(process.env.FRONTEND_URL || DEFAULT_FRONTEND_URL).trim();
+  return (raw || DEFAULT_FRONTEND_URL).replace(/\/$/, "");
+}
+
+function assertMailConfigured() {
+  if (!isMailConfigured()) {
+    throw new Error(
+      "E-posta yapılandırması eksik. Render/ortam değişkenlerinde GMAIL_USER ve GMAIL_PASS (Gmail App Password) tanımlayın."
+    );
+  }
+}
+
+let transporter = null;
+
+function getTransporter() {
+  assertMailConfigured();
+  if (!transporter) {
+    transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: getGmailUser(),
+        pass: getGmailPass(),
+      },
+    });
+  }
+  return transporter;
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -55,7 +96,7 @@ async function sendPartnershipEmail(data) {
     });
 
   const emailContent = `
-    <h2>FinSight Partnerlik Başvurusu</h2>
+    <h2>AdaDöviz Partnerlik Başvurusu</h2>
     <hr />
     <p><strong>Kurum Adı:</strong> ${escapeHtml(institution_name)}</p>
     <p><strong>Yetkili Kişi:</strong> ${escapeHtml(contact_person)}</p>
@@ -67,15 +108,16 @@ async function sendPartnershipEmail(data) {
   `;
 
   try {
+    const fromUser = getGmailUser();
     const mailOptions = {
-      from: process.env.GMAIL_USER || "your-email@gmail.com",
+      from: `"AdaDöviz" <${fromUser}>`,
       to: PARTNERSHIP_INBOX,
       subject: `Yeni Partnerlik Başvurusu: ${institution_name}`,
       html: emailContent,
       replyTo: email,
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await getTransporter().sendMail(mailOptions);
     console.log(
       `[EMAIL] Gönderildi → ${PARTNERSHIP_INBOX} (${institution_name}):`,
       info.messageId
@@ -91,7 +133,7 @@ async function sendPartnershipEmail(data) {
  * Şifre sıfırlama e-postası gönder
  */
 async function sendPasswordResetEmail({ to, resetUrl, institutionName }) {
-  const name = institutionName || "FinSight";
+  const name = institutionName || "AdaDöviz";
   const emailContent = `
     <h2>Şifre Sıfırlama Talebi</h2>
     <hr />
@@ -105,14 +147,15 @@ async function sendPasswordResetEmail({ to, resetUrl, institutionName }) {
   `;
 
   try {
+    const fromUser = getGmailUser();
     const mailOptions = {
-      from: process.env.GMAIL_USER || "your-email@gmail.com",
+      from: `"AdaDöviz" <${fromUser}>`,
       to,
-      subject: "FinSight — Şifre Sıfırlama",
+      subject: "AdaDöviz — Şifre Sıfırlama",
       html: emailContent,
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await getTransporter().sendMail(mailOptions);
     console.log(`[EMAIL] Şifre sıfırlama gönderildi (${to}):`, info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
@@ -121,8 +164,18 @@ async function sendPasswordResetEmail({ to, resetUrl, institutionName }) {
   }
 }
 
+function logMailConfigOnBoot() {
+  console.log(
+    `[EMAIL] Yapılandırma: configured=${isMailConfigured()} user=${getGmailUser() || "(yok)"} frontend=${getFrontendBaseUrl()}`
+  );
+}
+
 module.exports = {
   sendPartnershipEmail,
   sendPasswordResetEmail,
   buildPartnershipDefaultMessage,
+  isMailConfigured,
+  getFrontendBaseUrl,
+  assertMailConfigured,
+  logMailConfigOnBoot,
 };

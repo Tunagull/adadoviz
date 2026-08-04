@@ -180,13 +180,14 @@ const dictionaries = {
     loginFailed: "Giriş başarısız.",
     forgotPasswordTitle: "Şifremi Unuttum",
     forgotPasswordDesc:
-      "Kayıtlı e-posta veya Giriş ID’nizi girin. Sıfırlama bağlantısı yalnızca kayıtlı e-posta adresinize gönderilir.",
+      "Kayıtlı iletişim e-postanızı veya Giriş ID’nizi girin. Bağlantı yalnızca Super Admin’de kayıtlı e-posta adresine gider; spam klasörünü de kontrol edin.",
     emailOrUsername: "E-posta veya Giriş ID",
     emailOrUsernamePlaceholder: "ornek@firma.com veya giris-id",
     send: "Gönder",
     sending: "Gönderiliyor...",
     forgotRequestFailed: "İstek gönderilemedi.",
-    forgotSuccessDefault: "Eğer bu hesap sistemde kayıtlıysa, şifre sıfırlama bağlantısı e-posta adresinize gönderildi.",
+    forgotSuccessDefault:
+      "Eğer bu hesap sistemde kayıtlıysa ve iletişim e-postası tanımlıysa, sıfırlama bağlantısı o adrese gönderildi. Gelen kutusu ve spam klasörünü kontrol edin.",
     superAdminTitle: "Super Admin Paneli",
     superAdminSubtitle: "İşletme ve abonelik yönetimi",
     backToDashboardLink: "Dashboard'a Dön",
@@ -555,13 +556,14 @@ const dictionaries = {
     loginFailed: "Login failed.",
     forgotPasswordTitle: "Forgot Password",
     forgotPasswordDesc:
-      "Enter your registered email or Login ID. The reset link is sent only to the stored email address.",
+      "Enter your registered contact email or Login ID. The reset link is sent only to the email stored by Super Admin — check spam too.",
     emailOrUsername: "Email or Login ID",
     emailOrUsernamePlaceholder: "example@company.com or login-id",
     send: "Send",
     sending: "Sending...",
     forgotRequestFailed: "Request failed.",
-    forgotSuccessDefault: "If this account is registered in the system, a password reset link has been sent to your email.",
+    forgotSuccessDefault:
+      "If this account exists and has a contact email on file, a reset link was sent there. Check inbox and spam.",
     superAdminTitle: "Super Admin Panel",
     superAdminSubtitle: "Business & subscription management",
     backToDashboardLink: "Back to Dashboard",
