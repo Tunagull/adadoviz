@@ -33,11 +33,9 @@ function institutionPayload(row) {
     subscription_type: row.subscription_type || "Test",
     subscription_end_date: row.subscription_end_date || null,
     is_active: !(row.is_active === 0 || row.is_active === false),
-    branch_limit: Math.max(1, Number(row.branch_limit) || 1),
     logo_url: row.logo_url || null,
     email: row.email || null,
     phone: row.phone || null,
-    contact_person: row.contact_person || null,
     working_hours: row.working_hours
       ? typeof row.working_hours === "string"
         ? row.working_hours
@@ -48,18 +46,70 @@ function institutionPayload(row) {
   };
 }
 
+/**
+ * Supabase institutions şemasında henüz olmayan kolonlar (PGRST204).
+ * Bunlar payload'a eklenirse tüm upsert (email dahil) sessizce fail olur.
+ * SQL migration: backend/scripts/supabase-institutions-columns.sql
+ */
+const INSTITUTION_SYNC_OPTIONAL_COLUMNS = ["branch_limit", "contact_person"];
+
+function stripUnknownInstitutionColumns(payload, missingColumn) {
+  if (!payload) return payload;
+  const next = { ...payload };
+  if (missingColumn && next[missingColumn] !== undefined) {
+    delete next[missingColumn];
+  }
+  for (const col of INSTITUTION_SYNC_OPTIONAL_COLUMNS) {
+    if (next[col] !== undefined) delete next[col];
+  }
+  return next;
+}
+
+function parseMissingColumn(err) {
+  const msg = String(err?.message || err || "");
+  const m = msg.match(/Could not find the '([^']+)' column/i);
+  return m ? m[1] : null;
+}
+
 async function syncInstitutionUpsert(row) {
-  const payload = institutionPayload(row);
+  let payload = institutionPayload(row);
   if (!payload?.institution_id) return false;
-  const ok = await safe("institution.upsert", async () => {
+
+  // Eski şemada olmayan alanları baştan çıkar (email sync'inin düşmesini engelle)
+  payload = stripUnknownInstitutionColumns(payload);
+
+  const tryUpsert = async (body, label) => {
     const { error } = await supabase
       .from("institutions")
-      .upsert(payload, { onConflict: "institution_id" });
+      .upsert(body, { onConflict: "institution_id" });
     if (error) throw error;
-  });
+    return true;
+  };
+
+  try {
+    await tryUpsert(payload, "institution.upsert");
+    return true;
+  } catch (err) {
+    const missing = parseMissingColumn(err);
+    if (missing && payload[missing] !== undefined) {
+      payload = stripUnknownInstitutionColumns(payload, missing);
+      logErr(
+        "institution.upsert",
+        `${missing} kolonu Supabase'te yok — alansız tekrar deneniyor. (${err.message})`
+      );
+      try {
+        await tryUpsert(payload, "institution.upsert.retry");
+        return true;
+      } catch (err2) {
+        logErr("institution.upsert.retry", err2);
+      }
+    } else {
+      logErr("institution.upsert", err);
+    }
+  }
+
   // Büyük logo PostgREST limitine takılırsa logosuz alanlarla tekrar dene
-  // (logo_url gönderilmez → mevcut Supabase logosu silinmez; işletme kaydı kalır)
-  if (!ok && payload.logo_url) {
+  if (payload.logo_url) {
     const { logo_url: _omitLogo, ...withoutLogo } = payload;
     return safe("institution.upsert.without_logo", async () => {
       const { error } = await supabase
@@ -68,7 +118,7 @@ async function syncInstitutionUpsert(row) {
       if (error) throw error;
     });
   }
-  return ok;
+  return false;
 }
 
 async function syncInstitutionDelete(institutionId) {

@@ -1052,7 +1052,7 @@ app.get("/api/admin/businesses", requireSuperAdmin, (_req, res) => {
   }
 });
 
-app.post("/api/admin/businesses", requireSuperAdmin, (req, res) => {
+app.post("/api/admin/businesses", requireSuperAdmin, async (req, res) => {
   try {
     // Yeni kayıtta is_active varsayılan true (1); yalnızca açıkça false/0 ise pasif
     const rawActive = req.body?.is_active;
@@ -1074,14 +1074,21 @@ app.post("/api/admin/businesses", requireSuperAdmin, (req, res) => {
       branch_limit: req.body?.branch_limit,
     });
     const full = getInstitutionFullById(business.id);
-    if (full) syncInstitutionUpsert(full);
+    if (full) {
+      const synced = await syncInstitutionUpsert(full);
+      if (!synced) {
+        console.error(
+          `[ADMIN] İşletme SQLite'a yazıldı ama Supabase sync başarısız: ${full.institution_id}`
+        );
+      }
+    }
     return res.status(201).json({ business });
   } catch (err) {
     return res.status(400).json({ error: err.message || "İşletme oluşturulamadı." });
   }
 });
 
-app.put("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
+app.put("/api/admin/businesses/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
@@ -1100,7 +1107,14 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
       branch_limit: req.body?.branch_limit,
     });
     const full = getInstitutionFullById(id);
-    if (full) syncInstitutionUpsert(full);
+    if (full) {
+      const synced = await syncInstitutionUpsert(full);
+      if (!synced) {
+        console.error(
+          `[ADMIN] İşletme güncellendi ama Supabase sync başarısız: ${full.institution_id}`
+        );
+      }
+    }
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
