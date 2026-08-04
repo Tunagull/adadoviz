@@ -568,7 +568,7 @@ app.post("/api/forgot-password", async (req, res) => {
       console.error("[AUTH] forgot-password: GMAIL_USER / GMAIL_PASS tanımlı değil.");
       return res.status(503).json({
         error:
-          "E-posta servisi yapılandırılmamış. Lütfen yöneticiye bildirin veya daha sonra tekrar deneyin.",
+          "E-posta servisi yapılandırılmamış. Render → Environment’ta GMAIL_USER, GMAIL_PASS (Gmail App Password) ve FRONTEND_URL tanımlayın.",
       });
     }
 

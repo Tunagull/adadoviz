@@ -26,6 +26,7 @@ import { HeaderActions } from "../components/HeaderActions";
 import { DualRangeSlider } from "../components/DualRangeSlider";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { shouldShowTestBadge } from "../lib/subscriptionBadge";
+import { getCroppedImg } from "../components/LogoCropModal";
 import "leaflet/dist/leaflet.css";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -885,39 +886,8 @@ export function InstitutionAdminPage() {
     }
   };
 
-  // ✅ Kırpılmış görseli canvas'tan blob'a çevir
-  const getCroppedImage = async (imageSrc, crop) => {
-    const image = new Image();
-    image.src = imageSrc;
-    
-    return new Promise((resolve) => {
-      image.onload = () => {
-        const canvas = document.createElement("canvas");
-        const scaleX = image.naturalWidth / image.width;
-        const scaleY = image.naturalHeight / image.height;
-        
-        canvas.width = crop.width;
-        canvas.height = crop.height;
-        
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(
-          image,
-          crop.x * scaleX,
-          crop.y * scaleY,
-          crop.width * scaleX,
-          crop.height * scaleY,
-          0,
-          0,
-          crop.width,
-          crop.height
-        );
-        
-        canvas.toBlob((blob) => {
-          resolve(blob);
-        }, "image/png");
-      };
-    });
-  };
+  // ✅ Kırpılmış görseli 256px JPEG data URL olarak üret (Supabase sync dostu)
+  const getCroppedImage = async (imageSrc, crop) => getCroppedImg(imageSrc, crop, 256);
 
   // ✅ onCropComplete callback
   const handleCropComplete = (croppedArea, croppedAreaPixels) => {
@@ -929,13 +899,7 @@ export function InstitutionAdminPage() {
     if (!logoPreviewUrl || !logoCroppedArea || !auth?.token) return;
     setLogoLoading(true);
     try {
-      const blob = await getCroppedImage(logoPreviewUrl, logoCroppedArea);
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      const dataUrl = await getCroppedImage(logoPreviewUrl, logoCroppedArea);
       await updateBusinessProfile(auth.token, { logo_url: dataUrl });
       setProfileLogoUrl(dataUrl);
       setShowLogoModal(false);

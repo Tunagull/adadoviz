@@ -78,47 +78,55 @@ async function syncInstitutionUpsert(row) {
   // Eski şemada olmayan alanları baştan çıkar (email sync'inin düşmesini engelle)
   payload = stripUnknownInstitutionColumns(payload);
 
-  const tryUpsert = async (body, label) => {
+  const logoUrl = payload.logo_url || null;
+  // Önce çekirdek alanları yaz (logo ayrı — büyük data URL tüm upsert'i düşürmesin)
+  const { logo_url: _omitFromCore, ...corePayload } = payload;
+
+  const tryUpsert = async (body) => {
     const { error } = await supabase
       .from("institutions")
       .upsert(body, { onConflict: "institution_id" });
     if (error) throw error;
-    return true;
   };
 
   try {
-    await tryUpsert(payload, "institution.upsert");
-    return true;
+    await tryUpsert(corePayload);
   } catch (err) {
     const missing = parseMissingColumn(err);
-    if (missing && payload[missing] !== undefined) {
-      payload = stripUnknownInstitutionColumns(payload, missing);
+    if (missing && corePayload[missing] !== undefined) {
+      const stripped = stripUnknownInstitutionColumns(corePayload, missing);
       logErr(
         "institution.upsert",
         `${missing} kolonu Supabase'te yok — alansız tekrar deneniyor. (${err.message})`
       );
       try {
-        await tryUpsert(payload, "institution.upsert.retry");
-        return true;
+        await tryUpsert(stripped);
       } catch (err2) {
         logErr("institution.upsert.retry", err2);
+        return false;
       }
     } else {
       logErr("institution.upsert", err);
+      return false;
     }
   }
 
-  // Büyük logo PostgREST limitine takılırsa logosuz alanlarla tekrar dene
-  if (payload.logo_url) {
-    const { logo_url: _omitLogo, ...withoutLogo } = payload;
-    return safe("institution.upsert.without_logo", async () => {
+  if (logoUrl) {
+    const logoOk = await safe("institution.logo_update", async () => {
       const { error } = await supabase
         .from("institutions")
-        .upsert(withoutLogo, { onConflict: "institution_id" });
+        .update({ logo_url: logoUrl, updated_at: new Date().toISOString() })
+        .eq("institution_id", payload.institution_id);
       if (error) throw error;
     });
+    if (!logoOk) {
+      console.warn(
+        `[SUPABASE-SYNC] Logo Supabase'e yazılamadı (${payload.institution_id}). Çekirdek kayıt OK; logoyu yeniden yükleyin veya daha küçük görsel kullanın.`
+      );
+    }
   }
-  return false;
+
+  return true;
 }
 
 async function syncInstitutionDelete(institutionId) {

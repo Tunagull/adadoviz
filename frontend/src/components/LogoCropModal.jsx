@@ -40,7 +40,7 @@ export async function getCroppedImg(imageSrc, pixelCrop, outputSize = 256) {
     outputSize
   );
 
-  return canvas.toDataURL("image/jpeg", 0.85);
+  return canvas.toDataURL("image/jpeg", 0.72);
 }
 
 export function LogoCropModal({ imageSrc, onConfirm, onClose }) {

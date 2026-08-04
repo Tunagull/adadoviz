@@ -1142,11 +1142,25 @@ function createBusiness({
 
   // Bilinen banka adına eşleşirse dashboard kartıyla aynı institution_id kullan
   const known = findInstitutionByName(cleanName);
-  const slug =
+  const userSlug =
     cleanUsername
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_|_$/g, "") || `biz_${Date.now()}`;
+      .replace(/^_|_$/g, "") || "";
+  const nameSlug =
+    cleanName
+      .toLocaleLowerCase("tr-TR")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "") || "";
+  // Çok kısa giriş ID (örn. "x") institution_id olmasın — isim slug'ı tercih et
+  const slug =
+    (userSlug.length >= 3 ? userSlug : null) ||
+    (nameSlug.length >= 3 ? nameSlug : null) ||
+    userSlug ||
+    nameSlug ||
+    `biz_${Date.now()}`;
   const institutionId = known?.id || slug;
 
   const selectAfterInsert = `SELECT id, username, institution_id, institution_name, role, subscription, subscription_type, subscription_end_date, is_active, COALESCE(branch_limit, 1) AS branch_limit, logo_url, email, contact_person, created_at
