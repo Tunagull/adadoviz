@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { HeaderActions } from "../components/HeaderActions";
 import { Helmet } from "react-helmet-async";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Lock, KeyRound, CheckCircle2 } from "lucide-react";
@@ -52,7 +53,14 @@ export function ResetPasswordPage() {
   };
 
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-md items-center px-4 py-12">
+    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4 py-12">
+      {/*
+        Tutarlılık: dil ve tema anahtarları diğer tüm sayfalarda var,
+        yalnızca bu sayfada eksikti.
+      */}
+      <div className="mb-6 flex justify-end">
+        <HeaderActions compact />
+      </div>
       {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
       <Helmet>
         <title>Şifre Sıfırlama | AdaDöviz</title>
