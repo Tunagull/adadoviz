@@ -35,9 +35,9 @@ export function CookieConsent() {
   if (!visible) return null;
 
   return (
-    <div className="fixed bottom-0 inset-x-0 z-[4000] p-3 sm:p-4 pointer-events-none">
-      <div className="pointer-events-auto mx-auto flex w-[95%] max-w-4xl flex-col gap-3 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-2xl shadow-black/10 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5 dark:border-slate-700 dark:bg-slate-900/95 dark:shadow-black/40">
-        <p className="text-xs leading-relaxed text-slate-600 sm:text-sm dark:text-slate-300">
+    <div className="fixed bottom-0 inset-x-0 z-modal p-3 sm:p-4 pointer-events-none">
+      <div className="pointer-events-auto mx-auto flex w-[95%] max-w-4xl flex-col gap-3 rounded-2xl border border-ink-200 bg-white/95 p-4 shadow-2xl shadow-black/10 backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5 dark:border-ink-700 dark:bg-ink-900/95 dark:shadow-black/40">
+        <p className="text-xs leading-relaxed text-ink-600 sm:text-sm dark:text-ink-300">
           Size daha iyi bir hizmet sunabilmek ve site trafiğimizi analiz edebilmek için çerezleri
           kullanıyoruz. Kabul ederek GDPR/KVKK standartlarına uygun olarak anonim veri işlememize
           izin vermiş olursunuz.
@@ -46,14 +46,15 @@ export function CookieConsent() {
           <button
             type="button"
             onClick={handleReject}
-            className="px-4 py-2 text-sm font-medium text-slate-500 transition hover:text-slate-800 dark:text-slate-400 dark:hover:text-white"
+            className="min-h-[2.75rem] rounded-control px-4 py-2 text-sm font-medium text-ink-600 transition hover:text-ink-900 dark:text-ink-300 dark:hover:text-white"
           >
             Reddet
           </button>
           <button
             type="button"
             onClick={handleAccept}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-500"
+            /* A-05: beyaz yazı emerald-600 üzerinde 3.77 idi (gereken 4.5). */
+            className="min-h-[2.75rem] rounded-control bg-success-700 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-success-700/30 transition hover:bg-success-600"
           >
             Kabul Et
           </button>

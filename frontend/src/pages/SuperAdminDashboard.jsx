@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
+import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
   Activity,
   AlertTriangle,
+  HeartPulse,
   Building2,
   Check,
   CheckCircle2,
@@ -37,13 +39,13 @@ import {
   updateAdminBranchRequest,
   fetchAdminBranches,
   updateAdminBranch,
+  fetchAdminSystemHealth,
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
 import { HeaderActions } from "../components/HeaderActions";
 import { SearchableSelect } from "../components/SearchableSelect";
 
-const BUSINESS_ACTION_TYPES = ["profile", "margin", "branch"];
 
 /** Aylık 500 ₺ · Yıllık 5000 ₺ · Test ücretsiz · Manuel elle girilir */
 function defaultSubscriptionPrice(subscriptionType) {
@@ -148,12 +150,16 @@ function BranchQuotaBadge({ used, limit }) {
   const lim = Math.max(1, Number(limit) || 1);
   const label = `${u}/${lim}`;
   if (u > lim) {
+    // U-12: limit sonradan düşürülünce mevcut şubeler kalıyor; sadece "2/1"
+    // yazmak yerine durumun ne anlama geldiğini açıkça söyle.
+    const msg = `Şube limiti aşıldı: ${u} şube var, limit ${lim}`;
     return (
       <span
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400"
-        title="Şube limiti aşıldı"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-danger-700 dark:text-danger-400"
+        title={msg}
+        aria-label={msg}
       >
-        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+        <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
         {label}
       </span>
     );
@@ -161,7 +167,7 @@ function BranchQuotaBadge({ used, limit }) {
   if (u < lim) {
     return (
       <span
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400"
+        className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning-600 dark:text-warning-400"
         title="Eksik şube"
       >
         <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
@@ -171,7 +177,7 @@ function BranchQuotaBadge({ used, limit }) {
   }
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+      className="inline-flex items-center gap-1.5 text-xs font-semibold text-success-700 dark:text-success-400"
       title="Şube limiti dolu"
     >
       <CheckCircle2 className="size-3.5 shrink-0" aria-hidden />
@@ -204,7 +210,7 @@ function SubscriptionFields({ form, setForm }) {
   return (
     <>
       <div className="flex flex-col gap-2">
-        <label className="text-xs text-slate-500 font-medium dark:text-slate-400">{t("subscriptionTypeLabel")}</label>
+        <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("subscriptionTypeLabel")}</label>
         <SearchableSelect
           value={form.subscriptionType}
           onChange={(subscriptionType) =>
@@ -225,23 +231,23 @@ function SubscriptionFields({ form, setForm }) {
       {form.subscriptionType === "Manuel" && (
         <>
           <div className="flex flex-col gap-2 mt-1">
-            <label className="text-xs text-slate-500 font-medium dark:text-slate-400">{t("customDaysLabel")}</label>
+            <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("customDaysLabel")}</label>
             <input
               type="number"
               value={form.manualDays}
               onChange={(e) => setForm((prev) => ({ ...prev, manualDays: e.target.value }))}
-              className="bg-white border border-slate-200 text-slate-800 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200"
+              className="bg-white border border-ink-200 text-ink-800 rounded-lg px-4 py-2 focus:outline-none focus:border-success-500 dark:bg-ink-900 dark:border-ink-700 dark:text-ink-200"
               placeholder={t("customDaysPlaceholder")}
             />
           </div>
           <div className="flex flex-col gap-2 mt-1">
-            <label className="text-xs text-slate-500 font-medium dark:text-slate-400">{t("customPriceLabel")}</label>
+            <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("customPriceLabel")}</label>
             <input
               type="number"
               min="0"
               value={form.price}
               onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
-              className="bg-white border border-slate-200 text-slate-800 rounded-lg px-4 py-2 focus:outline-none focus:border-emerald-500 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-200"
+              className="bg-white border border-ink-200 text-ink-800 rounded-lg px-4 py-2 focus:outline-none focus:border-success-500 dark:bg-ink-900 dark:border-ink-700 dark:text-ink-200"
               placeholder={t("customPricePlaceholder")}
             />
           </div>
@@ -257,19 +263,19 @@ function SubscriptionPreview({ currentDays, newDays, price, lang, t }) {
   const afterLabel =
     newDays == null ? t("unlimitedSubscription") : `${newDays} ${t("daysUnit")}`;
   return (
-    <div className="mt-2 flex w-fit flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+    <div className="mt-2 flex w-fit flex-wrap items-center gap-3 rounded-lg border border-ink-200 bg-ink-50 p-3 dark:border-ink-800 dark:bg-ink-900/50">
       <div className="flex flex-col items-center">
-        <span className="mb-1 text-[10px] text-slate-500 dark:text-slate-400">{t("currentRemainingLabel")}</span>
-        <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{currentLabel}</span>
+        <span className="mb-1 text-[10px] text-ink-500 dark:text-ink-400">{t("currentRemainingLabel")}</span>
+        <span className="text-sm font-semibold text-ink-700 dark:text-ink-300">{currentLabel}</span>
       </div>
-      <ArrowRight className="text-slate-400 dark:text-slate-500" size={16} />
+      <ArrowRight className="text-ink-600 dark:text-ink-400" size={16} />
       <div className="flex flex-col items-center">
-        <span className="mb-1 text-[10px] text-emerald-600/80 dark:text-emerald-500/70">{t("afterUpdateLabel")}</span>
-        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{afterLabel}</span>
+        <span className="mb-1 text-[10px] text-success-700 dark:text-success-400/80 dark:text-success-500/70">{t("afterUpdateLabel")}</span>
+        <span className="text-sm font-bold text-success-700 dark:text-success-400">{afterLabel}</span>
       </div>
-      <div className="ml-1 flex flex-col items-center border-l border-slate-200 pl-3 dark:border-slate-700">
-        <span className="mb-1 text-[10px] text-teal-600/80 dark:text-teal-400/70">{t("subscriptionPriceLabel")}</span>
-        <span className="text-sm font-bold tabular-nums text-teal-700 dark:text-teal-300">
+      <div className="ml-1 flex flex-col items-center border-l border-ink-200 pl-3 dark:border-ink-700">
+        <span className="mb-1 text-[10px] text-brand-600/80 dark:text-brand-400/70">{t("subscriptionPriceLabel")}</span>
+        <span className="text-sm font-bold tabular-nums text-brand-700 dark:text-brand-300">
           {formatMoneyTry(price, lang)}
         </span>
       </div>
@@ -285,8 +291,8 @@ function SubscriptionLedgerButton({ active, onClick }) {
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all duration-300 sm:text-sm ${
         active
-          ? "border-cyan-500/40 bg-cyan-500/20 text-cyan-700 shadow-[0_0_12px_rgba(34,211,238,0.35)] dark:text-cyan-300"
-          : "border-slate-200 bg-white text-slate-600 hover:border-cyan-400 hover:text-cyan-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400"
+          ? "border-brand-500/40 bg-brand-500/20 text-brand-700 shadow-[0_0_12px_rgba(34,211,238,0.35)] dark:text-brand-300"
+          : "border-ink-200 bg-white text-ink-600 hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
       }`}
       title={t("subscriptionLedgerTitle")}
     >
@@ -299,7 +305,7 @@ function SubscriptionLedgerButton({ active, onClick }) {
 function DateRangeFilter({ from, to, onFromChange, onToChange, t }) {
   return (
     <div
-      className="flex h-10 items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100"
+      className="flex h-10 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-950 px-2 text-xs text-ink-100"
       title={t("dateRangeLabel")}
     >
       <input
@@ -308,16 +314,16 @@ function DateRangeFilter({ from, to, onFromChange, onToChange, t }) {
         max={to || undefined}
         onChange={(e) => onFromChange(e.target.value)}
         aria-label={t("dateFromLabel")}
-        className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none [color-scheme:dark]"
+        className="min-w-0 flex-1 bg-transparent text-ink-100 outline-none [color-scheme:dark]"
       />
-      <span className="text-slate-500">–</span>
+      <span className="text-ink-500">–</span>
       <input
         type="date"
         value={to}
         min={from || undefined}
         onChange={(e) => onToChange(e.target.value)}
         aria-label={t("dateToLabel")}
-        className="min-w-0 flex-1 bg-transparent text-slate-100 outline-none [color-scheme:dark]"
+        className="min-w-0 flex-1 bg-transparent text-ink-100 outline-none [color-scheme:dark]"
       />
     </div>
   );
@@ -364,6 +370,9 @@ export function SuperAdminDashboard() {
   const [analyticsData, setAnalyticsData] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState("");
+  const [healthData, setHealthData] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState("");
   const [filterBusiness, setFilterBusiness] = useState("");
   const [filterCurrency, setFilterCurrency] = useState("");
   const [filterAction, setFilterAction] = useState("");
@@ -396,6 +405,7 @@ export function SuperAdminDashboard() {
       { id: "list", label: t("tabList") },
       { id: "create", label: t("tabCreate") },
       { id: "requests", label: t("tabRequests") },
+      { id: "health", label: t("tabHealth") },
     ],
     [t]
   );
@@ -445,6 +455,27 @@ export function SuperAdminDashboard() {
       cancelled = true;
     };
   }, [showLogModal, token]);
+
+  const loadSystemHealth = useCallback(async () => {
+    if (!token) return;
+    setHealthLoading(true);
+    setHealthError("");
+    try {
+      const data = await fetchAdminSystemHealth(token);
+      setHealthData(data);
+    } catch (err) {
+      setHealthError(err.message || t("healthDriftUnavailable"));
+      setHealthData(null);
+    } finally {
+      setHealthLoading(false);
+    }
+  }, [token, t]);
+
+  useEffect(() => {
+    if (tab !== "health" || !token) return undefined;
+    loadSystemHealth();
+    return undefined;
+  }, [tab, token, loadSystemHealth]);
 
   const loadBranchRequestUnread = useCallback(async () => {
     if (!token) return;
@@ -581,11 +612,6 @@ export function SuperAdminDashboard() {
     return businessLedger.filter((row) => row.businessName === name);
   }, [businessLedger, editForm.institution_name]);
 
-  const editSubscriptionLedger = useMemo(() => {
-    const name = editForm.institution_name;
-    if (!name) return [];
-    return subscriptionLedger.filter((row) => row.businessName === name);
-  }, [subscriptionLedger, editForm.institution_name]);
 
   const openSubscriptionLedger = (scopeBusiness = null) => {
     if (ledgerView === "subscription" && !scopeBusiness && !ledgerScopeBusiness) {
@@ -620,9 +646,9 @@ export function SuperAdminDashboard() {
   }, [businessLedger, bizLogBusiness, bizLogActionType, logDateFrom, logDateTo]);
 
   const actionTypeBadgeClass = {
-    profile: "border-indigo-500/30 bg-indigo-500/10 text-indigo-300",
-    margin: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
-    branch: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    profile: "border-brand-500/30 bg-brand-500/10 text-brand-300",
+    margin: "border-success-500/30 bg-success-500/10 text-success-300",
+    branch: "border-warning-500/30 bg-warning-500/10 text-warning-300",
   };
 
   function actionTypeLabel(type) {
@@ -730,6 +756,13 @@ export function SuperAdminDashboard() {
       document.body.style.overflow = prev;
     };
   }, [showEditModal]);
+
+  /** U-12: düzenlenen işletmenin mevcut şube sayısı (limit uyarısı için). */
+  const editBranchCount = useMemo(() => {
+    if (!editForm.id) return 0;
+    const row = businesses.find((b) => b.id === editForm.id);
+    return Number(row?.branch_count) || 0;
+  }, [businesses, editForm.id]);
 
   const openEdit = (biz) => {
     setEditForm({
@@ -1076,19 +1109,24 @@ export function SuperAdminDashboard() {
 
   if (bootstrapping || !isSuperAdmin) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center text-slate-500 text-sm dark:text-slate-400">
+      <div className="min-h-[60vh] flex items-center justify-center text-ink-500 text-sm dark:text-ink-400">
         {t("loadingGeneric")}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-8 text-slate-800 dark:text-slate-100">
+    <div className="mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-8 text-ink-800 dark:text-ink-100">
+      {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
+      <Helmet>
+        <title>Super Admin Paneli | AdaDöviz</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
       <div className="mb-4">
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
         >
           <ArrowLeft className="size-4" />
           {t("backToDashboardLink")}
@@ -1097,12 +1135,12 @@ export function SuperAdminDashboard() {
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8 sm:gap-4">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="rounded-xl bg-gradient-to-tr from-teal-500 to-indigo-500 p-2.5 text-white shadow-lg shadow-teal-900/30">
+          <div className="rounded-xl bg-gradient-to-tr bg-brand-gradient p-2.5 text-white shadow-lg shadow-brand-900/30">
             <Shield className="size-5" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-xl font-bold text-slate-900 dark:text-white sm:text-2xl">{t("superAdminTitle")}</h1>
-            <p className="truncate text-sm text-slate-500 dark:text-slate-400">
+            <h1 className="text-xl font-bold text-ink-900 dark:text-white sm:text-2xl">{t("superAdminTitle")}</h1>
+            <p className="truncate text-sm text-ink-500 dark:text-ink-400">
               {auth?.username} · {t("superAdminSubtitle")}
             </p>
           </div>
@@ -1116,7 +1154,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={openSeoModal}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
             <Search size={18} />
             {t("seoButton")}
@@ -1124,7 +1162,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={() => setShowLogModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
           >
             <Activity size={18} />
             {t("logsButton")}
@@ -1132,7 +1170,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-red-500 hover:text-red-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-red-500 dark:hover:text-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-danger-500 hover:text-danger-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
           >
             <LogOut size={16} />
             {t("logoutShort")}
@@ -1140,7 +1178,7 @@ export function SuperAdminDashboard() {
         </div>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
+      <div className="mb-6 flex flex-wrap gap-2 border-b border-ink-200 pb-3 dark:border-ink-800">
         {TABS.map((item) => (
           <button
             key={item.id}
@@ -1152,13 +1190,13 @@ export function SuperAdminDashboard() {
             }}
             className={`relative inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-300 ${
               tab === item.id
-                ? "bg-cyan-500/20 text-cyan-700 border border-cyan-500/40 dark:text-cyan-300"
-                : "text-slate-500 border border-transparent hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:bg-slate-100 dark:text-slate-400 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:bg-slate-800/80 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                ? "bg-brand-500/20 text-brand-700 border border-brand-500/40 dark:text-brand-300"
+                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
             }`}
           >
             {item.label}
             {item.id === "requests" && branchRequestUnread > 0 ? (
-              <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-rose-500 px-1 py-0.5 text-[10px] font-bold leading-none text-white shadow">
+              <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-danger-500 px-1 py-0.5 text-[10px] font-bold leading-none text-white shadow">
                 {branchRequestUnread > 99 ? "99+" : branchRequestUnread}
               </span>
             ) : null}
@@ -1167,46 +1205,138 @@ export function SuperAdminDashboard() {
       </div>
 
       {error ? (
-        <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+        <div className="mb-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm text-danger-700 dark:text-danger-200">
           {error}
         </div>
       ) : null}
       {success ? (
-        <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+        <div className="mb-4 rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-sm text-success-700 dark:text-success-200">
           {success}
         </div>
       ) : null}
 
       {tab === "list" && (
-        <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden dark:border-slate-800 dark:bg-slate-900/80">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-            <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200">
-              <Building2 size={18} className="text-teal-600 dark:text-teal-400" />
+        <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
+            <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
+              <Building2 size={18} className="text-brand-600 dark:text-brand-400" />
               <h2 className="font-semibold">{t("tabList")}</h2>
             </div>
             <button
               type="button"
               onClick={loadBusinesses}
-              className="text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              className="text-xs text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
             >
               {t("refresh")}
             </button>
           </div>
 
           {loading ? (
-            <p className="p-6 text-sm text-slate-500 dark:text-slate-400">{t("loadingList")}</p>
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("loadingList")}</p>
           ) : businesses.length === 0 ? (
-            <p className="p-6 text-sm text-slate-500 dark:text-slate-400">{t("noBusinessesYet")}</p>
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("noBusinessesYet")}</p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[880px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 dark:bg-slate-950/80 dark:text-slate-500">
+            <>
+            <div className="space-y-3 p-3 md:hidden">
+              {businesses.map((biz) => {
+                const used = Number(biz.branch_count) || 0;
+                const limit = Math.max(1, Number(biz.branch_limit) || 1);
+                const isActive = biz.is_active !== false;
+                const toggleDisabled = togglingId === biz.id;
+                return (
+                  <article
+                    key={biz.id}
+                    className="rounded-xl border border-ink-200 bg-ink-50 p-4 dark:border-ink-800 dark:bg-ink-950/60"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-ink-900 dark:text-white">{biz.institution_name}</p>
+                        <button
+                          type="button"
+                          onClick={() => openEdit(biz)}
+                          className="mt-0.5 font-mono text-sm text-brand-700 underline-offset-2 hover:underline dark:text-brand-300"
+                        >
+                          {biz.username}
+                        </button>
+                        <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                          ID {biz.id} · {formatRegistrationDate(biz.created_at)}
+                        </p>
+                        <p className="mt-0.5 text-xs text-ink-500 dark:text-ink-400">
+                          {t("colLastLogin")}:{" "}
+                          {biz.last_login_at
+                            ? formatRequestDateTime(biz.last_login_at)
+                            : t("neverLoggedIn")}
+                        </p>
+                      </div>
+                      <BranchQuotaBadge used={used} limit={limit} />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isActive}
+                        /* A-02: 21 durum anahtarının hiçbirinin erişilebilir adı
+                           yoktu; ekran okuyucu 21 kez "anahtar, işaretli değil"
+                           diyor, hangi işletme olduğu belirsiz kalıyordu. */
+                        aria-label={`${biz.institution_name} — ${isActive ? t("statusActive") : t("statusInactive")}`}
+                        disabled={toggleDisabled}
+                        onClick={() => handleToggleStatus(biz)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
+                          isActive
+                            ? "border-success-500/50 bg-success-500/80"
+                            : "border-ink-300 bg-ink-300 dark:border-ink-600 dark:bg-ink-700"
+                        } ${toggleDisabled ? "opacity-60 cursor-not-allowed" : ""}`}
+                      >
+                        <span
+                          className={`inline-block size-4 transform rounded-full bg-white shadow transition ${
+                            isActive ? "translate-x-6" : "translate-x-1"
+                          }`}
+                        />
+                      </button>
+                      <span className={`text-[11px] ${isActive ? "text-success-700 dark:text-success-400" : "text-danger-700 dark:text-danger-400"}`}>
+                        {isActive ? t("statusActive") : t("statusInactive")}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(biz)}
+                        className="btn-ghost !px-3 !py-1.5 !text-xs"
+                      >
+                        <Pencil size={14} />
+                        {t("editBtn")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openBranchSubscriptionModal(biz)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-700 dark:text-brand-300"
+                      >
+                        <CreditCard size={14} />
+                        {t("addSubscriptionBtn")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBusinessToDelete(biz)}
+                        className="btn-danger !px-3 !py-1.5 !text-xs"
+                      >
+                        <Trash2 size={14} />
+                        {t("deleteBtn")}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[1000px] text-left text-sm">
+                <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-500 dark:bg-ink-950/80 dark:text-ink-500">
                   <tr>
                     <th className="px-4 py-3 font-medium">{t("colId")}</th>
                     <th className="px-4 py-3 font-medium">{t("businessName")}</th>
                     <th className="px-4 py-3 font-medium">{t("colLoginId")}</th>
                     <th className="px-4 py-3 font-medium">{t("colBranchCount")}</th>
                     <th className="px-4 py-3 font-medium">{t("colRegisteredAt")}</th>
+                    <th className="px-4 py-3 font-medium">{t("colLastLogin")}</th>
                     <th className="px-4 py-3 font-medium">{t("colStatus")}</th>
                     <th className="px-4 py-3 font-medium text-right">{t("colAction")}</th>
                   </tr>
@@ -1218,36 +1348,53 @@ export function SuperAdminDashboard() {
                     const isActive = biz.is_active !== false;
                     const toggleDisabled = togglingId === biz.id;
                     return (
-                      <tr key={biz.id} className="border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800/80 dark:hover:bg-slate-800/40">
-                        <td className="px-4 py-3 text-slate-500 font-mono text-xs">{biz.id}</td>
-                        <td className="px-4 py-3 text-slate-800 dark:text-slate-100">{biz.institution_name}</td>
-                        <td className="px-4 py-3 text-slate-800 font-mono dark:text-slate-200">
+                      <tr key={biz.id} className="border-t border-ink-200 hover:bg-ink-50 dark:border-ink-800/80 dark:hover:bg-ink-800/40">
+                        <td className="px-4 py-3 text-ink-500 font-mono text-xs">{biz.id}</td>
+                        <td className="px-4 py-3 text-ink-800 dark:text-ink-100">{biz.institution_name}</td>
+                        <td className="px-4 py-3 text-ink-800 font-mono dark:text-ink-200">
                           <button
                             type="button"
                             onClick={() => openEdit(biz)}
                             title={t("editBtn")}
-                            className="font-mono text-cyan-700 underline-offset-2 transition hover:text-cyan-500 hover:underline dark:text-cyan-300 dark:hover:text-cyan-200"
+                            className="font-mono text-brand-700 underline-offset-2 transition hover:text-brand-500 hover:underline dark:text-brand-300 dark:hover:text-brand-200"
                           >
                             {biz.username}
                           </button>
+                          {/*
+                            U-14: Public URL'i (/doviz-burosu/:slug) ve logo ucunu
+                            belirleyen alan institution_id'dir ama panelde hiç
+                            gösterilmiyordu — "Cappy Exchange"in slug'ı tek harflik
+                            "x" olduğu halde yönetici bunu göremiyordu.
+                          */}
+                          {biz.institution_id && biz.institution_id !== biz.username ? (
+                            <p className="mt-0.5 font-mono text-[11px] text-ink-500 dark:text-ink-400">
+                              /{biz.institution_id}
+                            </p>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3">
                           <BranchQuotaBadge used={used} limit={limit} />
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap dark:text-slate-300">
+                        <td className="px-4 py-3 text-xs text-ink-600 whitespace-nowrap dark:text-ink-300">
                           {formatRegistrationDate(biz.created_at)}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-ink-600 whitespace-nowrap dark:text-ink-300">
+                          {biz.last_login_at
+                            ? formatRequestDateTime(biz.last_login_at)
+                            : t("neverLoggedIn")}
                         </td>
                         <td className="px-4 py-3">
                           <button
                             type="button"
                             role="switch"
                             aria-checked={isActive}
+                            aria-label={`${biz.institution_name} — ${isActive ? t("statusActive") : t("statusInactive")}`}
                             disabled={toggleDisabled}
                             onClick={() => handleToggleStatus(biz)}
                             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition ${
                               isActive
-                                ? "border-emerald-500/50 bg-emerald-500/80"
-                                : "border-slate-300 bg-slate-300 dark:border-slate-600 dark:bg-slate-700"
+                                ? "border-success-500/50 bg-success-500/80"
+                                : "border-ink-300 bg-ink-300 dark:border-ink-600 dark:bg-ink-700"
                             } ${toggleDisabled ? "opacity-60 cursor-not-allowed" : ""}`}
                             title={
                               isActive
@@ -1261,7 +1408,7 @@ export function SuperAdminDashboard() {
                               }`}
                             />
                           </button>
-                          <span className={`ml-2 text-[11px] ${isActive ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                          <span className={`ml-2 text-[11px] ${isActive ? "text-success-700 dark:text-success-400" : "text-danger-700 dark:text-danger-400"}`}>
                             {isActive ? t("statusActive") : t("statusInactive")}
                           </span>
                         </td>
@@ -1270,7 +1417,7 @@ export function SuperAdminDashboard() {
                             <button
                               type="button"
                               onClick={() => openEdit(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                             >
                               <Pencil size={14} />
                               {t("editBtn")}
@@ -1278,7 +1425,7 @@ export function SuperAdminDashboard() {
                             <button
                               type="button"
                               onClick={() => openBranchSubscriptionModal(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-700 transition hover:border-cyan-400 dark:text-cyan-300"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:border-brand-400 dark:text-brand-300"
                             >
                               <CreditCard size={14} />
                               {t("addSubscriptionBtn")}
@@ -1286,7 +1433,7 @@ export function SuperAdminDashboard() {
                             <button
                               type="button"
                               onClick={() => setBusinessToDelete(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-red-500 bg-transparent px-3 py-1.5 text-xs font-medium text-red-600 transition-all duration-300 hover:bg-red-500/10 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:text-red-400 dark:hover:border-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+                              className="btn-danger !px-3 !py-1.5 !text-xs"
                             >
                               <Trash2 size={14} />
                               {t("deleteBtn")}
@@ -1299,13 +1446,14 @@ export function SuperAdminDashboard() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </section>
       )}
 
       {showEditModal && editForm.id ? (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -1315,21 +1463,21 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          <div role="dialog" aria-modal="true"
+            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="shrink-0 border-b border-slate-200 px-5 pb-3 pt-5 dark:border-slate-800 md:px-6">
+            <div className="shrink-0 border-b border-ink-200 px-5 pb-3 pt-5 dark:border-ink-800 md:px-6">
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  <h2 className="text-lg font-semibold text-ink-900 dark:text-white">
                     {editPanelTab === "edit"
                       ? t("editBusinessTitle")
                       : editPanelTab === "business"
                         ? t("businessLedgerTitle")
                         : t("addSubscriptionTitle")}
                   </h2>
-                  <span className="mt-0.5 block truncate text-sm font-mono text-cyan-600 dark:text-cyan-300">
+                  <span className="mt-0.5 block truncate text-sm font-mono text-brand-600 dark:text-brand-300">
                     {editForm.username}
                     {editForm.institution_name ? ` · ${editForm.institution_name}` : ""}
                   </span>
@@ -1339,7 +1487,7 @@ export function SuperAdminDashboard() {
                   <button
                     type="button"
                     onClick={closeEditModal}
-                    className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                    className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                     aria-label={t("cancel")}
                   >
                     <X size={22} />
@@ -1347,7 +1495,7 @@ export function SuperAdminDashboard() {
                 </div>
               </div>
 
-              <div className="inline-flex w-full max-w-full flex-wrap rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-950/60 sm:w-auto">
+              <div className="inline-flex w-full max-w-full flex-wrap rounded-lg border border-ink-200 bg-ink-50 p-0.5 dark:border-ink-700 dark:bg-ink-950/60 sm:w-auto">
                 {[
                   { id: "edit", icon: Pencil, label: t("editBtn") },
                   { id: "business", icon: ClipboardList, label: t("businessLedgerShort") },
@@ -1359,8 +1507,8 @@ export function SuperAdminDashboard() {
                     onClick={() => setEditPanelTab(id)}
                     className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition sm:flex-none sm:text-sm ${
                       editPanelTab === id
-                        ? "bg-cyan-500/15 text-cyan-700 dark:text-cyan-300"
-                        : "text-slate-500 hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400"
+                        ? "bg-brand-500/15 text-brand-700 dark:text-brand-300"
+                        : "text-ink-500 hover:text-brand-600 dark:text-ink-400 dark:hover:text-brand-400"
                     }`}
                   >
                     <Icon size={14} />
@@ -1445,6 +1593,20 @@ export function SuperAdminDashboard() {
                         className={inputClass}
                         required
                       />
+                      {/*
+                        U-12: Limit mevcut şube sayısının altına indirilirse
+                        şubeler silinmez; kayıt "2/1" gibi tutarsız bir duruma
+                        düşer. Eskiden hiçbir uyarı yoktu.
+                      */}
+                      {editBranchCount > (parseInt(editForm.branchLimit, 10) || 1) ? (
+                        <p className="mt-1.5 flex items-start gap-1.5 text-xs font-medium text-warning-700 dark:text-warning-400">
+                          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                          <span>
+                            Bu işletmenin {editBranchCount} şubesi var. Limiti bunun altına
+                            indirmek mevcut şubeleri silmez; kayıt limit aşımı durumunda kalır.
+                          </span>
+                        </p>
+                      ) : null}
                     </Field>
 
                     <div className="mt-2 flex flex-wrap gap-3">
@@ -1454,14 +1616,14 @@ export function SuperAdminDashboard() {
                       <button
                         type="button"
                         onClick={closeEditModal}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                        className="rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition hover:border-ink-300 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300"
                       >
                         {t("cancel")}
                       </button>
                     </div>
                   </form>
 
-                  <hr className="my-8 border-slate-200 dark:border-slate-800" />
+                  <hr className="my-8 border-ink-200 dark:border-ink-800" />
 
                   <BusinessBranchesPanel
                     token={token}
@@ -1472,19 +1634,19 @@ export function SuperAdminDashboard() {
                 </>
               ) : editPanelTab === "business" ? (
                 editBusinessLedger.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                  <p className="py-8 text-center text-sm text-ink-500 dark:text-ink-400">
                     {t("ledgerEmpty")}
                   </p>
                 ) : (
-                  <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+                  <ul className="divide-y divide-ink-100 rounded-xl border border-ink-200 dark:divide-ink-800 dark:border-ink-800">
                     {editBusinessLedger.map((row) => {
                       const when = formatLedgerDateTime(row.timestamp);
                       return (
                         <li key={row.id} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-baseline sm:gap-3">
-                          <span className="shrink-0 font-mono text-xs text-slate-500 dark:text-slate-400 sm:w-36">
+                          <span className="shrink-0 font-mono text-xs text-ink-500 dark:text-ink-400 sm:w-36">
                             {when.label}
                           </span>
-                          <span className="text-sm text-slate-800 dark:text-slate-200">{row.description}</span>
+                          <span className="text-sm text-ink-800 dark:text-ink-200">{row.description}</span>
                         </li>
                       );
                     })}
@@ -1492,15 +1654,15 @@ export function SuperAdminDashboard() {
                 )
               ) : (
                 <div className="space-y-4">
-                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                  <p className="text-sm text-ink-600 dark:text-ink-300">
                     {t("addSubscriptionHint")}
                   </p>
                   {branchSubLoading ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
+                    <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
                   ) : branchSubError && branchSubList.length === 0 ? (
-                    <p className="text-sm text-rose-600 dark:text-rose-300">{branchSubError}</p>
+                    <p className="text-sm text-danger-700 dark:text-danger-300">{branchSubError}</p>
                   ) : branchSubList.length === 0 ? (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                    <p className="text-sm text-ink-500 dark:text-ink-400">
                       {t("noBranchesForSubscription")}
                     </p>
                   ) : (
@@ -1520,15 +1682,15 @@ export function SuperAdminDashboard() {
                               onClick={() => selectBranchForSubscription(branch)}
                               className={`w-full rounded-xl border px-4 py-3 text-left transition ${
                                 selected
-                                  ? "border-cyan-500/50 bg-cyan-500/10"
-                                  : "border-slate-200 bg-slate-50 hover:border-cyan-400/50 dark:border-slate-700 dark:bg-slate-950"
+                                  ? "border-brand-500/50 bg-brand-500/10"
+                                  : "border-ink-200 bg-ink-50 hover:border-brand-400/50 dark:border-ink-700 dark:bg-ink-950"
                               }`}
                             >
                               <div className="flex items-center justify-between gap-3">
-                                <span className="font-medium text-slate-900 dark:text-white">
+                                <span className="font-medium text-ink-900 dark:text-white">
                                   {branch.name}
                                   {!active ? (
-                                    <span className="ml-2 rounded bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-600 dark:text-rose-300">
+                                    <span className="ml-2 rounded bg-danger-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger-700 dark:text-danger-300">
                                       {t("statusInactive")}
                                     </span>
                                   ) : null}
@@ -1536,19 +1698,19 @@ export function SuperAdminDashboard() {
                                 <span
                                   className={`text-xs font-semibold ${
                                     !active
-                                      ? "text-slate-400"
+                                      ? "text-ink-600 dark:text-ink-400"
                                       : branch.subscription_type === "Test"
-                                        ? "text-cyan-600 dark:text-cyan-300"
+                                        ? "text-brand-600 dark:text-brand-300"
                                         : branch.days_remaining != null &&
                                             branch.days_remaining <= 30
-                                          ? "text-rose-600 dark:text-rose-400"
-                                          : "text-emerald-600 dark:text-emerald-400"
+                                          ? "text-danger-700 dark:text-danger-400"
+                                          : "text-success-700 dark:text-success-400"
                                   }`}
                                 >
                                   {rem}
                                 </span>
                               </div>
-                              <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                              <p className="mt-1 text-[11px] text-ink-500 dark:text-ink-400">
                                 {subscriptionTypeLabel(branch.subscription_type, t)}
                                 {" · "}
                                 {t("subscriptionStartDate")}:{" "}
@@ -1564,7 +1726,7 @@ export function SuperAdminDashboard() {
                   )}
 
                   {branchSubSelectedId ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 dark:border-slate-700 dark:bg-slate-950/60">
+                    <div className="rounded-xl border border-ink-200 bg-ink-50 p-4 space-y-3 dark:border-ink-700 dark:bg-ink-950/60">
                       <SubscriptionFields form={branchSubForm} setForm={setBranchSubForm} />
                       <SubscriptionPreview
                         currentDays={branchSubForm.currentRemainingDays}
@@ -1574,7 +1736,7 @@ export function SuperAdminDashboard() {
                         t={t}
                       />
                       {branchSubError ? (
-                        <p className="text-xs text-rose-600 dark:text-rose-300">{branchSubError}</p>
+                        <p className="text-xs text-danger-700 dark:text-danger-300">{branchSubError}</p>
                       ) : null}
                       <div className="flex flex-wrap gap-2">
                         <button
@@ -1589,7 +1751,7 @@ export function SuperAdminDashboard() {
                           type="button"
                           disabled={branchSubSaving}
                           onClick={handleExtendBranchOneMonth}
-                          className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 dark:text-cyan-300"
+                          className="rounded-lg border border-brand-500/40 bg-brand-500/10 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:border-brand-400 dark:text-brand-300"
                         >
                           {t("extendOneMonthBtn")}
                         </button>
@@ -1597,7 +1759,7 @@ export function SuperAdminDashboard() {
                           type="button"
                           disabled={branchSubSaving}
                           onClick={handleToggleBranchActive}
-                          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          className="rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-700 transition hover:border-ink-300 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200"
                         >
                           {branchSubList.find((b) => String(b.id) === String(branchSubSelectedId))
                             ?.is_active === false
@@ -1616,7 +1778,7 @@ export function SuperAdminDashboard() {
 
       {showBranchSubModal && branchSubBusiness ? (
         <div
-          className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -1626,20 +1788,20 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          <div role="dialog" aria-modal="true"
+            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800 md:px-6">
+            <div className="shrink-0 border-b border-ink-200 px-5 py-4 dark:border-ink-800 md:px-6">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  <h2 className="text-lg font-semibold text-ink-900 dark:text-white">
                     {t("addSubscriptionTitle")}
                   </h2>
-                  <p className="mt-0.5 truncate text-sm text-cyan-600 dark:text-cyan-300">
+                  <p className="mt-0.5 truncate text-sm text-brand-600 dark:text-brand-300">
                     {branchSubBusiness.institution_name || branchSubBusiness.username}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
                     {t("addSubscriptionHint")}
                   </p>
                 </div>
@@ -1648,7 +1810,7 @@ export function SuperAdminDashboard() {
                   <button
                     type="button"
                     onClick={closeBranchSubscriptionModal}
-                    className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                    className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                     aria-label={t("cancel")}
                   >
                     <X size={22} />
@@ -1659,11 +1821,11 @@ export function SuperAdminDashboard() {
 
             <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-6 space-y-4">
               {branchSubLoading ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
+                <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
               ) : branchSubError && branchSubList.length === 0 ? (
-                <p className="text-sm text-rose-600 dark:text-rose-300">{branchSubError}</p>
+                <p className="text-sm text-danger-700 dark:text-danger-300">{branchSubError}</p>
               ) : branchSubList.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">
+                <p className="text-sm text-ink-500 dark:text-ink-400">
                   {t("noBranchesForSubscription")}
                 </p>
               ) : (
@@ -1682,27 +1844,27 @@ export function SuperAdminDashboard() {
                           onClick={() => selectBranchForSubscription(branch)}
                           className={`w-full rounded-xl border px-4 py-3 text-left transition ${
                             selected
-                              ? "border-cyan-500/50 bg-cyan-500/10"
-                              : "border-slate-200 bg-slate-50 hover:border-cyan-400/50 dark:border-slate-700 dark:bg-slate-950"
+                              ? "border-brand-500/50 bg-brand-500/10"
+                              : "border-ink-200 bg-ink-50 hover:border-brand-400/50 dark:border-ink-700 dark:bg-ink-950"
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3">
-                            <span className="font-medium text-slate-900 dark:text-white">
+                            <span className="font-medium text-ink-900 dark:text-white">
                               {branch.name}
                             </span>
                             <span
                               className={`text-xs font-semibold ${
                                 branch.subscription_type === "Test"
-                                  ? "text-cyan-600 dark:text-cyan-300"
+                                  ? "text-brand-600 dark:text-brand-300"
                                   : branch.days_remaining != null && branch.days_remaining <= 30
-                                    ? "text-rose-600 dark:text-rose-400"
-                                    : "text-emerald-600 dark:text-emerald-400"
+                                    ? "text-danger-700 dark:text-danger-400"
+                                    : "text-success-700 dark:text-success-400"
                               }`}
                             >
                               {rem}
                             </span>
                           </div>
-                          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                          <p className="mt-1 text-[11px] text-ink-500 dark:text-ink-400">
                             {subscriptionTypeLabel(branch.subscription_type, t)}
                             {" · "}
                             {t("subscriptionStartDate")}:{" "}
@@ -1718,7 +1880,7 @@ export function SuperAdminDashboard() {
               )}
 
               {branchSubSelectedId ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3 dark:border-slate-700 dark:bg-slate-950/60">
+                <div className="rounded-xl border border-ink-200 bg-ink-50 p-4 space-y-3 dark:border-ink-700 dark:bg-ink-950/60">
                   <SubscriptionFields form={branchSubForm} setForm={setBranchSubForm} />
                   <SubscriptionPreview
                     currentDays={branchSubForm.currentRemainingDays}
@@ -1728,7 +1890,7 @@ export function SuperAdminDashboard() {
                     t={t}
                   />
                   {branchSubError ? (
-                    <p className="text-xs text-rose-600 dark:text-rose-300">{branchSubError}</p>
+                    <p className="text-xs text-danger-700 dark:text-danger-300">{branchSubError}</p>
                   ) : null}
                   <div className="flex flex-wrap gap-2">
                     <button
@@ -1743,7 +1905,7 @@ export function SuperAdminDashboard() {
                       type="button"
                       disabled={branchSubSaving}
                       onClick={handleExtendBranchOneMonth}
-                      className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 dark:text-cyan-300"
+                      className="rounded-lg border border-brand-500/40 bg-brand-500/10 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:border-brand-400 dark:text-brand-300"
                     >
                       {t("extendOneMonthBtn")}
                     </button>
@@ -1751,7 +1913,7 @@ export function SuperAdminDashboard() {
                       type="button"
                       disabled={branchSubSaving}
                       onClick={handleToggleBranchActive}
-                      className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                      className="rounded-lg border border-ink-200 bg-white px-4 py-2.5 text-sm font-medium text-ink-700 transition hover:border-ink-300 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200"
                     >
                       {branchSubList.find((b) => String(b.id) === String(branchSubSelectedId))
                         ?.is_active === false
@@ -1767,10 +1929,10 @@ export function SuperAdminDashboard() {
       ) : null}
 
       {tab === "create" && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 md:p-6 dark:border-slate-800 dark:bg-slate-900/80">
+        <section className="rounded-2xl border border-ink-200 bg-white p-5 md:p-6 dark:border-ink-800 dark:bg-ink-900/80">
           <div className="mb-4 flex items-center gap-2">
-            <Plus size={18} className="text-teal-600 dark:text-teal-400" />
-            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">{t("tabCreate")}</h2>
+            <Plus size={18} className="text-brand-600 dark:text-brand-400" />
+            <h2 className="text-lg font-semibold text-ink-900 dark:text-white">{t("tabCreate")}</h2>
           </div>
           <form onSubmit={handleCreate} className="grid gap-4 max-w-xl">
             <BusinessLogoField
@@ -1852,13 +2014,13 @@ export function SuperAdminDashboard() {
       )}
 
       {tab === "requests" && (
-        <section className="rounded-2xl border border-slate-200 bg-white overflow-hidden dark:border-slate-800 dark:bg-slate-900/80">
-          <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-            <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200">
-              <ClipboardList size={18} className="text-teal-600 dark:text-teal-400" />
+        <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
+            <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
+              <ClipboardList size={18} className="text-brand-600 dark:text-brand-400" />
               <h2 className="font-semibold">{t("tabRequests")}</h2>
               {branchRequestUnread > 0 ? (
-                <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                <span className="rounded-full bg-danger-500 px-2 py-0.5 text-[10px] font-bold text-white">
                   {branchRequestUnread}
                 </span>
               ) : null}
@@ -1866,20 +2028,20 @@ export function SuperAdminDashboard() {
             <button
               type="button"
               onClick={loadBranchRequests}
-              className="text-xs text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              className="text-xs text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
             >
               {t("refresh")}
             </button>
           </div>
 
           {branchRequestsLoading ? (
-            <p className="p-6 text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
           ) : branchRequestsError ? (
-            <p className="p-6 text-sm text-rose-600 dark:text-rose-300">{branchRequestsError}</p>
+            <p className="p-6 text-sm text-danger-700 dark:text-danger-300">{branchRequestsError}</p>
           ) : branchRequests.length === 0 ? (
-            <p className="p-6 text-sm text-slate-500 dark:text-slate-400">{t("requestsEmpty")}</p>
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("requestsEmpty")}</p>
           ) : (
-            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            <ul className="divide-y divide-ink-100 dark:divide-ink-800">
               {branchRequests.map((req) => {
                 const statusLabel =
                   req.status === "approved"
@@ -1889,48 +2051,48 @@ export function SuperAdminDashboard() {
                       : t("requestStatusPending");
                 const statusClass =
                   req.status === "approved"
-                    ? "text-emerald-600 dark:text-emerald-400"
+                    ? "text-success-700 dark:text-success-400"
                     : req.status === "rejected"
-                      ? "text-rose-600 dark:text-rose-400"
-                      : "text-amber-600 dark:text-amber-400";
+                      ? "text-danger-700 dark:text-danger-400"
+                      : "text-warning-600 dark:text-warning-400";
                 return (
                   <li
                     key={req.id}
                     className={`px-4 py-4 ${
                       req.status === "pending" && !req.is_read
-                        ? "bg-cyan-500/5 dark:bg-cyan-500/10"
+                        ? "bg-brand-500/5 dark:bg-brand-500/10"
                         : ""
                     }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 space-y-1">
-                        <p className="font-semibold text-slate-900 dark:text-white">
+                        <p className="font-semibold text-ink-900 dark:text-white">
                           {req.branch_name}
-                          <span className="ml-2 rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
+                          <span className="ml-2 rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300">
                             {req.request_type === "reactivate"
                               ? t("requestTypeRenew")
                               : t("requestTypeNew")}
                           </span>
                         </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                        <p className="text-xs text-ink-500 dark:text-ink-400">
                           {t("requestBusinessLabel")}: {req.business_name || req.institution_id}
                         </p>
                         {req.phone ? (
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
+                          <p className="text-xs text-ink-500 dark:text-ink-400">
                             {t("phoneLabel")}: {req.phone}
                           </p>
                         ) : null}
                         {req.address ? (
-                          <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
+                          <p className="text-xs text-ink-500 dark:text-ink-400 line-clamp-2">
                             {req.address}
                           </p>
                         ) : null}
                         {req.lat != null && req.lng != null ? (
-                          <p className="font-mono text-[10px] text-slate-500">
+                          <p className="font-mono text-[10px] text-ink-500">
                             {Number(req.lat).toFixed(5)}, {Number(req.lng).toFixed(5)}
                           </p>
                         ) : null}
-                        <p className="text-[11px] text-slate-400">
+                        <p className="text-[11px] text-ink-600 dark:text-ink-400">
                           {t("requestCreatedAt")}: {formatRequestDateTime(req.created_at)}
                         </p>
                         <p className={`text-xs font-semibold ${statusClass}`}>{statusLabel}</p>
@@ -1941,7 +2103,7 @@ export function SuperAdminDashboard() {
                             type="button"
                             disabled={branchRequestActingId === req.id}
                             onClick={() => handleBranchRequestAction(req.id, "approved")}
-                            className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-500/20 disabled:opacity-50 dark:text-emerald-300"
+                            className="inline-flex items-center gap-1 rounded-lg border border-success-500/40 bg-success-500/10 px-3 py-1.5 text-xs font-semibold text-success-700 transition hover:bg-success-500/20 disabled:opacity-50 dark:text-success-300"
                           >
                             <Check size={14} />
                             {t("approveRequestBtn")}
@@ -1950,7 +2112,7 @@ export function SuperAdminDashboard() {
                             type="button"
                             disabled={branchRequestActingId === req.id}
                             onClick={() => handleBranchRequestAction(req.id, "rejected")}
-                            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-500/20 disabled:opacity-50 dark:text-rose-300"
+                            className="inline-flex items-center gap-1 rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-semibold text-danger-700 transition hover:bg-danger-500/20 disabled:opacity-50 dark:text-danger-300"
                           >
                             <X size={14} />
                             {t("rejectRequestBtn")}
@@ -1966,9 +2128,163 @@ export function SuperAdminDashboard() {
         </section>
       )}
 
+      {tab === "health" && (
+        <section className="space-y-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <HeartPulse className="size-5 text-brand-600 dark:text-brand-400" />
+              <h2 className="font-semibold">{t("healthMonitorTitle")}</h2>
+            </div>
+            <button type="button" onClick={loadSystemHealth} className="text-xs text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white">
+              {t("refresh")}
+            </button>
+          </div>
+
+          {healthLoading ? (
+            <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+          ) : healthError ? (
+            <p className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm text-danger-700 dark:text-danger-200">
+              {healthError}
+            </p>
+          ) : healthData ? (
+            <>
+              <div className="grid gap-4 md:grid-cols-3">
+                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                    {t("healthMbRates")}
+                  </p>
+                  <p className="mt-2 text-sm text-ink-800 dark:text-ink-100">
+                    {t("healthLastFetch")}:{" "}
+                    {healthData.rates?.lastOkAt
+                      ? formatRequestDateTime(healthData.rates.lastOkAt)
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                    {t("healthLastAttempt")}:{" "}
+                    {healthData.rates?.lastAttemptAt
+                      ? formatRequestDateTime(healthData.rates.lastAttemptAt)
+                      : "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                    XML: {healthData.rates?.centralBankXmlDate || "—"}
+                    {healthData.rates?.source ? ` · ${healthData.rates.source}` : ""}
+                  </p>
+                  {healthData.rates?.lastError ? (
+                    <p className="mt-2 text-xs text-danger-700 dark:text-danger-400">
+                      {t("healthMbError")}: {healthData.rates.lastError}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                    {t("healthDualWrite")}
+                  </p>
+                  <p className="mt-2 text-2xl font-bold text-ink-900 dark:text-white">
+                    {healthData.dualWrite?.count || 0}
+                  </p>
+                  {(healthData.dualWrite?.recent || []).length === 0 ? (
+                    <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                      {t("healthDualWriteEmpty")}
+                    </p>
+                  ) : (
+                    <ul className="mt-2 max-h-32 space-y-1 overflow-y-auto text-xs text-danger-700 dark:text-danger-300">
+                      {(healthData.dualWrite.recent || []).slice(0, 5).map((err, idx) => (
+                        <li key={`${err.at}-${idx}`}>
+                          {err.op}: {err.message}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                    {t("healthDriftTitle")}
+                  </p>
+                  {healthData.drift?.ok === false ? (
+                    <p className="mt-2 text-sm text-warning-700 dark:text-warning-300">
+                      {t("healthDriftUnavailable")}
+                    </p>
+                  ) : (healthData.drift?.drifts || []).length === 0 ? (
+                    <p className="mt-2 text-sm text-success-700 dark:text-success-300">
+                      {t("healthDriftOk")}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-sm text-warning-700 dark:text-warning-300">
+                      {t("healthDriftWarn")} ({healthData.drift.drifts.length})
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {(healthData.drift?.drifts || []).length > 0 ? (
+                <div className="rounded-xl border border-warning-500/40 bg-warning-500/10 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-warning-800 dark:text-warning-200">
+                    <AlertTriangle className="size-4" />
+                    <p className="text-sm font-semibold">{t("healthDriftWarn")}</p>
+                  </div>
+                  <ul className="space-y-1 text-xs text-warning-900 dark:text-warning-100">
+                    {healthData.drift.drifts.map((d, idx) => (
+                      <li key={`${d.institution_id}-${d.field}-${idx}`}>
+                        <span className="font-medium">{d.institution_name || d.institution_id}</span>
+                        {" · "}
+                        <span className="font-mono">{d.field}</span>
+                        {": SQLite="}
+                        {String(d.sqlite)}
+                        {" / Supabase="}
+                        {String(d.supabase)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+                <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-800">
+                  <h2 className="font-semibold">{t("auditLogTitle")}</h2>
+                </div>
+                {(healthData.audit || []).length === 0 ? (
+                  <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("auditLogEmpty")}</p>
+                ) : (
+                  <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+                    {(healthData.audit || []).map((row) => {
+                      const actionLabel =
+                        row.action === "password_reset"
+                          ? t("auditPasswordReset")
+                          : row.action === "password_change"
+                            ? t("auditPasswordChange")
+                            : row.action === "password_reset_requested"
+                              ? t("auditPasswordResetRequested")
+                              : row.action === "business_delete"
+                                ? t("auditBusinessDelete")
+                                : row.action;
+                      return (
+                        <li key={row.id || `${row.action}-${row.created_at}`} className="px-4 py-3 text-sm">
+                          <p className="font-medium text-ink-900 dark:text-white">{actionLabel}</p>
+                          <p className="text-xs text-ink-500 dark:text-ink-400">
+                            {row.institution_name || row.institution_id || "—"}
+                            {row.actor ? ` · ${row.actor}` : ""}
+                            {" · "}
+                            {formatRequestDateTime(row.created_at)}
+                          </p>
+                          {row.detail ? (
+                            <p className="mt-0.5 text-xs text-ink-600 dark:text-ink-300">{row.detail}</p>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </>
+          ) : null}
+        </section>
+      )}
+
       {ledgerView === "subscription" && (
         <div
-          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -1978,16 +2294,16 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative flex max-h-[90vh] w-[95%] max-w-3xl flex-col gap-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900 md:w-full md:p-6"
+          <div role="dialog" aria-modal="true"
+            className="relative flex max-h-[90vh] w-[95%] max-w-3xl flex-col gap-4 overflow-hidden rounded-2xl border border-ink-200 bg-white p-4 shadow-2xl dark:border-ink-700 dark:bg-ink-900 md:w-full md:p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
               <HeaderActions compact />
               <button
                 type="button"
                 onClick={closeSubscriptionLedger}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label={t("cancel")}
               >
                 <X size={22} />
@@ -1995,8 +2311,8 @@ export function SuperAdminDashboard() {
             </div>
 
             <div className="pr-[7.5rem]">
-              <h3 className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-slate-100">
-                <CreditCard size={20} className="text-cyan-600 dark:text-cyan-400" />
+              <h3 className="flex items-center gap-2 text-lg font-bold text-ink-900 dark:text-ink-100">
+                <CreditCard size={20} className="text-brand-600 dark:text-brand-400" />
                 {t("subscriptionLedgerTitle")}
               </h3>
             </div>
@@ -2018,11 +2334,11 @@ export function SuperAdminDashboard() {
               />
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-ink-200 dark:border-ink-800">
               {visibleSubscriptionLedger.length === 0 ? (
-                <p className="p-6 text-sm text-slate-500 dark:text-slate-400">{t("ledgerEmpty")}</p>
+                <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("ledgerEmpty")}</p>
               ) : (
-                <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                <ul className="divide-y divide-ink-100 dark:divide-ink-800">
                   {visibleSubscriptionLedger.map((row) => {
                     const when = formatLedgerDateTime(row.timestamp);
                     return (
@@ -2032,20 +2348,20 @@ export function SuperAdminDashboard() {
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                            <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                            <span className="font-mono text-xs text-ink-500 dark:text-ink-400">
                               {when.date}
                             </span>
                             {!ledgerScopeBusiness ? (
-                              <span className="text-xs font-semibold text-cyan-700 dark:text-cyan-400">
+                              <span className="text-xs font-semibold text-brand-700 dark:text-brand-400">
                                 {row.businessName}
                               </span>
                             ) : null}
                           </div>
-                          <p className="mt-0.5 text-sm text-slate-800 dark:text-slate-200">
+                          <p className="mt-0.5 text-sm text-ink-800 dark:text-ink-200">
                             {row.plan}
                           </p>
                         </div>
-                        <span className="shrink-0 text-sm font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                        <span className="shrink-0 text-sm font-bold tabular-nums text-success-700 dark:text-success-400">
                           {formatMoneyTry(row.amount, lang)}
                         </span>
                       </li>
@@ -2060,7 +2376,7 @@ export function SuperAdminDashboard() {
 
       {showSeoModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-overlay flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -2070,17 +2386,17 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+          <div role="dialog" aria-modal="true"
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <div className="shrink-0 border-b border-ink-200 px-5 py-4 dark:border-ink-800">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                  <h2 className="text-lg font-semibold text-ink-900 dark:text-white">
                     {t("seoModalTitle")}
                   </h2>
-                  <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300/90">
+                  <p className="mt-1 text-xs leading-relaxed text-warning-700 dark:text-warning-300/90">
                     {t("seoModalHint")}
                   </p>
                 </div>
@@ -2089,7 +2405,7 @@ export function SuperAdminDashboard() {
                   <button
                     type="button"
                     onClick={closeSeoModal}
-                    className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                    className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                     aria-label={t("cancel")}
                   >
                     <X size={22} />
@@ -2100,7 +2416,7 @@ export function SuperAdminDashboard() {
 
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
               {seoLoading ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
+                <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
               ) : seoForm ? (
                 <form onSubmit={handleSeoSave} className="grid gap-4">
                   <Field label={t("seoSiteName")}>
@@ -2182,7 +2498,7 @@ export function SuperAdminDashboard() {
                       onChange={(e) => setSeoForm((p) => ({ ...p, robots: e.target.value }))}
                     />
                   </Field>
-                  <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                  <label className="flex items-center gap-2 text-sm text-ink-700 dark:text-ink-200">
                     <input
                       type="checkbox"
                       checked={seoForm.structured_data_enabled !== false}
@@ -2197,10 +2513,10 @@ export function SuperAdminDashboard() {
                   </label>
 
                   {seoError ? (
-                    <p className="text-sm text-rose-600 dark:text-rose-300">{seoError}</p>
+                    <p className="text-sm text-danger-700 dark:text-danger-300">{seoError}</p>
                   ) : null}
                   {seoSuccess ? (
-                    <p className="text-sm text-emerald-600 dark:text-emerald-300">{seoSuccess}</p>
+                    <p className="text-sm text-success-600 dark:text-success-300">{seoSuccess}</p>
                   ) : null}
 
                   <button type="submit" disabled={seoSaving} className={primaryBtnClass}>
@@ -2208,7 +2524,7 @@ export function SuperAdminDashboard() {
                   </button>
                 </form>
               ) : (
-                <p className="text-sm text-rose-600 dark:text-rose-300">
+                <p className="text-sm text-danger-700 dark:text-danger-300">
                   {seoError || t("seoLoadFailed")}
                 </p>
               )}
@@ -2219,7 +2535,7 @@ export function SuperAdminDashboard() {
 
       {showLogModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-overlay flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -2229,16 +2545,16 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
+          <div role="dialog" aria-modal="true"
+            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
               <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowLogModal(false)}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label="Kapat"
               >
                 <X size={22} />
@@ -2246,17 +2562,17 @@ export function SuperAdminDashboard() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 pr-0 pt-10 sm:pr-[7.5rem] sm:pt-0">
-              <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 sm:text-lg">
+              <h3 className="text-base font-bold text-ink-900 dark:text-ink-100 sm:text-lg">
                 {logsView === "customer" ? t("systemLogsTitle") : t("businessLedgerTitle")}
               </h3>
-              <div className="flex w-full items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-semibold sm:w-auto shrink-0 dark:border-slate-700 dark:bg-slate-800">
+              <div className="flex w-full items-center rounded-lg border border-ink-200 bg-ink-50 p-0.5 text-xs font-semibold sm:w-auto shrink-0 dark:border-ink-700 dark:bg-ink-800">
                 <button
                   type="button"
                   onClick={() => setLogsView("customer")}
                   className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition sm:flex-none ${
                     logsView === "customer"
-                      ? "bg-teal-500/20 text-teal-700 dark:text-teal-300"
-                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                      ? "bg-brand-500/20 text-brand-700 dark:text-brand-300"
+                      : "text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-ink-200"
                   }`}
                 >
                   <Users size={14} />
@@ -2267,8 +2583,8 @@ export function SuperAdminDashboard() {
                   onClick={() => setLogsView("business")}
                   className={`flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition sm:flex-none ${
                     logsView === "business"
-                      ? "bg-teal-500/20 text-teal-700 dark:text-teal-300"
-                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+                      ? "bg-brand-500/20 text-brand-700 dark:text-brand-300"
+                      : "text-ink-500 hover:text-ink-800 dark:text-ink-400 dark:hover:text-ink-200"
                   }`}
                 >
                   <Building2 size={14} />
@@ -2279,26 +2595,26 @@ export function SuperAdminDashboard() {
 
             {logsView === "customer" ? (
               statsLoading ? (
-                <p className="text-sm text-slate-400">{t("loadingGeneric")}</p>
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("loadingGeneric")}</p>
               ) : statsError ? (
-                <p className="text-sm text-rose-300">{statsError}</p>
+                <p className="text-sm text-danger-300">{statsError}</p>
               ) : (
                 <>
-                  <div className="rounded-xl bg-slate-800 border border-slate-700/80 px-5 py-6 text-center">
-                    <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <div className="rounded-xl bg-ink-800 border border-ink-700/80 px-5 py-6 text-center">
+                    <p className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
                       {t("totalUniqueVisitors")}
                     </p>
-                    <p className="mt-3 text-4xl font-bold text-emerald-400">
+                    <p className="mt-3 text-4xl font-bold text-success-400">
                       {Number(analyticsData?.total_visitors ?? 0).toLocaleString(
                         lang === "en" ? "en-GB" : "tr-TR"
                       )}
                     </p>
                   </div>
 
-                  <hr className="border-slate-800 my-2" />
+                  <hr className="border-ink-800 my-2" />
 
                   <div>
-                    <h4 className="mb-3 text-sm font-semibold text-slate-200">
+                    <h4 className="mb-3 text-sm font-semibold text-ink-200">
                       {t("recentInteractions")}
                     </h4>
 
@@ -2348,37 +2664,37 @@ export function SuperAdminDashboard() {
 
                     <ul className="max-h-[300px] space-y-3 overflow-y-auto pr-1">
                       {filteredLogData.length === 0 ? (
-                        <li className="rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-500">
+                        <li className="rounded-xl border border-dashed border-ink-700 px-4 py-6 text-center text-sm text-ink-500">
                           {logData.length === 0 ? t("noAnonymousSessions") : t("noMatchingRecords")}
                         </li>
                       ) : (
                         filteredLogData.map((session) => (
                           <li
                             key={session.session_id}
-                            className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3"
+                            className="rounded-xl border border-ink-800 bg-ink-950/60 px-4 py-3"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-xs font-medium text-teal-400">
+                              <span className="text-xs font-medium text-brand-400">
                                 {formatRelativeTime(session.created_at)}
                               </span>
-                              <span className="text-[11px] text-slate-500">{t("anonymousSession")}</span>
+                              <span className="text-[11px] text-ink-500">{t("anonymousSession")}</span>
                             </div>
                             <dl className="mt-2 space-y-1.5 text-sm">
                               <div className="flex flex-wrap gap-x-2">
-                                <dt className="text-slate-500">{t("estimatedLocation")}</dt>
-                                <dd className="text-slate-200">{session.location || "—"}</dd>
+                                <dt className="text-ink-500">{t("estimatedLocation")}</dt>
+                                <dd className="text-ink-200">{session.location || "—"}</dd>
                               </div>
                               <div className="flex flex-wrap gap-x-2">
-                                <dt className="text-slate-500">{t("viewedBusinesses")}</dt>
-                                <dd className="text-slate-200">
+                                <dt className="text-ink-500">{t("viewedBusinesses")}</dt>
+                                <dd className="text-ink-200">
                                   {(session.clicked_businesses || []).length
                                     ? session.clicked_businesses.join(", ")
                                     : "—"}
                                 </dd>
                               </div>
                               <div className="flex flex-wrap gap-x-2">
-                                <dt className="text-slate-500">{t("viewedRates")}</dt>
-                                <dd className="text-slate-200">
+                                <dt className="text-ink-500">{t("viewedRates")}</dt>
+                                <dd className="text-ink-200">
                                   {(session.viewed_currencies || []).length
                                     ? session.viewed_currencies.join(", ")
                                     : "—"}
@@ -2429,7 +2745,7 @@ export function SuperAdminDashboard() {
 
                 <ul className="max-h-[340px] space-y-3 overflow-y-auto pr-1">
                   {filteredBusinessLogs.length === 0 ? (
-                    <li className="rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-500">
+                    <li className="rounded-xl border border-dashed border-ink-700 px-4 py-6 text-center text-sm text-ink-500">
                       {t("businessLogsEmpty")}
                     </li>
                   ) : (
@@ -2438,10 +2754,10 @@ export function SuperAdminDashboard() {
                       return (
                         <li
                           key={log.id}
-                          className="rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-3"
+                          className="rounded-xl border border-ink-800 bg-ink-950/60 px-4 py-3"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-mono text-xs font-medium text-teal-400">
+                            <span className="font-mono text-xs font-medium text-brand-400">
                               {when.label}
                             </span>
                             <span
@@ -2450,8 +2766,8 @@ export function SuperAdminDashboard() {
                               {actionTypeLabel(log.actionType)}
                             </span>
                           </div>
-                          <p className="mt-2 text-sm text-slate-200">
-                            <span className="font-semibold text-slate-100">{log.businessName}</span>{" "}
+                          <p className="mt-2 text-sm text-ink-200">
+                            <span className="font-semibold text-ink-100">{log.businessName}</span>{" "}
                             — {log.description}
                           </p>
                         </li>
@@ -2467,7 +2783,7 @@ export function SuperAdminDashboard() {
 
       {businessToDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-overlay flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -2477,41 +2793,41 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
+          <div role="dialog" aria-modal="true"
+            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
               <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setBusinessToDelete(null)}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label="Kapat"
               >
                 <X size={22} />
               </button>
             </div>
             <div className="flex items-center gap-3 pr-[7.5rem]">
-              <div className="w-10 h-10 rounded-full bg-rose-500/20 text-rose-500 flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 rounded-full bg-danger-500/20 text-danger-500 flex items-center justify-center shrink-0">
                 <Trash2 size={20} />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t("deleteBusinessTitle")}</h3>
+              <h3 className="text-lg font-bold text-ink-900 dark:text-ink-100">{t("deleteBusinessTitle")}</h3>
             </div>
 
-            <p className="text-sm text-slate-600 dark:text-slate-300">
+            <p className="text-sm text-ink-600 dark:text-ink-300">
               {t("deleteConfirmTemplate").replace(
                 '"{name}"',
                 `"${businessToDelete.institution_name || businessToDelete.name}"`
               )}
             </p>
-            <p className="text-xs text-rose-600 font-medium dark:text-rose-400">{t("deleteWarning")}</p>
+            <p className="text-xs text-danger-700 dark:text-danger-400 font-medium dark:text-danger-400">{t("deleteWarning")}</p>
 
             <div className="flex items-center justify-end gap-3 mt-4">
               <button
                 type="button"
                 onClick={() => setBusinessToDelete(null)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors dark:text-slate-300 dark:hover:text-white dark:bg-slate-800 dark:hover:bg-slate-700"
+                className="btn-ghost"
               >
                 {t("cancelAlt")}
               </button>
@@ -2522,7 +2838,7 @@ export function SuperAdminDashboard() {
                   setBusinessToDelete(null);
                   handleDelete(id);
                 }}
-                className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-lg transition-colors shadow-[0_0_15px_rgba(225,29,72,0.4)]"
+                className="btn-danger bg-danger-600 text-white hover:bg-danger-500 hover:text-white"
               >
                 {t("confirmDeleteBtn")}
               </button>
@@ -2533,7 +2849,7 @@ export function SuperAdminDashboard() {
 
       {showResetConfirm && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-overlay flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -2543,28 +2859,28 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
+          <div role="dialog" aria-modal="true"
+            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
               <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowResetConfirm(false)}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label="Kapat"
               >
                 <X size={22} />
               </button>
             </div>
-            <h3 className="pr-[7.5rem] text-lg font-bold text-slate-900 dark:text-slate-100">{t("resetSubscriptionBtn")}</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{t("resetSubConfirmText")}</p>
+            <h3 className="pr-[7.5rem] text-lg font-bold text-ink-900 dark:text-ink-100">{t("resetSubscriptionBtn")}</h3>
+            <p className="text-sm text-ink-500 dark:text-ink-400">{t("resetSubConfirmText")}</p>
             <div className="flex items-center justify-end gap-3 mt-2">
               <button
                 type="button"
                 onClick={() => setShowResetConfirm(false)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors dark:text-slate-300 dark:hover:text-white"
+                className="px-4 py-2 text-sm font-medium text-ink-600 hover:text-ink-900 transition-colors dark:text-ink-300 dark:hover:text-white"
               >
                 {t("cancelAlt")}
               </button>
@@ -2575,7 +2891,7 @@ export function SuperAdminDashboard() {
                   setShowResetConfirm(false);
                   handleResetSubscription();
                 }}
-                className="px-4 py-2 text-sm font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-lg transition-colors shadow-[0_0_15px_rgba(225,29,72,0.4)] disabled:opacity-60"
+                className="btn-danger bg-danger-600 text-white hover:bg-danger-500 hover:text-white"
               >
                 {t("confirmResetBtn")}
               </button>
@@ -2586,7 +2902,7 @@ export function SuperAdminDashboard() {
 
       {showSuccessModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-overlay flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -2596,30 +2912,30 @@ export function SuperAdminDashboard() {
             }
           }}
         >
-          <div
-            className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-xs shadow-2xl flex flex-col items-center text-center gap-3 dark:bg-slate-900 dark:border-slate-700"
+          <div role="dialog" aria-modal="true"
+            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-xs shadow-2xl flex flex-col items-center text-center gap-3 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
               <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowSuccessModal(false)}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label="Kapat"
               >
                 <X size={22} />
               </button>
             </div>
-            <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center mb-2">
+            <div className="w-12 h-12 rounded-full bg-success-500/20 text-success-500 flex items-center justify-center mb-2">
               <Check className="w-6 h-6" strokeWidth={2.5} />
             </div>
-            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">{t("successTitle")}</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">{successModalMessage}</p>
+            <h3 className="text-lg font-bold text-ink-900 dark:text-ink-100">{t("successTitle")}</h3>
+            <p className="text-sm text-ink-500 dark:text-ink-400">{successModalMessage}</p>
             <button
               type="button"
               onClick={() => setShowSuccessModal(false)}
-              className="mt-4 w-full px-4 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors"
+              className="mt-4 w-full px-4 py-2 text-sm font-bold text-white bg-success-600 hover:bg-success-500 rounded-lg transition-colors"
             >
               {t("okBtn")}
             </button>
@@ -2633,14 +2949,13 @@ export function SuperAdminDashboard() {
 function Field({ label, children }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</span>
+      <span className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">{label}</span>
       {children}
     </label>
   );
 }
 
 const inputClass =
-  "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
+  "h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100";
 
-const primaryBtnClass =
-  "rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-60";
+const primaryBtnClass = "btn-primary";

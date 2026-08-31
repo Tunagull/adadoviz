@@ -108,7 +108,7 @@ export async function loginBusiness(username, password, options = {}) {
     subscription_type: data.subscription_type || "Test",
     subscription_end_date: data.subscription_end_date || null,
     days_remaining: data.days_remaining != null ? data.days_remaining : null,
-    is_active: data.is_active !== false,
+    is_active: !(data.is_active === false || data.is_active === 0 || data.is_active === "0"),
   };
   saveAuth(auth, { remember });
   return auth;
@@ -473,6 +473,17 @@ export async function fetchAdminStats(token) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(data?.error || "İstatistikler alınamadı.");
+  }
+  return data;
+}
+
+export async function fetchAdminSystemHealth(token) {
+  const response = await fetch(apiUrl("/api/admin/system-health"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Sistem sağlığı alınamadı.");
   }
   return data;
 }

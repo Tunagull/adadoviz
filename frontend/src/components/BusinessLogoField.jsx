@@ -29,17 +29,17 @@ export function BusinessLogoField({ logoUrl, name, onChange }) {
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-xs text-slate-400 font-medium">İŞLETME LOGOSU</label>
+      <label className="text-xs text-ink-600 dark:text-ink-400 font-medium">İŞLETME LOGOSU</label>
       <div className="flex items-center gap-4">
         {logoUrl ? (
           <img
             src={logoUrl}
             alt="Logo"
-            className="h-16 w-16 shrink-0 rounded-full object-cover bg-white shadow-sm ring-2 ring-slate-700"
+            className="h-16 w-16 shrink-0 rounded-full object-cover bg-white shadow-sm ring-2 ring-ink-700"
           />
         ) : (
           <div
-            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-slate-800 text-xl font-bold text-teal-300 ring-2 ring-slate-700"
+            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-ink-800 text-xl font-bold text-brand-300 ring-2 ring-ink-700"
             aria-hidden
           >
             {initialLetter(name)}
@@ -49,7 +49,7 @@ export function BusinessLogoField({ logoUrl, name, onChange }) {
           <button
             type="button"
             onClick={openPicker}
-            className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-teal-500/50 hover:text-teal-300"
+            className="rounded-lg border border-ink-600 bg-ink-800 px-3 py-2 text-sm font-medium text-ink-200 transition hover:border-brand-500/50 hover:text-brand-300"
           >
             Logoyu Değiştir
           </button>
@@ -57,7 +57,7 @@ export function BusinessLogoField({ logoUrl, name, onChange }) {
             <button
               type="button"
               onClick={() => onChange(null)}
-              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm font-medium text-rose-300 transition hover:bg-rose-500/20"
+              className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm font-medium text-danger-300 transition hover:bg-danger-500/20"
             >
               Kaldır
             </button>

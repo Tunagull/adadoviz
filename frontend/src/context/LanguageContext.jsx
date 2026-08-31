@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 const LanguageContext = createContext(null);
 
@@ -8,6 +8,9 @@ const STORAGE_KEY = "finsight-lang";
 const dictionaries = {
   tr: {
     liveMarket: "Canlı Piyasa",
+    homeH1: "KKTC Canlı Döviz Kurları",
+    homeLead: "Kuzey Kıbrıs döviz bürolarının güncel alış ve satış kurlarını karşılaştırın.",
+    homeH2Offices: "Döviz Büroları",
     businessLogin: "İşletme Girişi",
     businessPanel: "İşletme Paneli",
     adminPanel: "Admin Paneli",
@@ -17,6 +20,12 @@ const dictionaries = {
     marketSummaryNote: "KKTC Merkez Bankası kurları baz alınarak yapılmıştır.",
     searchBanks: "Döviz bürosu ara...",
     openNow: "Şu An Açık",
+    buyShort: "Alış",
+    sellShort: "Satış",
+    bestBuy: "En yüksek alış",
+    bestSell: "En düşük satış",
+    bestBuyShort: "En iyi",
+    bestSellShort: "En iyi",
     currencyConverter: "Döviz Çevirici",
     depositCalculator: "Mevduat Getiri Hesaplayıcı",
     loanCalculator: "Kredi Taksit Hesaplayıcı",
@@ -33,6 +42,8 @@ const dictionaries = {
     resultSell: "Elde Edilecek TL",
     resultWaiting: "Sonuç bekleniyor",
     sortLabel: "Sıralama",
+    clearFilters: "Temizle",
+    showResults: "Sonuçları göster",
     banksLoading: "Kur listesi yukleniyor veya baglanti hatası...",
     noBanksMatch: "Filtrelere uyan işletme bulunamadı.",
     themeLight: "Açık tema",
@@ -59,6 +70,12 @@ const dictionaries = {
     sortGbpBuyLow: "En Düşük Alış (GBP)",
     sortUsdBuyHigh: "En Yüksek Alış (USD)",
     sortUsdBuyLow: "En Düşük Alış (USD)",
+    sortUsdSellLow: "En Düşük Satış (USD)",
+    sortUsdSellHigh: "En Yüksek Satış (USD)",
+    sortEurSellLow: "En Düşük Satış (EUR)",
+    sortEurSellHigh: "En Yüksek Satış (EUR)",
+    sortGbpSellLow: "En Düşük Satış (GBP)",
+    sortGbpSellHigh: "En Yüksek Satış (GBP)",
     sortEurBuyHigh: "En Yüksek Alış (EUR)",
     sortEurBuyLow: "En Düşük Alış (EUR)",
     periodHourly: "Saatlik",
@@ -69,6 +86,10 @@ const dictionaries = {
     backToDashboard: "Dashboard",
     managementPanel: "Yönetim Paneli",
     lastUpdate: "Son Güncelleme",
+    bulletinDate: "Bülten tarihi",
+    lastChecked: "Son kontrol",
+    rateSource: "KKTC Merkez Bankası",
+    bulletinNo: "Duyuru no",
     subscriptionStatus: "Abonelik Durumu",
     remainingSubscription: "Kalan Abonelik Süresi",
     subscriptionExpired: "Süresi Bitti",
@@ -77,13 +98,16 @@ const dictionaries = {
     centralBankRatesNote: "Aşağıdaki kurlar KKTC Merkez Bankası XML kaynağından gelmektedir.",
     subscriptionExpiredNotice:
       "Abonelik süreniz dolmuştur. Kâr marjı ayarları yalnızca görüntülenebilir; güncelleme yapılamaz.",
+    accountInactiveNotice:
+      "Hesabınız pasif. Kur, marj ve şube düzenlemesi kilitlidir. Abonelik uzatma veya yeni şube talebi gönderebilirsiniz.",
+    extendSubscriptionBtn: "Aboneliği Uzat / Talep Gönder",
     buyRates: "ALIŞ KURLAR",
     sellRates: "SATIŞ KURLAR",
     centralBankRate: "Merkez Bankası KUR",
     effectiveRate: "Efektif",
     profitType: "Kâr Tipi",
     profitMargin: "Kâr Marjı",
-    profitValue: "Kâr Değeri",
+    profitValue: "Kâr Marjı",
     fixedPrice: "Baz Fiyat (TL)",
     percentPrice: "Yüzdesel (%)",
     finalRate: "Final Kur",
@@ -111,7 +135,7 @@ const dictionaries = {
     subscriptionExpiringSoon: "Abonelik Süresi bitiyor",
     saveBranchNameBtn: "Kaydet",
     loadingShort: "Yükleniyor...",
-    newBranchRequestBtn: "Yeni şube Talebi",
+    newBranchRequestBtn: "Yeni Şube Talebi",
     newBranchRequestTitle: "Yeni Şube Talebi",
     newBranchRequestConfirm:
       "Girdiğiniz bilgilerle yeni bir şube talebi oluşturulacak. Kabul ediyor musunuz?",
@@ -119,17 +143,17 @@ const dictionaries = {
     confirmRequestBtn: "Evet, Talep Oluştur",
     addBranchDirectBtn: "Şube Ekle",
     addBranchDirectTitle: "Yeni Şube Ekle",
+    // U-02: Kota altındayken şube DOĞRUDAN eklenir; metin buna göre.
     addBranchDirectConfirm:
-      "Şube bilgileriniz Super Admin’e onay için iletilecek. Onaylanana kadar şube aktif olmaz. Kabul ediyor musunuz?",
-    addBranchDirectSuccess: "Şube talebiniz iletildi. Admin onayı bekleniyor.",
-    addBranchAwaitingAdminSuccess: "Şube talebiniz iletildi. Admin onayı bekleniyor.",
-    confirmAddBranchBtn: "Evet, Onaya Gönder",
+      "Bu şube, satın aldığınız şube kotanız dahilinde hemen eklenecek ve yayına alınacak. Onaylıyor musunuz?",
+    addBranchDirectSuccess: "Şube eklendi ve yayına alındı.",
+    confirmAddBranchBtn: "Evet, Şubeyi Ekle",
     renewBranchRequestBtn: "Yenileme Talebi",
     renewBranchRequestSuccess: "Şube yenileme talebiniz iletildi.",
     renewBranchRequestPending: "Yenileme talebi bekliyor",
     renewBranchRequestConfirm:
       "Bu pasif şube için yöneticiye yenileme talebi gönderilecek. Onaylıyor musunuz?",
-    requestTypeNew: "Yeni şube",
+    requestTypeNew: "Yeni Şube",
     requestTypeRenew: "Yenileme",
     branchInactiveLabel: "Pasif",
     tabRequests: "Talepler",
@@ -212,6 +236,26 @@ const dictionaries = {
     seoLoadFailed: "SEO ayarları yüklenemedi.",
     seoSaveFailed: "SEO ayarları kaydedilemedi.",
     tabList: "Mevcut İşletmeler",
+    tabHealth: "Sistem Sağlığı",
+    colLastLogin: "Son Giriş",
+    healthMonitorTitle: "Sistem Sağlık Monitörü",
+    healthMbRates: "Merkez Bankası Kurları",
+    healthLastFetch: "Son başarılı çekim",
+    healthLastAttempt: "Son deneme",
+    healthMbError: "Son hata",
+    healthDualWrite: "Dual-write hataları",
+    healthDualWriteEmpty: "Kayıtlı dual-write hatası yok.",
+    healthDriftTitle: "SQLite ↔ Supabase farkı",
+    healthDriftOk: "Limit ve e-posta alanlarında fark yok.",
+    healthDriftWarn: "SQLite ile Supabase arasında fark bulundu.",
+    healthDriftUnavailable: "Drift kontrolü yapılamadı.",
+    auditLogTitle: "Denetim Kaydı",
+    auditLogEmpty: "Henüz denetim kaydı yok.",
+    auditPasswordReset: "Şifre sıfırlama",
+    auditPasswordChange: "Şifre değişikliği",
+    auditPasswordResetRequested: "Şifre sıfırlama talebi",
+    auditBusinessDelete: "İşletme silindi",
+    neverLoggedIn: "Hiç giriş yok",
     tabEdit: "İşletme Düzenle & Abonelik",
     tabCreate: "Yeni İşletme Ekle",
     refresh: "Yenile",
@@ -384,6 +428,9 @@ const dictionaries = {
   },
   en: {
     liveMarket: "Live Market",
+    homeH1: "KKTC Live Exchange Rates",
+    homeLead: "Compare live buy and sell rates from Northern Cyprus exchange offices.",
+    homeH2Offices: "Exchange Offices",
     businessLogin: "Business Login",
     businessPanel: "Business Panel",
     adminPanel: "Admin Panel",
@@ -393,6 +440,12 @@ const dictionaries = {
     marketSummaryNote: "Based on Central Bank of Northern Cyprus rates.",
     searchBanks: "Search exchange offices...",
     openNow: "Open Now",
+    buyShort: "Buy",
+    sellShort: "Sell",
+    bestBuy: "Highest buy",
+    bestSell: "Lowest sell",
+    bestBuyShort: "Best",
+    bestSellShort: "Best",
     currencyConverter: "Currency Converter",
     depositCalculator: "Deposit Return Calculator",
     loanCalculator: "Loan Installment Calculator",
@@ -409,6 +462,8 @@ const dictionaries = {
     resultSell: "You get TRY",
     resultWaiting: "Waiting for result",
     sortLabel: "Sort",
+    clearFilters: "Clear",
+    showResults: "Show results",
     banksLoading: "Loading rates or connection error...",
     noBanksMatch: "No businesses match the filters.",
     themeLight: "Light theme",
@@ -435,6 +490,12 @@ const dictionaries = {
     sortGbpBuyLow: "Lowest Buy (GBP)",
     sortUsdBuyHigh: "Highest Buy (USD)",
     sortUsdBuyLow: "Lowest Buy (USD)",
+    sortUsdSellLow: "Lowest Sell (USD)",
+    sortUsdSellHigh: "Highest Sell (USD)",
+    sortEurSellLow: "Lowest Sell (EUR)",
+    sortEurSellHigh: "Highest Sell (EUR)",
+    sortGbpSellLow: "Lowest Sell (GBP)",
+    sortGbpSellHigh: "Highest Sell (GBP)",
     sortEurBuyHigh: "Highest Buy (EUR)",
     sortEurBuyLow: "Lowest Buy (EUR)",
     periodHourly: "Hourly",
@@ -445,6 +506,10 @@ const dictionaries = {
     backToDashboard: "Dashboard",
     managementPanel: "Management Panel",
     lastUpdate: "Last Update",
+    bulletinDate: "Bulletin date",
+    lastChecked: "Last checked",
+    rateSource: "Central Bank of the TRNC",
+    bulletinNo: "Bulletin no",
     subscriptionStatus: "Subscription Status",
     remainingSubscription: "Remaining Subscription",
     subscriptionExpired: "Expired",
@@ -453,13 +518,16 @@ const dictionaries = {
     centralBankRatesNote: "The rates below are sourced from the TRNC Central Bank XML feed.",
     subscriptionExpiredNotice:
       "Your subscription has expired. Margin settings are view-only and cannot be updated.",
+    accountInactiveNotice:
+      "Your account is inactive. Rate, margin and branch edits are locked. You can still request a subscription renewal or a new branch.",
+    extendSubscriptionBtn: "Extend Subscription / Send Request",
     buyRates: "BUY RATES",
     sellRates: "SELL RATES",
     centralBankRate: "Central Bank Rate",
     effectiveRate: "Effective",
     profitType: "Profit Type",
     profitMargin: "Profit Margin",
-    profitValue: "Profit Value",
+    profitValue: "Profit Margin",
     fixedPrice: "Fixed (TRY)",
     percentPrice: "Percent (%)",
     finalRate: "Final Rate",
@@ -496,10 +564,9 @@ const dictionaries = {
     addBranchDirectBtn: "Add Branch",
     addBranchDirectTitle: "Add New Branch",
     addBranchDirectConfirm:
-      "Your branch details will be sent to Super Admin for approval. The branch stays inactive until approved. Do you accept?",
-    addBranchDirectSuccess: "Branch request submitted. Waiting for admin approval.",
-    addBranchAwaitingAdminSuccess: "Branch request submitted. Waiting for admin approval.",
-    confirmAddBranchBtn: "Yes, Send for Approval",
+      "This branch is within your purchased branch quota and will be added and published right away. Confirm?",
+    addBranchDirectSuccess: "Branch added and published.",
+    confirmAddBranchBtn: "Yes, Add Branch",
     renewBranchRequestBtn: "Renewal Request",
     renewBranchRequestSuccess: "Your branch renewal request has been submitted.",
     renewBranchRequestPending: "Renewal request pending",
@@ -588,6 +655,26 @@ const dictionaries = {
     seoLoadFailed: "Failed to load SEO settings.",
     seoSaveFailed: "Failed to save SEO settings.",
     tabList: "Current Businesses",
+    tabHealth: "System Health",
+    colLastLogin: "Last Login",
+    healthMonitorTitle: "System Health Monitor",
+    healthMbRates: "Central Bank Rates",
+    healthLastFetch: "Last successful fetch",
+    healthLastAttempt: "Last attempt",
+    healthMbError: "Last error",
+    healthDualWrite: "Dual-write errors",
+    healthDualWriteEmpty: "No dual-write errors recorded.",
+    healthDriftTitle: "SQLite ↔ Supabase drift",
+    healthDriftOk: "No differences in limit or email fields.",
+    healthDriftWarn: "Differences found between SQLite and Supabase.",
+    healthDriftUnavailable: "Drift check could not run.",
+    auditLogTitle: "Audit Log",
+    auditLogEmpty: "No audit events yet.",
+    auditPasswordReset: "Password reset",
+    auditPasswordChange: "Password change",
+    auditPasswordResetRequested: "Password reset requested",
+    auditBusinessDelete: "Business deleted",
+    neverLoggedIn: "Never logged in",
     tabEdit: "Edit Business & Subscription",
     tabCreate: "Add New Business",
     refresh: "Refresh",
@@ -772,6 +859,20 @@ function getInitialLang() {
 
 export function LanguageProvider({ children }) {
   const [lang, setLangState] = useState(getInitialLang);
+
+  /**
+   * ⚠️ ERİŞİLEBİLİRLİK + TİPOGRAFİ DÜZELTMESİ (denetim bulguları A-04 / D-09):
+   * index.html'de <html lang="tr"> sabit yazılı ve ilk render'da hiç
+   * güncellenmiyordu. İki sonucu vardı:
+   *   1) İngilizce sayfa ekran okuyucuya Türkçe olarak duyuruluyor, Google da
+   *      Türkçe indeksliyordu.
+   *   2) Tarayıcı Türkçe büyük harf kuralını uyguladığı için (i → İ) CSS
+   *      `uppercase` ile yazılan İngilizce terimler bozuluyordu
+   *      (ölçüm: "DUAL-WRİTE HATALARI", "SQLİTE ↔ SUPABASE FARKI").
+   */
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
 
   const setLang = useCallback((next) => {
     const value = next === "en" ? "en" : "tr";

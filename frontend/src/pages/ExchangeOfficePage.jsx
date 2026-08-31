@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MapPin, Phone } from "lucide-react";
 import { BusinessDetailModal } from "../components/BusinessDetailModal";
 import { HeaderActions } from "../components/HeaderActions";
 import { BrandLogo } from "../components/BrandLogo";
 import { useLanguage } from "../context/LanguageContext";
-import { apiUrl } from "../lib/api";
+import { apiUrl, mediaUrl } from "../lib/api";
 import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { cityDisplayName, exchangeOfficePath, extractCitySlug, slugify } from "../lib/slug";
 
@@ -19,6 +19,14 @@ export function ExchangeOfficePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payload, setPayload] = useState(null);
+  /**
+   * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-01): Bu sayfa başlığı, şube listesini ve
+   * JSON-LD'yi render ediyor, sonra KOŞULSUZ olarak üstüne tam ekran modal
+   * açıyordu; modalı kapatan onClose ise navigate("/") yapıyordu. Yani SEO için
+   * yazılmış sayfanın içeriğini görmenin hiçbir yolu yoktu — kapatan kullanıcı
+   * ana sayfaya atılıyordu. Artık kapatınca sayfada kalınıyor.
+   */
+  const [detailOpen, setDetailOpen] = useState(true);
 
   const slug = slugify(rawSlug);
 
@@ -86,7 +94,7 @@ export function ExchangeOfficePage() {
       businessSlug: payload?.businessSlug || slug,
       workingHours: business.workingHours || business.working_hours,
       phone: business.phone,
-      logoUrl: business.logo_url,
+      logoUrl: mediaUrl(business.logo_url),
       branches: branches.map((b) => ({
         ...b,
         slug: b.slug || payload?.businessSlug || slug,
@@ -98,7 +106,7 @@ export function ExchangeOfficePage() {
   const canonical = `${SITE}${exchangeOfficePath(payload?.slug || slug)}`;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
       <Helmet prioritizeSeoTags>
         <title>{pageTitle}</title>
         <meta name="description" content={pageDescription} />
@@ -112,13 +120,13 @@ export function ExchangeOfficePage() {
         ) : null}
       </Helmet>
 
-      <header className="sticky top-0 z-[100] border-b border-slate-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-[#020617]/80 sm:px-6">
+      <header className="sticky top-0 z-sticky border-b border-ink-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-[#020617]/80 sm:px-6">
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <BrandLogo className="min-w-0 shrink" />
             <Link
               to="/"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-cyan-400 hover:text-cyan-700 dark:border-white/10 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
+              className="inline-flex items-center gap-1.5 rounded-full border border-ink-300 px-3 py-1 text-xs font-semibold text-ink-700 transition hover:border-brand-400 hover:text-brand-700 dark:border-white/10 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-300"
             >
               <ArrowLeft size={14} />
               {lang === "en" ? "Home" : "Ana Sayfa"}
@@ -130,43 +138,79 @@ export function ExchangeOfficePage() {
 
       <div className="mx-auto max-w-3xl px-4 py-10">
         {loading ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <p className="text-sm text-ink-500 dark:text-ink-400">
             {t("loadingShort") || "Yükleniyor..."}
           </p>
         ) : error ? (
-          <div className="rounded-2xl border border-rose-200 bg-white p-6 dark:border-rose-900/50 dark:bg-slate-900">
-            <h1 className="text-lg font-semibold text-slate-900 dark:text-white">
+          <div className="rounded-2xl border border-danger-200 bg-white p-6 dark:border-danger-900/50 dark:bg-ink-900">
+            <h1 className="text-lg font-semibold text-ink-900 dark:text-white">
               {lang === "en" ? "Exchange office not found" : "Döviz bürosu bulunamadı"}
             </h1>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{error}</p>
-            <Link to="/" className="mt-4 inline-block text-sm font-semibold text-teal-600 hover:underline">
+            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">{error}</p>
+            <Link to="/" className="mt-4 inline-block text-sm font-semibold text-brand-600 hover:underline">
               {lang === "en" ? "Back to live rates" : "Canlı kurlara dön"}
             </Link>
           </div>
         ) : (
           <>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+            <h1 className="text-2xl font-bold tracking-tight text-ink-900 dark:text-white sm:text-3xl">
               {displayName}
             </h1>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              {lang === "en"
-                ? `Currency exchange in ${primaryCity}, Northern Cyprus (KKTC)`
-                : `${primaryCity}, KKTC döviz bürosu — canlı kurlar, adres ve çalışma saatleri`}
+            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
+              {/* Şehir tespit edilemediğinde "KKTC, KKTC …" gibi tekrar oluşmasın. */}
+              {(() => {
+                const city = primaryCity && primaryCity !== "KKTC" ? primaryCity : "";
+                if (lang === "en") {
+                  return city
+                    ? `Currency exchange in ${city}, Northern Cyprus (KKTC)`
+                    : "Currency exchange in Northern Cyprus (KKTC)";
+                }
+                return city
+                  ? `${city}, KKTC döviz bürosu — canlı kurlar, adres ve çalışma saatleri`
+                  : "KKTC döviz bürosu — canlı kurlar, adres ve çalışma saatleri";
+              })()}
             </p>
             {branches.length > 0 ? (
               <ul className="mt-6 space-y-3">
                 {branches.map((branch) => (
                   <li
                     key={branch.id}
-                    className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+                    className="rounded-xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900"
                   >
-                    <p className="font-semibold text-slate-900 dark:text-white">{branch.name}</p>
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                    <p className="font-semibold text-ink-900 dark:text-white">{branch.name}</p>
+                    <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
                       {branch.address || "KKTC"}
                     </p>
                     {branch.phone ? (
-                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{branch.phone}</p>
+                      // U-01: telefon düz metindi; mobilde tıklanabilir olmalı.
+                      <a
+                        href={`tel:${String(branch.phone).replace(/[^\d+]/g, "")}`}
+                        className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline dark:text-brand-300"
+                      >
+                        <Phone size={14} aria-hidden="true" />
+                        {branch.phone}
+                      </a>
                     ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDetailOpen(true)}
+                        className="btn-subtle btn-sm min-h-[2.25rem]"
+                      >
+                        {lang === "en" ? "Rates & chart" : "Kurlar ve grafik"}
+                      </button>
+                      {Number.isFinite(Number(branch.lat)) && Number.isFinite(Number(branch.lng)) ? (
+                        <a
+                          href={`https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-ghost btn-sm min-h-[2.25rem]"
+                        >
+                          <MapPin size={14} aria-hidden="true" />
+                          {lang === "en" ? "Directions" : "Yol tarifi"}
+                        </a>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -175,12 +219,12 @@ export function ExchangeOfficePage() {
         )}
       </div>
 
-      {business && !loading && !error ? (
+      {business && !loading && !error && detailOpen ? (
         <BusinessDetailModal
           business={business}
           initialBranchId={payload?.matchedBranchId ?? null}
           initialView={payload?.matchedVia === "branch" ? "konum" : "grafik"}
-          onClose={() => navigate("/")}
+          onClose={() => setDetailOpen(false)}
         />
       ) : null}
     </div>

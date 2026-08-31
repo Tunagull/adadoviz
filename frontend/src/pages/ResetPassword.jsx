@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Helmet } from "react-helmet-async";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Lock, KeyRound, CheckCircle2 } from "lucide-react";
 import { apiUrl } from "../lib/api";
@@ -52,29 +53,34 @@ export function ResetPasswordPage() {
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-md items-center px-4 py-12">
-      <div className="w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 shadow-2xl shadow-indigo-950/40 backdrop-blur-xl">
-        <div className="border-b border-white/10 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/40 px-6 py-5">
+      {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
+      <Helmet>
+        <title>Şifre Sıfırlama | AdaDöviz</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
+      <div className="w-full overflow-hidden rounded-2xl border border-white/10 bg-ink-900/95 shadow-2xl shadow-brand-900/40 backdrop-blur-xl">
+        <div className="border-b border-white/10 bg-gradient-to-r from-ink-900 via-ink-900 to-brand-900/40 px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-gradient-to-tr from-indigo-500 to-teal-400 p-2.5 text-white shadow-lg shadow-indigo-900/40">
+            <div className="rounded-xl bg-gradient-to-tr bg-brand-gradient p-2.5 text-white shadow-lg shadow-brand-900/40">
               <KeyRound className="size-5" />
             </div>
             <div>
               <h1 className="text-lg font-bold text-white">Şifre Sıfırlama</h1>
-              <p className="mt-0.5 text-sm text-slate-400">Yeni şifrenizi belirleyin</p>
+              <p className="mt-0.5 text-sm text-ink-600 dark:text-ink-400">Yeni şifrenizi belirleyin</p>
             </div>
           </div>
         </div>
 
         {done ? (
           <div className="space-y-4 px-6 py-8 text-center">
-            <CheckCircle2 className="mx-auto size-12 text-emerald-400" />
-            <p className="text-sm text-slate-200">
+            <CheckCircle2 className="mx-auto size-12 text-success-400" />
+            <p className="text-sm text-ink-200">
               Şifreniz başarıyla güncellendi. Artık yeni şifrenizle giriş yapabilirsiniz.
             </p>
             <button
               type="button"
               onClick={() => navigate("/")}
-              className="w-full rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110"
+              className="w-full rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition hover:brightness-110"
             >
               Ana Sayfaya Dön
             </button>
@@ -82,7 +88,7 @@ export function ResetPasswordPage() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 px-6 py-6">
             {!token ? (
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-200">
                 Geçersiz veya eksik sıfırlama bağlantısı.
               </div>
             ) : null}
@@ -90,12 +96,12 @@ export function ResetPasswordPage() {
             <div className="space-y-2">
               <label
                 htmlFor="reset-password"
-                className="text-xs font-medium uppercase tracking-wide text-slate-400"
+                className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400"
               >
                 Yeni Şifre
               </label>
               <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
                 <input
                   id="reset-password"
                   type="password"
@@ -103,7 +109,7 @@ export function ResetPasswordPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-950 pl-10 pr-3 text-sm text-slate-100 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20"
+                  className="h-11 w-full rounded-lg border border-ink-700 bg-ink-950 pl-10 pr-3 text-sm text-ink-100 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20"
                   required
                   disabled={!token || loading}
                 />
@@ -113,12 +119,12 @@ export function ResetPasswordPage() {
             <div className="space-y-2">
               <label
                 htmlFor="reset-password-confirm"
-                className="text-xs font-medium uppercase tracking-wide text-slate-400"
+                className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400"
               >
                 Şifre Tekrar
               </label>
               <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
                 <input
                   id="reset-password-confirm"
                   type="password"
@@ -126,7 +132,7 @@ export function ResetPasswordPage() {
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder="••••••••"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-950 pl-10 pr-3 text-sm text-slate-100 outline-none transition focus:border-teal-400/70 focus:ring-2 focus:ring-teal-500/20"
+                  className="h-11 w-full rounded-lg border border-ink-700 bg-ink-950 pl-10 pr-3 text-sm text-ink-100 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20"
                   required
                   disabled={!token || loading}
                 />
@@ -134,7 +140,7 @@ export function ResetPasswordPage() {
             </div>
 
             {error ? (
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+              <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-200">
                 {error}
               </div>
             ) : null}
@@ -142,7 +148,7 @@ export function ResetPasswordPage() {
             <button
               type="submit"
               disabled={!token || loading}
-              className="w-full rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-60"
+              className="w-full rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition hover:brightness-110 disabled:opacity-60"
             >
               {loading ? "Güncelleniyor..." : "Şifreyi Güncelle"}
             </button>

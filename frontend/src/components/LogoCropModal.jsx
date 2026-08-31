@@ -70,19 +70,19 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-3 sm:p-4"
+      className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/80 backdrop-blur-sm p-3 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="relative rounded-2xl border border-slate-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-lg shadow-2xl flex flex-col gap-4 dark:bg-slate-900 dark:border-slate-700"
+        className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-lg shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+        <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
           <HeaderActions compact />
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+            className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
             aria-label="Kapat"
           >
             <X size={22} />
@@ -90,13 +90,13 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
         </div>
 
         <div className="pr-[7.5rem]">
-          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Logoyu Kırp</h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          <h3 className="text-lg font-bold text-ink-900 dark:text-ink-100">Logoyu Kırp</h3>
+          <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
             Görseli sürükleyip yakınlaştırarak yuvarlak alana oturtun.
           </p>
         </div>
 
-        <div className="relative h-72 w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-950">
+        <div className="relative h-72 w-full overflow-hidden rounded-xl bg-ink-100 dark:bg-ink-950">
           <Cropper
             image={imageSrc}
             crop={crop}
@@ -111,7 +111,7 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-xs font-medium text-slate-400">Zoom</label>
+          <label className="text-xs font-medium text-ink-600 dark:text-ink-400">Zoom</label>
           <input
             type="range"
             min={1}
@@ -119,17 +119,17 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
             step={0.05}
             value={zoom}
             onChange={(e) => setZoom(Number(e.target.value))}
-            className="w-full accent-teal-500"
+            className="w-full accent-brand-500"
           />
         </div>
 
-        {error && <p className="text-sm text-rose-400">{error}</p>}
+        {error && <p className="text-sm text-danger-400">{error}</p>}
 
         <button
           type="button"
           onClick={handleConfirm}
           disabled={busy || !croppedAreaPixels}
-          className="rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-500 disabled:opacity-60"
+          className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:opacity-60"
         >
           {busy ? "İşleniyor..." : "Kırpmayı Onayla"}
         </button>

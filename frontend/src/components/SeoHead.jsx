@@ -58,7 +58,7 @@ export function SeoHead() {
         "@type": "Organization",
         name: seo.site_name || "AdaDöviz",
         url: `${base}/`,
-        logo: seo.og_image || `${base}/adadoviz-logo.svg`,
+        logo: seo.og_image || `${base}/adadoviz-mark.svg`,
         areaServed: {
           "@type": "Place",
           name: seo.geo_placename || "Northern Cyprus, KKTC",

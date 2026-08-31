@@ -1,11 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-const cron = require("node-cron");
 const bcrypt = require("bcryptjs");
 const axios = require("axios");
-const xml2js = require("xml2js");
-const https = require("https");
 const { buildBanksFromCentralRates, emptyPayloadForServerError, BANK_DEFINITIONS } = require("./scraper");
 const {
   initDb,
@@ -47,6 +44,8 @@ const {
   applySupabaseInstitutionRow,
   applySupabaseAdjustmentRow,
   applySupabaseBranchRow,
+  applySupabaseBranchRequestRow,
+  listAllBranchRequestsForSync,
   purgeOrphanBranches,
   replaceBusinessBranchesFromSupabase,
   getAdjustmentsForInstitution,
@@ -57,6 +56,7 @@ const {
   bulkInsertHistoricalRates,
   getHistoricalRates,
   getHistoricalRatesCount,
+  getLatestHistoricalRatesSnapshot,
   listPublicBranches,
   getPublicExchangeOfficeBySlug,
   listPublicExchangeOfficeSlugs,
@@ -72,8 +72,12 @@ const {
   updateInstitutionPassword,
   getSeoSettings,
   updateSeoSettings,
+  touchLastLogin,
+  insertAuditLog,
+  listAuditLogs,
+  applySupabaseAuditRow,
 } = require("./db");
-const { signToken, requireAuth, requireSuperAdmin } = require("./auth");
+const { signToken, requireAuth, requireSuperAdmin, requireWritableBusiness } = require("./auth");
 const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./institutions");
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
@@ -95,18 +99,45 @@ const {
   syncBranchDelete,
   syncRateAdjustmentsMap,
   syncPartnershipApplication,
+  syncBranchRequestUpsert,
   syncPasswordReset,
   syncVisitorSession,
   syncSiteStats,
   checkSupabaseHasInstitutions,
   hydrateAdminDataFromSupabase,
   bootstrapAdminDataToSupabase,
+  getDualWriteErrors,
+  syncAuditLog,
+  compareInstitutionDrift,
 } = require("./config/supabaseSync");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+app.set("trust proxy", 1);
 
 /** Scrape edilmiş ham KUR verisi (marj uygulanmadan önce). */
+let ratesHealth = {
+  lastAttemptAt: null,
+  lastOkAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  source: null,
+  sourceName: "KKTC Merkez Bankası",
+  bulletinNo: null,
+  validRange: null,
+};
+
+async function recordAudit(entry) {
+  try {
+    const row = insertAuditLog(entry);
+    if (row) await syncAuditLog(row);
+    return row;
+  } catch (err) {
+    console.warn("[AUDIT]", err.message);
+    return null;
+  }
+}
+
 let cachedRates = {
   updatedAt: null,
   /** Kur veya kâr marjında son gerçek değişim zamanı (UI "Son Güncelleme") */
@@ -116,6 +147,9 @@ let cachedRates = {
   centralBankUpdatedAt: null,
   centralBankRates: null,
   centralBankXmlDate: null,
+  centralBankBulletinNo: null,
+  centralBankValidRange: null,
+  centralBankSourceName: "KKTC Merkez Bankası",
 };
 
 /** ✅ ADIM 1: SSE istemcilerini yönet */
@@ -124,7 +158,7 @@ const sseClients = [];
 /** ✅ ADIM 1: Bir önceki kurları hafızada tut (değişim tespiti için) */
 let previousRates = null;
 
-/** CORS: local Vite + bilinen production origin'ler; bilinmeyenler için * (mevcut davranış) */
+/** CORS: local Vite + production origin'ler. CORS_ORIGINS ile genişletilir. */
 const DEFAULT_CORS_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:4173",
@@ -138,23 +172,89 @@ const extraCors = String(process.env.CORS_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const frontendUrl = String(process.env.FRONTEND_URL || "").trim().replace(/\/$/, "");
 
-const corsAllowList = new Set([...DEFAULT_CORS_ORIGINS, ...extraCors]);
+const corsAllowList = new Set([
+  ...DEFAULT_CORS_ORIGINS,
+  ...extraCors,
+  ...(frontendUrl ? [frontendUrl] : []),
+]);
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (process.env.CORS_ALLOW_ALL === "1") return true;
+  if (corsAllowList.has(origin)) return true;
+  return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
+}
+
+function createRateLimiter({ windowMs, max, message }) {
+  const hits = new Map();
+  const timer = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, rec] of hits) {
+      if (now - rec.start > windowMs * 2) hits.delete(ip);
+    }
+  }, windowMs);
+  if (typeof timer.unref === "function") timer.unref();
+  return (req, res, next) => {
+    const ip = String(req.ip || req.socket?.remoteAddress || "unknown");
+    const now = Date.now();
+    let rec = hits.get(ip);
+    if (!rec || now - rec.start > windowMs) {
+      rec = { count: 0, start: now };
+    }
+    rec.count += 1;
+    hits.set(ip, rec);
+    if (rec.count > max) {
+      res.setHeader("Retry-After", String(Math.ceil(windowMs / 1000)));
+      return res.status(429).json({ error: message });
+    }
+    return next();
+  };
+}
+
+/** P-05: şifre alt sınırı. İşletme hesapları ücretli listelemeleri yönetiyor. */
+const MIN_PASSWORD_LENGTH = 8;
+const PASSWORD_TOO_SHORT_MSG = `Şifre en az ${MIN_PASSWORD_LENGTH} karakter olmalıdır.`;
+
+const loginLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: "Çok fazla giriş denemesi. Lütfen 15 dakika sonra tekrar deneyin.",
+});
+const forgotLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: "Çok fazla şifre sıfırlama isteği. Lütfen 15 dakika sonra tekrar deneyin.",
+});
+
+/**
+ * ⚠️ GÜVENLİK DÜZELTMESİ (denetim bulgusu Y-04): Login/forgot dışındaki public
+ * yazma uçları korumasızdı. /api/track-visitor ve /api/analytics/* sayaçları
+ * dışarıdan sınırsız şişirilebiliyor (ölçüm: 10 istekte sayaç 26 → 36),
+ * /api/partnership-apply ise HER İSTEKTE e-posta gönderiyordu (spam vektörü).
+ */
+const partnershipLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: "Çok fazla başvuru gönderildi. Lütfen bir saat sonra tekrar deneyin.",
+});
+const analyticsLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: "Çok fazla istek. Lütfen biraz sonra tekrar deneyin.",
+});
+const visitorLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: "Çok fazla istek. Lütfen daha sonra tekrar deneyin.",
+});
 
 app.use(
   cors({
     origin(origin, callback) {
-      // Same-origin / curl / server-to-server: Origin yok
-      if (!origin) return callback(null, true);
-      if (corsAllowList.has(origin) || process.env.CORS_ALLOW_ALL === "1") {
-        return callback(null, true);
-      }
-      // Vercel preview deploy'ları
-      if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) {
-        return callback(null, true);
-      }
-      // Geriye dönük uyumluluk: bilinmeyen origin'e de izin (canlı bozulmasın)
-      return callback(null, true);
+      if (isAllowedOrigin(origin)) return callback(null, true);
+      return callback(null, false);
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -173,7 +273,16 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
+  // Y-02: Supabase hydrate arka planda sürerken bile bu uç hemen cevap verir.
+  res.json({
+    status: "ok",
+    source: "KKTC Merkez Bankası",
+    centralBankUpdatedAt: cachedRates.centralBankUpdatedAt || null,
+    centralBankXmlDate: cachedRates.centralBankXmlDate || null,
+    centralBankBulletinNo: cachedRates.centralBankBulletinNo || null,
+    ratesPrimed: Boolean(cachedRates.centralBankRates),
+    boot: bootState,
+  });
 });
 
 /**
@@ -190,7 +299,10 @@ app.get("/api/rates-stream", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const sseOrigin = req.headers.origin;
+  if (sseOrigin && isAllowedOrigin(sseOrigin)) {
+    res.setHeader("Access-Control-Allow-Origin", sseOrigin);
+  }
 
   // İstemciyi listeye ekle
   const clientId = Date.now() + Math.random();
@@ -364,7 +476,10 @@ app.get("/api/kurlar", (_req, res) => {
           subscription_type: biz.subscription_type || null,
           subscription_end_date: biz.subscription_end_date || null,
           days_remaining: biz.days_remaining != null ? biz.days_remaining : null,
-          logo_url: biz.logo_url || null,
+          has_logo: Boolean(biz.logo_url),
+          logo_url: biz.logo_url
+            ? `/api/logos/${encodeURIComponent(institutionId)}`
+            : null,
           working_hours: biz.working_hours || null,
           branch_count: Number(biz.branch_count) || 0,
           slug: buildBusinessSlug({
@@ -382,6 +497,9 @@ app.get("/api/kurlar", (_req, res) => {
       banks,
       centralBankUpdatedAt: cachedRates.centralBankUpdatedAt,
       centralBankXmlDate: cachedRates.centralBankXmlDate,
+      centralBankBulletinNo: cachedRates.centralBankBulletinNo,
+      centralBankValidRange: cachedRates.centralBankValidRange,
+      centralBankSourceName: cachedRates.centralBankSourceName,
       rawCentralBankRates: cachedRates.centralBankRates,
     });
   } catch (error) {
@@ -394,11 +512,48 @@ app.get("/api/kurlar", (_req, res) => {
   }
 });
 
+/** Public: işletme logosunu base64 yerine ayrı endpoint'ten sun */
+app.get("/api/logos/:institutionId", (req, res) => {
+  try {
+    const institutionId = decodeURIComponent(String(req.params.institutionId || "").trim());
+    if (!institutionId) {
+      return res.status(400).json({ error: "Geçersiz kurum." });
+    }
+    const row = getInstitutionFullBySlug(institutionId);
+    if (!row?.logo_url) {
+      return res.status(404).json({ error: "Logo bulunamadı." });
+    }
+    const logoUrl = String(row.logo_url);
+    const dataMatch = logoUrl.match(
+      /^data:([^;,]+)(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i
+    );
+    if (dataMatch) {
+      const buf = Buffer.from(dataMatch[2], "base64");
+      res.setHeader("Content-Type", dataMatch[1] || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.send(buf);
+    }
+    if (/^https?:\/\//i.test(logoUrl)) {
+      return res.redirect(302, logoUrl);
+    }
+    return res.status(404).json({ error: "Logo bulunamadı." });
+  } catch (err) {
+    console.error("[LOGO] Error:", err.message);
+    return res.status(500).json({ error: "Logo alınamadı." });
+  }
+});
+
 /**
- * Public endpoint: Tüm bankaların margin ayarlarını döndür
- * Frontend'de dinamik hesaplama için gerekli
+ * Super Admin: tüm işletmelerin kâr marjları.
+ *
+ * ⚠️ GÜVENLİK DÜZELTMESİ (denetim bulgusu K-02): Bu uç önceden PUBLIC'ti ve
+ * 20 kurumun alış/satış marjını (pasif olanlar dahil) kimlik doğrulaması olmadan
+ * dönüyordu — bir rakip döviz bürosu diğerinin fiyatlama stratejisini tek istekle
+ * çekebiliyordu. Marj ticari olarak hassas veridir; artık superadmin'e kapalıdır.
+ *
+ * Müşteri panosu nihai kuru zaten /api/kurlar'dan alır (marja ihtiyacı yoktur).
  */
-app.get("/api/margins", (_req, res) => {
+app.get("/api/margins", requireSuperAdmin, (_req, res) => {
   try {
     const adjustmentsMap = getAllAdjustmentsMap();
     const margins = {};
@@ -421,121 +576,124 @@ app.get("/api/margins", (_req, res) => {
   }
 });
 
+/**
+ * Public: KKTC MB günlük bülteni (işletme paneli "salt okunur" bloğu).
+ *
+ * ⚠️ K-03 sonrası: Bu uç artık KENDİ XML isteğini/parser'ını çalıştırmıyor.
+ * Fiyatlama ile aynı önbelleği (cachedRates) kullanır — böylece işletme panelinin
+ * gördüğü kur ile müşteri panosundaki kur tanım gereği aynı olur. Önbellek henüz
+ * dolmadıysa kaynağa bir kez doğrudan gidilir.
+ */
 app.get("/api/kktc-kurlar", async (_req, res) => {
   try {
-    const xmlUrl = "https://mb.gov.ct.tr/kur/gunluk.xml";
-    const httpsAgent = new https.Agent({ rejectUnauthorized: false });
-    
-    const response = await axios.get(xmlUrl, {
-      timeout: 10000,
-      httpsAgent,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      },
-    });
-    const xmlData = response.data;
+    let rates = cachedRates.centralBankRates;
+    let tarih = cachedRates.centralBankXmlDate;
+    let duyuruNo = cachedRates.centralBankBulletinNo;
+    let gecerlilik = cachedRates.centralBankValidRange;
 
-    const parser = new xml2js.Parser();
-    const jsonData = await parser.parseStringPromise(xmlData);
-
-    const root = jsonData.KKTCMB_Doviz_Kurlari || {};
-    const tarih = root.Kur_Tarihi?.[0] || null;
-
-    const kurArray = [];
-    const currencySymbols = ["USD", "EUR", "GBP"];
-    const resmiKurlar = root.Resmi_Kurlar?.[0]?.Resmi_Kur || [];
-
-    for (const kur of resmiKurlar) {
-      const sembol = kur.Sembol?.[0];
-      if (currencySymbols.includes(sembol)) {
-        const alis = Number(kur.Doviz_Alis?.[0]);
-        const satis = Number(kur.Doviz_Satis?.[0]);
-        
-        // Efektif kurları DOĞRUDAN oku - fallback YOK
-        const efektif_alis = parseFloat(kur.Efektif_Alis?.[0]?.toString().replace(',', '.')) || 0;
-        const efektif_satis = parseFloat(kur.Efektif_Satis?.[0]?.toString().replace(',', '.')) || 0;
-        
-        if (Number.isFinite(alis) && Number.isFinite(satis)) {
-          kurArray.push({
-            sembol,
-            alis,
-            satis,
-            efektif_alis,
-            efektif_satis,
-          });
-          console.log(`[KKTC-KURLAR] ${sembol}: alis=${alis}, satis=${satis}, efektif_alis=${efektif_alis}, efektif_satis=${efektif_satis}`);
-        }
+    if (!rates || Object.keys(rates).length === 0) {
+      const fresh = await getCentralBankRates();
+      if (fresh.source === "error" || !fresh.rates) {
+        throw new Error(fresh.error || "KKTC MB kaynağına ulaşılamadı.");
       }
+      rates = fresh.rates;
+      tarih = fresh.xmlDate;
+      duyuruNo = fresh.bulletinNo;
+      gecerlilik = fresh.validRange;
     }
 
-    console.log(`[KKTC-KURLAR] ${kurArray.length} kur başarıyla parse edildi (Tarih: ${tarih})`);
+    const kurlar = ["USD", "EUR", "GBP"]
+      .filter((sembol) => rates[sembol])
+      .map((sembol) => ({
+        sembol,
+        alis: rates[sembol].buy,
+        satis: rates[sembol].sell,
+        efektif_alis: rates[sembol].efektif_buy,
+        efektif_satis: rates[sembol].efektif_sell,
+      }));
 
     return res.json({
       success: true,
+      kaynak: "KKTC Merkez Bankası",
       tarih,
-      kurlar: kurArray,
+      duyuru_no: duyuruNo,
+      gecerlilik,
+      kurlar,
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[KKTC-KURLAR] Parse başarısız:", error.message);
-    return res.status(500).json({
+    console.error("[KKTC-KURLAR] Bülten alınamadı:", error.message);
+    return res.status(503).json({
       success: false,
-      error: "KKTC kurları alınamadı.",
+      error: "KKTC Merkez Bankası kurları şu anda alınamıyor.",
       message: error.message,
     });
   }
 });
 
-app.post("/api/auth/login", (req, res) => {
-  const username = String(req.body?.username || "").trim();
-  const password = String(req.body?.password || "");
+app.post("/api/auth/login", loginLimiter, (req, res) => {
+  try {
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
 
-  if (!username || !password) {
-    return res.status(400).json({ error: "Giriş ID ve şifre zorunludur." });
-  }
-  if (username.includes("@")) {
-    return res.status(400).json({
-      error: "E-posta ile giriş yapılamaz. Lütfen Giriş ID kullanın.",
+    if (!username || !password) {
+      return res.status(400).json({ error: "Giriş ID ve şifre zorunludur." });
+    }
+    if (username.includes("@")) {
+      return res.status(400).json({
+        error: "E-posta ile giriş yapılamaz. Lütfen Giriş ID kullanın.",
+      });
+    }
+
+    console.log(`[AUTH] Login attempt: ${username}`);
+    const admin = findAdminByUsername(username);
+    console.log(`[AUTH] User found: ${!!admin}`);
+    if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
+      return res.status(401).json({ error: "Geçersiz Giriş ID veya şifre." });
+    }
+
+    const role = admin.role || "business";
+    const isActive = !(admin.is_active === 0 || admin.is_active === false);
+
+    const token = signToken({
+      username: admin.username,
+      institution_id: admin.institution_id,
+      institution_name: admin.institution_name,
+      role,
     });
+
+    touchLastLogin(admin.username);
+    const fullAfterLogin = getInstitutionFullById(admin.id);
+    if (fullAfterLogin) {
+      syncInstitutionUpsert(fullAfterLogin).catch((err) => {
+        console.warn("[AUTH] last_login sync:", err?.message || err);
+      });
+    }
+
+    return res.json({
+      success: true,
+      token,
+      username: admin.username,
+      institution_id: admin.institution_id,
+      institution_name: admin.institution_name,
+      role,
+      subscription: admin.subscription || "Test",
+      subscription_type: admin.subscription_type || "Test",
+      subscription_end_date: admin.subscription_end_date || null,
+      days_remaining: admin.days_remaining != null ? admin.days_remaining : null,
+      is_active: isActive,
+    });
+  } catch (err) {
+    console.error("[AUTH] login:", err.message);
+    return res.status(500).json({ error: "Giriş yapılamadı." });
   }
-
-  console.log(`[AUTH] Login attempt: ${username}`);
-  const admin = findAdminByUsername(username);
-  console.log(`[AUTH] User found: ${!!admin}`);
-  if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
-    return res.status(401).json({ error: "Geçersiz Giriş ID veya şifre." });
-  }
-
-  const role = admin.role || "business";
-  const isActive = !(admin.is_active === 0 || admin.is_active === false);
-
-  const token = signToken({
-    username: admin.username,
-    institution_id: admin.institution_id,
-    institution_name: admin.institution_name,
-    role,
-  });
-
-  return res.json({
-    success: true,
-    token,
-    username: admin.username,
-    institution_id: admin.institution_id,
-    institution_name: admin.institution_name,
-    role,
-    subscription: admin.subscription || "Test",
-    subscription_type: admin.subscription_type || "Test",
-    subscription_end_date: admin.subscription_end_date || null,
-    days_remaining: admin.days_remaining != null ? admin.days_remaining : null,
-    is_active: isActive,
-  });
 });
 
 /** Genel mesaj — hesap varlığını sızdırmaz */
 const FORGOT_PASSWORD_OK_MSG =
   "Eğer bu hesap sistemde kayıtlıysa, şifre sıfırlama bağlantısı e-posta adresinize gönderildi.";
 
-app.post("/api/forgot-password", async (req, res) => {
+app.post("/api/forgot-password", forgotLimiter, async (req, res) => {
   try {
     const emailOrUsername = String(req.body?.email || req.body?.username || "").trim();
     if (!emailOrUsername) {
@@ -581,15 +739,13 @@ app.post("/api/forgot-password", async (req, res) => {
       token,
       expiresAt,
     });
-    syncPasswordReset({
+    await syncPasswordReset({
       institution_id: institution.id,
       institution_slug: institution.institution_id,
       email: destination,
       token,
       expires_at: expiresAt,
       used: false,
-    }).catch((err) => {
-      console.warn("[AUTH] password_reset sync:", err?.message || err);
     });
 
     const frontendBase = getFrontendBaseUrl();
@@ -599,6 +755,13 @@ app.post("/api/forgot-password", async (req, res) => {
       to: destination,
       resetUrl,
       institutionName: institution.institution_name,
+    });
+    await recordAudit({
+      action: "password_reset_requested",
+      actor: institution.username,
+      institution_id: institution.institution_id,
+      institution_name: institution.institution_name,
+      detail: destination,
     });
 
     return res.json({ success: true, message: FORGOT_PASSWORD_OK_MSG });
@@ -610,7 +773,7 @@ app.post("/api/forgot-password", async (req, res) => {
   }
 });
 
-app.post("/api/reset-password", (req, res) => {
+app.post("/api/reset-password", async (req, res) => {
   try {
     const token = String(req.body?.token || "").trim();
     const newPassword = String(req.body?.password || req.body?.newPassword || "");
@@ -618,8 +781,9 @@ app.post("/api/reset-password", (req, res) => {
     if (!token || !newPassword) {
       return res.status(400).json({ error: "Token ve yeni şifre zorunludur." });
     }
-    if (newPassword.length < 4) {
-      return res.status(400).json({ error: "Şifre en az 4 karakter olmalıdır." });
+    // P-05: hesaplar para kazandıran listelemeleri yönetiyor — 4 karakter yetersizdi.
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: PASSWORD_TOO_SHORT_MSG });
     }
 
     const resetRow = findValidPasswordReset(token);
@@ -638,14 +802,21 @@ app.post("/api/reset-password", (req, res) => {
     markPasswordResetUsed(resetRow.id);
 
     const full = getInstitutionFullById(resetRow.institution_id);
-    if (full) syncInstitutionUpsert(full);
-    syncPasswordReset({
+    if (full) await syncInstitutionUpsert(full);
+    await syncPasswordReset({
       institution_id: resetRow.institution_id,
       institution_slug: full?.institution_id || null,
       email: resetRow.email,
       token: resetRow.token,
       expires_at: resetRow.expires_at,
       used: true,
+    });
+    await recordAudit({
+      action: "password_reset",
+      actor: full?.username || null,
+      institution_id: full?.institution_id || null,
+      institution_name: full?.institution_name || null,
+      detail: "Şifre sıfırlama bağlantısı ile güncellendi",
     });
 
     return res.json({
@@ -677,7 +848,7 @@ app.get("/api/admin/me", requireAuth, (req, res) => {
   });
 });
 
-app.put("/api/business/change-password", requireAuth, (req, res) => {
+app.put("/api/business/change-password", requireAuth, async (req, res) => {
   try {
     if (req.user?.role === "superadmin") {
       return res.status(403).json({ error: "Bu işlem yalnızca işletme hesapları için geçerlidir." });
@@ -689,8 +860,8 @@ app.put("/api/business/change-password", requireAuth, (req, res) => {
     if (!oldPassword || !newPassword) {
       return res.status(400).json({ error: "Eski ve yeni şifre zorunludur." });
     }
-    if (newPassword.length < 4) {
-      return res.status(400).json({ error: "Yeni şifre en az 4 karakter olmalıdır." });
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: PASSWORD_TOO_SHORT_MSG });
     }
 
     const admin = findAdminByUsername(req.user.username);
@@ -705,7 +876,21 @@ app.put("/api/business/change-password", requireAuth, (req, res) => {
     const passwordHash = bcrypt.hashSync(newPassword, 10);
     updateInstitutionPassword(admin.id, passwordHash);
     const full = getInstitutionFullById(admin.id);
-    if (full) syncInstitutionUpsert(full);
+    if (full) {
+      const synced = await syncInstitutionUpsert(full);
+      if (!synced) {
+        console.error(
+          `[AUTH] Şifre SQLite'ta güncellendi ama Supabase sync başarısız: ${full.institution_id}`
+        );
+      }
+    }
+    await recordAudit({
+      action: "password_change",
+      actor: admin.username,
+      institution_id: admin.institution_id,
+      institution_name: admin.institution_name,
+      detail: "İşletme panelinden şifre değiştirildi",
+    });
 
     return res.json({ success: true, message: "Şifre başarıyla değiştirildi." });
   } catch (err) {
@@ -783,7 +968,7 @@ app.get("/api/business/branches", requireAuth, (req, res) => {
 });
 
 /** İşletme kendi şubesinin telefon/whatsapp/konum bilgisini günceller */
-app.put("/api/business/branches/:id", requireAuth, async (req, res) => {
+app.put("/api/business/branches/:id", requireAuth, requireWritableBusiness, async (req, res) => {
   try {
     if (req.user?.role === "superadmin") {
       return res.status(403).json({ error: "Yalnızca işletme hesapları." });
@@ -818,7 +1003,7 @@ app.put("/api/business/branches/:id", requireAuth, async (req, res) => {
 });
 
 /** İşletme, şube limiti dolmadıysa doğrudan şube ekler */
-app.post("/api/business/branches", requireAuth, async (req, res) => {
+app.post("/api/business/branches", requireAuth, requireWritableBusiness, async (req, res) => {
   try {
     if (req.user?.role === "superadmin") {
       return res.status(403).json({ error: "Yalnızca işletme hesapları." });
@@ -865,7 +1050,7 @@ app.post("/api/business/branches", requireAuth, async (req, res) => {
 });
 
 /** İşletme yeni şube talebi oluşturur */
-app.post("/api/business/branch-requests", requireAuth, (req, res) => {
+app.post("/api/business/branch-requests", requireAuth, async (req, res) => {
   try {
     if (req.user?.role === "superadmin") {
       return res.status(403).json({ error: "Yalnızca işletme hesapları." });
@@ -885,6 +1070,12 @@ app.post("/api/business/branch-requests", requireAuth, (req, res) => {
       request_type: req.body?.request_type,
       branch_id: req.body?.branch_id,
     });
+    const synced = await syncBranchRequestUpsert(request);
+    if (!synced) {
+      console.error(
+        `[BRANCH-REQUEST] SQLite'a yazıldı ama Supabase sync başarısız: ${full.institution_id}`
+      );
+    }
     return res.status(201).json({ request });
   } catch (err) {
     return res.status(400).json({ error: err.message || "Talep oluşturulamadı." });
@@ -962,6 +1153,27 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
     if (!existing) return res.status(404).json({ error: "Talep bulunamadı." });
 
     const nextStatus = String(req.body?.status || "").trim();
+    if (!["approved", "rejected", "pending"].includes(nextStatus)) {
+      return res.status(400).json({ error: "Geçersiz talep durumu." });
+    }
+
+    /**
+     * ⚠️ MANTIK DÜZELTMESİ (denetim bulgusu U-11): Durum kontrolü yoktu; zaten
+     * onaylanmış bir talep tekrar onaylanınca createBranch YENİDEN çalışıyordu.
+     * Bunu şu ana kadar yalnızca şube limiti durduruyordu — limiti yüksek bir
+     * işletmede aynı talep birden çok şube üretebiliyordu. Ayrıca yöneticiye
+     * alakasız bir "Şube limitine ulaşıldı" hatası gösteriliyordu.
+     */
+    if (existing.status !== "pending") {
+      return res.status(409).json({
+        error: `Bu talep zaten işleme alınmış (${
+          existing.status === "approved" ? "onaylandı" : "reddedildi"
+        }). Tekrar işlenemez.`,
+        code: "REQUEST_ALREADY_PROCESSED",
+        request: existing,
+      });
+    }
+
     let createdBranch = null;
     let renewedBranch = null;
 
@@ -1030,6 +1242,16 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
       }
     }
 
+    await syncBranchRequestUpsert(request);
+    await recordAudit({
+      action: nextStatus === "approved" ? "branch_request_approved" : "branch_request_rejected",
+      actor: req.user?.username || "superadmin",
+      institution_id: existing.institution_id || null,
+      institution_name: existing.business_name || null,
+      detail: `"${existing.branch_name || "şube"}" ${
+        existing.request_type === "reactivate" ? "yenileme" : "şube"
+      } talebi ${nextStatus === "approved" ? "onaylandı" : "reddedildi"} (talep #${id})`,
+    });
     return res.json({ request, branch: createdBranch || renewedBranch });
   } catch (err) {
     const status =
@@ -1082,6 +1304,13 @@ app.post("/api/admin/businesses", requireSuperAdmin, async (req, res) => {
         );
       }
     }
+    await recordAudit({
+      action: "business_create",
+      actor: req.user?.username || "superadmin",
+      institution_id: business.institution_id || null,
+      institution_name: business.institution_name || null,
+      detail: `Yeni işletme oluşturuldu (paket=${business.subscription_type || "Test"}, şube limiti=${business.branch_limit ?? 1})`,
+    });
     return res.status(201).json({ business });
   } catch (err) {
     return res.status(400).json({ error: err.message || "İşletme oluşturulamadı." });
@@ -1115,6 +1344,13 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, async (req, res) => {
         );
       }
     }
+    await recordAudit({
+      action: "business_update",
+      actor: req.user?.username || "superadmin",
+      institution_id: business.institution_id || null,
+      institution_name: business.institution_name || null,
+      detail: `İşletme güncellendi (paket=${business.subscription_type}, bitiş=${business.subscription_end_date || "—"}, şube limiti=${business.branch_limit}, durum=${business.is_active ? "aktif" : "pasif"}${req.body?.password ? ", şifre değiştirildi" : ""})`,
+    });
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -1122,7 +1358,7 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, async (req, res) => {
   }
 });
 
-app.put("/api/admin/businesses/:id/reset-subscription", requireSuperAdmin, (req, res) => {
+app.put("/api/admin/businesses/:id/reset-subscription", requireSuperAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
@@ -1130,7 +1366,14 @@ app.put("/api/admin/businesses/:id/reset-subscription", requireSuperAdmin, (req,
     }
     const business = resetBusinessSubscription(id);
     const full = getInstitutionFullById(id);
-    if (full) syncInstitutionUpsert(full);
+    if (full) await syncInstitutionUpsert(full);
+    await recordAudit({
+      action: "subscription_reset",
+      actor: req.user?.username || "superadmin",
+      institution_id: business.institution_id || null,
+      institution_name: business.institution_name || null,
+      detail: "Abonelik sıfırlandı",
+    });
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -1138,7 +1381,7 @@ app.put("/api/admin/businesses/:id/reset-subscription", requireSuperAdmin, (req,
   }
 });
 
-app.put("/api/admin/businesses/:id/status", requireSuperAdmin, (req, res) => {
+app.put("/api/admin/businesses/:id/status", requireSuperAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
@@ -1149,7 +1392,14 @@ app.put("/api/admin/businesses/:id/status", requireSuperAdmin, (req, res) => {
     }
     const business = updateBusinessStatus(id, req.body.is_active);
     const full = getInstitutionFullById(id);
-    if (full) syncInstitutionUpsert(full);
+    if (full) await syncInstitutionUpsert(full);
+    await recordAudit({
+      action: business.is_active ? "business_activate" : "business_deactivate",
+      actor: req.user?.username || "superadmin",
+      institution_id: business.institution_id || null,
+      institution_name: business.institution_name || null,
+      detail: business.is_active ? "İşletme aktife alındı" : "İşletme pasife alındı",
+    });
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -1157,15 +1407,29 @@ app.put("/api/admin/businesses/:id/status", requireSuperAdmin, (req, res) => {
   }
 });
 
-app.delete("/api/admin/businesses/:id", requireSuperAdmin, (req, res) => {
+app.delete("/api/admin/businesses/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
       return res.status(400).json({ error: "Geçersiz işletme ID." });
     }
     const full = getInstitutionFullById(id);
+    await recordAudit({
+      action: "business_delete",
+      actor: req.user?.username || "superadmin",
+      institution_id: full?.institution_id || null,
+      institution_name: full?.institution_name || null,
+      detail: `İşletme silindi (id=${id})`,
+    });
     const result = deleteBusiness(id);
-    if (full?.institution_id) syncInstitutionDelete(full.institution_id);
+    if (full?.institution_id) {
+      const synced = await syncInstitutionDelete(full.institution_id);
+      if (!synced) {
+        console.error(
+          `[ADMIN] İşletme SQLite'tan silindi ama Supabase sync başarısız: ${full.institution_id}`
+        );
+      }
+    }
     return res.json(result);
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -1284,16 +1548,28 @@ app.get("/api/doviz-burosu/:slug", (req, res) => {
         id: biz.id,
         name: displayName,
         institutionId,
-        logo_url: biz.logo_url || null,
+        logo_url: biz.logo_url
+          ? `/api/logos/${encodeURIComponent(institutionId)}`
+          : null,
         phone: biz.phone || null,
-        email: biz.email || null,
         workingHours: biz.working_hours || null,
         working_hours: biz.working_hours || null,
         exchangeRates,
         subscription_type: biz.subscription_type || null,
         branch_count: Number(biz.branch_count) || found.branches.length,
       },
-      branches: found.branches,
+      branches: (found.branches || []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        phone: b.phone || null,
+        whatsapp: b.whatsapp || null,
+        address: b.address || null,
+        lat: b.lat,
+        lng: b.lng,
+        city: b.city || null,
+        slug: b.slug || null,
+        is_active: b.is_active !== false,
+      })),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Döviz bürosu alınamadı." });
@@ -1329,9 +1605,16 @@ app.get("/api/admin/seo", requireSuperAdmin, (_req, res) => {
   }
 });
 
-app.put("/api/admin/seo", requireSuperAdmin, (req, res) => {
+app.put("/api/admin/seo", requireSuperAdmin, async (req, res) => {
   try {
     const seo = updateSeoSettings(req.body || {});
+    await recordAudit({
+      action: "seo_update",
+      actor: req.user?.username || "superadmin",
+      institution_id: null,
+      institution_name: null,
+      detail: `SEO ayarları güncellendi (başlık="${String(seo.title || "").slice(0, 60)}")`,
+    });
     return res.json({ success: true, seo });
   } catch (err) {
     return res.status(400).json({ error: err.message || "SEO ayarları kaydedilemedi." });
@@ -1364,7 +1647,7 @@ app.get("/api/branches", (_req, res) => {
 });
 
 /** GDPR: çerez onayı sonrası tekil ziyaretçi sayacı (+1) — geriye uyumluluk */
-app.post("/api/track-visitor", (_req, res) => {
+app.post("/api/track-visitor", visitorLimiter, (_req, res) => {
   try {
     const stats = incrementVisitorCount();
     syncSiteStats(stats.total_visitors);
@@ -1413,7 +1696,7 @@ async function resolveApproxLocation(ip) {
 }
 
 /** Anonim oturum başlat (çerez kabulü) */
-app.post("/api/analytics/start", async (req, res) => {
+app.post("/api/analytics/start", analyticsLimiter, async (req, res) => {
   try {
     const session_id = String(req.body?.session_id || "").trim();
     if (!session_id) {
@@ -1432,7 +1715,7 @@ app.post("/api/analytics/start", async (req, res) => {
 });
 
 /** Anonim etkileşim güncelle */
-app.put("/api/analytics/update", (req, res) => {
+app.put("/api/analytics/update", analyticsLimiter, (req, res) => {
   try {
     const session_id = String(req.body?.session_id || "").trim();
     if (!session_id) {
@@ -1452,7 +1735,40 @@ app.put("/api/analytics/update", (req, res) => {
   }
 });
 
-/** Super Admin: toplam ziyaretçi + son oturumlar */
+/** Super Admin: MB kurları, dual-write, SQLite↔Supabase drift, audit log */
+app.get("/api/admin/system-health", requireSuperAdmin, async (_req, res) => {
+  try {
+    const sqliteRows = listAllInstitutionsForSync();
+    const drift = await compareInstitutionDrift(sqliteRows);
+    const dualWrite = getDualWriteErrors(20);
+    return res.json({
+      rates: {
+        lastAttemptAt: ratesHealth.lastAttemptAt,
+        lastOkAt: ratesHealth.lastOkAt,
+        lastErrorAt: ratesHealth.lastErrorAt,
+        lastError: ratesHealth.lastError,
+        source: ratesHealth.source,
+        sourceName: ratesHealth.sourceName || "KKTC Merkez Bankası",
+        bulletinNo: ratesHealth.bulletinNo || cachedRates.centralBankBulletinNo || null,
+        validRange: ratesHealth.validRange || cachedRates.centralBankValidRange || null,
+        centralBankUpdatedAt: cachedRates.centralBankUpdatedAt || null,
+        centralBankXmlDate: cachedRates.centralBankXmlDate || null,
+        ratesChangedAt: cachedRates.ratesChangedAt || null,
+      },
+      boot: bootState,
+      dualWrite: {
+        recent: dualWrite,
+        count: dualWrite.length,
+      },
+      drift,
+      sqlite: { institutions: sqliteRows.length },
+      audit: listAuditLogs(80),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Sağlık raporu alınamadı." });
+  }
+});
+
 app.get("/api/admin/stats", requireSuperAdmin, (_req, res) => {
   try {
     return res.json(getVisitorStats());
@@ -1470,7 +1786,7 @@ app.get("/api/admin/analytics", requireSuperAdmin, (req, res) => {
   }
 });
 
-app.post("/api/admin/branches", requireSuperAdmin, (req, res) => {
+app.post("/api/admin/branches", requireSuperAdmin, async (req, res) => {
   try {
     const branch = createBranch({
       business_id: req.body?.business_id,
@@ -1487,9 +1803,16 @@ app.post("/api/admin/branches", requireSuperAdmin, (req, res) => {
     });
     const biz = getInstitutionFullById(branch.business_id);
     if (biz) {
-      syncBranchUpsert(branch, biz.institution_id);
-      syncInstitutionUpsert(biz);
+      await syncBranchUpsert(branch, biz.institution_id);
+      await syncInstitutionUpsert(biz);
     }
+    await recordAudit({
+      action: "branch_create",
+      actor: req.user?.username || "superadmin",
+      institution_id: biz?.institution_id || null,
+      institution_name: biz?.institution_name || null,
+      detail: `Şube eklendi: "${branch.name}" (id=${branch.id})`,
+    });
     return res.status(201).json({ branch });
   } catch (err) {
     const status =
@@ -1502,7 +1825,7 @@ app.post("/api/admin/branches", requireSuperAdmin, (req, res) => {
   }
 });
 
-app.put("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
+app.put("/api/admin/branches/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
@@ -1523,10 +1846,16 @@ app.put("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
     });
     const biz = getInstitutionFullById(branch.business_id);
     if (biz) {
-      syncBranchUpsert(branch, biz.institution_id);
-      // Şube aboneliği kurum kaydını güncellediyse Supabase'e de yaz
-      syncInstitutionUpsert(biz);
+      await syncBranchUpsert(branch, biz.institution_id);
+      await syncInstitutionUpsert(biz);
     }
+    await recordAudit({
+      action: "branch_update",
+      actor: req.user?.username || "superadmin",
+      institution_id: biz?.institution_id || null,
+      institution_name: biz?.institution_name || null,
+      detail: `Şube güncellendi: "${branch.name}" (id=${branch.id}, durum=${branch.is_active === false ? "pasif" : "aktif"})`,
+    });
     return res.json({ branch });
   } catch (err) {
     const status = err.message === "Şube bulunamadı." ? 404 : 400;
@@ -1534,7 +1863,7 @@ app.put("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
   }
 });
 
-app.delete("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
+app.delete("/api/admin/branches/:id", requireSuperAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
@@ -1547,7 +1876,14 @@ app.delete("/api/admin/branches/:id", requireSuperAdmin, (req, res) => {
       )
       .get(id);
     const result = deleteBranch(id);
-    if (before) syncBranchDelete(before, before.institution_id);
+    if (before) await syncBranchDelete(before, before.institution_id);
+    await recordAudit({
+      action: "branch_delete",
+      actor: req.user?.username || "superadmin",
+      institution_id: before?.institution_id || null,
+      institution_name: null,
+      detail: `Şube silindi: "${before?.name || "?"}" (id=${id})`,
+    });
     return res.json(result);
   } catch (err) {
     const status = err.message === "Şube bulunamadı." ? 404 : 400;
@@ -1649,7 +1985,7 @@ app.get("/api/admin/rates", requireAuth, (req, res) => {
   }
 });
 
-app.put("/api/admin/rates", requireAuth, (req, res) => {
+app.put("/api/admin/rates", requireAuth, requireWritableBusiness, async (req, res) => {
   const { institution_id, institution_name } = req.user;
   const payload = req.body?.currencies;
 
@@ -1707,7 +2043,18 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
     }
 
     const { historyWrites } = upsertAdjustments(institution_id, adjustments);
-    syncRateAdjustmentsMap(institution_id, adjustments);
+    await syncRateAdjustmentsMap(institution_id, adjustments);
+    if (historyWrites.length > 0) {
+      await recordAudit({
+        action: "margin_update",
+        actor: req.user?.username || null,
+        institution_id,
+        institution_name,
+        detail: historyWrites
+          .map((w) => `${w.currency} ${w.type}=${w.current.margin_value}${w.current.margin_type === "percent" ? "%" : "₺"}`)
+          .join(", "),
+      });
+    }
     // Public board "Son Güncelleme" — kâr marjı değişince damgayı ilerlet
     if (historyWrites.length > 0) {
       touchRatesChangedAt("margin");
@@ -1725,27 +2072,31 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
     for (const write of historyWrites) {
       const { currency, type, baseline, current } = write;
       if (baseline) {
-        insertMarginHistory({
+        try {
+          await insertMarginHistory({
+            institution_id,
+            currency,
+            type,
+            margin_type: baseline.margin_type,
+            margin_value: baseline.margin_value,
+            recorded_at: baseline.recorded_at,
+          });
+        } catch (err) {
+          console.warn("[SUPABASE] margin baseline sync:", err.message);
+        }
+      }
+      try {
+        await insertMarginHistory({
           institution_id,
           currency,
           type,
-          margin_type: baseline.margin_type,
-          margin_value: baseline.margin_value,
-          recorded_at: baseline.recorded_at,
-        }).catch((err) => {
-          console.warn("[SUPABASE] margin baseline sync:", err.message);
+          margin_type: current.margin_type,
+          margin_value: current.margin_value,
+          recorded_at: current.recorded_at,
         });
-      }
-      insertMarginHistory({
-        institution_id,
-        currency,
-        type,
-        margin_type: current.margin_type,
-        margin_value: current.margin_value,
-        recorded_at: current.recorded_at,
-      }).catch((err) => {
+      } catch (err) {
         console.warn("[SUPABASE] margin sync:", err.message);
-      });
+      }
     }
 
     return res.json({
@@ -1761,7 +2112,7 @@ app.put("/api/admin/rates", requireAuth, (req, res) => {
   }
 });
 
-app.post("/api/partnership-apply", async (req, res) => {
+app.post("/api/partnership-apply", partnershipLimiter, async (req, res) => {
   const { institution_name, contact_person, email, phone, message } = req.body;
 
   if (!institution_name || !contact_person || !email || !phone) {
@@ -2131,19 +2482,27 @@ function broadcastRateChange(newRates) {
  */
 async function refreshRatesCacheWithChangeDetection() {
   try {
+    ratesHealth.lastAttemptAt = new Date().toISOString();
     // Sadece Merkez Bankası kurlarını çek
     const central = await getCentralBankRates();
     const newCentralRates = central.rates || null;
 
-    // ✅ KRİTİK GÜVENLİK: Kaynak "mock" (fallback) ise bu veriyi hiçbir şekilde
-    // gerçek veri gibi işleme - kaydetme, broadcast etme. Canlı XML kaynağı geçici
-    // olarak erişilemez olduğunda ratesService.js sahte/mock kurlar (örn. USD 38.42)
-    // döndürüyor; bunlar geçmiş tabloya ve SSE'ye "gerçek değişim" gibi sızıp
-    // grafiklerde ani ve gerçek olmayan sıçramalar/düşüşler yaratıyordu.
-    if (central.source === "mock" || central.error) {
-      console.warn(`[REFRESH] ⚠️  Merkez Bankası kaynağı geçici olarak erişilemedi (${central.error || "mock fallback"}). Bu döngüde kayıt/broadcast YAPILMIYOR.`);
+    // ✅ KRİTİK GÜVENLİK: Kaynak erişilemezse bu döngüde hiçbir şey kaydetme /
+    // broadcast etme. ratesService artık sahte (mock) kur ÜRETMİYOR (bkz. K-03);
+    // hata durumunda { source: "error", rates: null } döner ve son geçerli cache korunur.
+    if (central.source === "error" || central.error || !newCentralRates) {
+      ratesHealth.lastErrorAt = new Date().toISOString();
+      ratesHealth.lastError = central.error || "kaynak erişilemedi";
+      ratesHealth.source = central.source || "error";
+      console.warn(`[REFRESH] ⚠️  KKTC Merkez Bankası kaynağı geçici olarak erişilemedi (${central.error || "bilinmeyen"}). Bu döngüde kayıt/broadcast YAPILMIYOR.`);
       return;
     }
+    ratesHealth.lastOkAt = new Date().toISOString();
+    ratesHealth.lastError = null;
+    ratesHealth.source = central.source;
+    ratesHealth.sourceName = central.sourceName || "KKTC Merkez Bankası";
+    ratesHealth.bulletinNo = central.bulletinNo || null;
+    ratesHealth.validRange = central.validRange || null;
 
     // ✅ Değişim tespiti
     const ratesChanged =
@@ -2198,11 +2557,17 @@ async function refreshRatesCacheWithChangeDetection() {
       banks: banks,
       centralBankUpdatedAt: central.updatedAt || central.fetchedAt || null,
       centralBankXmlDate: central.xmlDate || central.bulletinDate || null,
+      centralBankBulletinNo: central.bulletinNo || null,
+      centralBankValidRange: central.validRange || null,
+      centralBankSourceName: central.sourceName || "KKTC Merkez Bankası",
       centralBankRates: newCentralRates,
     };
 
     console.log(`[SCRAPER] ✅ Cache güncellendi — totalBanks=${cachedRates.totalBanks}, MB=${cachedRates.centralBankUpdatedAt}, changedAt=${cachedRates.ratesChangedAt}`);
   } catch (error) {
+    ratesHealth.lastErrorAt = new Date().toISOString();
+    ratesHealth.lastError = error.message;
+    ratesHealth.source = "error";
     console.error("[SCRAPER] ❌ Refresh başarısız:", error.message);
     cachedRates = {
       ...emptyPayloadForServerError(),
@@ -2214,93 +2579,137 @@ async function refreshRatesCacheWithChangeDetection() {
   }
 }
 
+/**
+ * Açılış durumu — /api/health bunu yayınlar.
+ * ⚠️ Y-02: Önceden app.listen() Supabase kontrol+hydrate adımlarının ARDINDAN
+ * çağrılıyordu; Supabase erişilemezse sunucu ~2 dk 12 sn boyunca /api/health
+ * dahil HİÇBİR isteğe cevap vermiyordu ve Render health check'i deploy'u
+ * başarısız sayabiliyordu. Artık önce dinlemeye başlıyoruz, ağır işler arkada.
+ */
+let bootState = {
+  listening: false,
+  schemaReady: false,
+  supabase: "pending",
+  hydrate: "pending",
+  ratesPrimed: false,
+  startedAt: new Date().toISOString(),
+  finishedAt: null,
+};
+
+/** Supabase hydrate + seed — app.listen() sonrası arka planda çalışır. */
+async function bootstrapPersistence() {
+  try {
+    const supabaseState = await checkSupabaseHasInstitutions();
+    const isFreshInstall = supabaseState.ok && !supabaseState.hasInstitutions;
+    bootState.supabase = supabaseState.ok ? "ok" : "unreachable";
+
+    if (isFreshInstall) {
+      console.log("[BOOT] Supabase'te kurum bulunamadı — gerçek ilk kurulum, katalog seed'i çalıştırılıyor.");
+      seedAdminsIfNeeded();
+      seedCatalogInstitutionsIfNeeded();
+      seedAdjustmentsIfNeeded();
+    } else if (!supabaseState.ok) {
+      console.warn(
+        "[BOOT] ⚠️ Supabase'e ulaşılamadı — güvenlik için katalog seed'i ATLANDI (mevcut kalıcı veri korunur)."
+      );
+    } else {
+      console.log(`[BOOT] Supabase'te ${supabaseState.count} kurum bulundu — seed atlanıyor, SoT=Supabase.`);
+    }
+
+    let hydrateResult = { ok: false, institutions: 0, adjustments: 0, branches: 0 };
+    try {
+      hydrateResult = await hydrateAdminDataFromSupabase({
+        upsertInstitutionRow: applySupabaseInstitutionRow,
+        upsertAdjustmentRow: applySupabaseAdjustmentRow,
+        upsertBranchRow: applySupabaseBranchRow,
+        upsertBranchRequestRow: applySupabaseBranchRequestRow,
+        upsertAuditRow: applySupabaseAuditRow,
+        replaceAllBranches: replaceBusinessBranchesFromSupabase,
+      });
+      purgeOrphanBranches();
+      bootState.hydrate = hydrateResult.ok ? "ok" : "failed";
+    } catch (err) {
+      bootState.hydrate = "failed";
+      console.warn("[SUPABASE-SYNC] Hydrate hatası:", err.message);
+    }
+
+    // Bootstrap (SQLite → Supabase) SADECE Supabase tamamen boşken (ilk kurulum).
+    // Hydrate başarılı olsa bile geri yazma YOK — aksi halde SoT ihlali.
+    if (isFreshInstall) {
+      try {
+        await bootstrapAdminDataToSupabase({
+          institutions: listAllInstitutionsForSync(),
+          branches: listAllBranchesForSync(),
+          adjustments: listAllAdjustmentsForSync(),
+          branchRequests: listAllBranchRequestsForSync(),
+        });
+      } catch (err) {
+        console.warn("[SUPABASE-SYNC] Bootstrap hatası:", err.message);
+      }
+    } else {
+      console.log(
+        `[SUPABASE-SYNC] Bootstrap ATLANDI — SoT=Supabase (hydrate ok=${hydrateResult.ok}, institutions=${hydrateResult.institutions}).`
+      );
+    }
+  } catch (err) {
+    bootState.supabase = "failed";
+    console.warn("[BOOT] Kalıcılık hazırlığı başarısız:", err.message);
+  } finally {
+    bootState.finishedAt = new Date().toISOString();
+    console.log(
+      `[BOOT] ✅ Hazırlık tamamlandı (supabase=${bootState.supabase}, hydrate=${bootState.hydrate}).`
+    );
+  }
+}
+
 async function startServer() {
   logMailConfigOnBoot();
 
-  // ⚠️ MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1 Çift yazım / dual-write):
-  // Tek gerçeklik kaynağı (Source of Truth) = Supabase.
-  //
-  // Boot sırası:
-  //   1) Şemayı kur, katalog/işletme seed'ini ERTELE (skipBusinessSeed).
-  //   2) Supabase'te (superadmin hariç) kurum var mı diye SOR.
-  //   3) Varsa → seed ATLA, hydrate et, bootstrap ÇALIŞTIRMA
-  //      (SQLite → Supabase geri yazımı kalıcı veriyi ezebilir).
-  //   4) Hiç yoksa (gerçek ilk kurulum) → seed + bootstrap.
-  //   5) Supabase'e ulaşılamadıysa → seed/bootstrap ATLA (güvenli taraf).
+  // Şema kurulumu senkron ve hızlı — dinlemeden önce yapılmalı.
+  // Katalog/işletme seed'i ERTELENİR: Supabase'te veri varsa seed çalışmamalı.
   initDb({ skipBusinessSeed: true });
+  bootState.schemaReady = true;
 
-  const supabaseState = await checkSupabaseHasInstitutions();
-  const isFreshInstall = supabaseState.ok && !supabaseState.hasInstitutions;
-
-  if (isFreshInstall) {
-    console.log("[BOOT] Supabase'te kurum bulunamadı — gerçek ilk kurulum, katalog seed'i çalıştırılıyor.");
-    seedAdminsIfNeeded();
-    seedCatalogInstitutionsIfNeeded();
-    seedAdjustmentsIfNeeded();
-  } else if (!supabaseState.ok) {
-    console.warn(
-      "[BOOT] ⚠️ Supabase'e ulaşılamadı — güvenlik için katalog seed'i ATLANDI (mevcut kalıcı veri korunur)."
-    );
-  } else {
-    console.log(`[BOOT] Supabase'te ${supabaseState.count} kurum bulundu — seed atlanıyor, SoT=Supabase.`);
-  }
-
-  // Supabase'teki kalıcı admin verisini SQLite'a geri yükle (deploy sonrası cache)
-  let hydrateResult = { ok: false, institutions: 0, adjustments: 0, branches: 0 };
+  // ⚠️ Y-05: Değişim tespiti için son bilinen kurları DİSKTEN yükle.
+  // Önceden previousRates yalnızca bellekteydi; her restart'ta null olduğu için
+  // ilk döngü "değişim var" sayılıyor ve ratesChangedAt o ana çekiliyordu —
+  // kur hiç değişmemiş olsa bile müşteri panosunda "Son Güncelleme" tazeleniyordu.
   try {
-    hydrateResult = await hydrateAdminDataFromSupabase({
-      upsertInstitutionRow: applySupabaseInstitutionRow,
-      upsertAdjustmentRow: applySupabaseAdjustmentRow,
-      upsertBranchRow: applySupabaseBranchRow,
-      replaceAllBranches: replaceBusinessBranchesFromSupabase,
-    });
-    purgeOrphanBranches();
+    const restored = getLatestHistoricalRatesSnapshot();
+    if (restored?.rates && Object.keys(restored.rates).length > 0) {
+      previousRates = restored.rates;
+      cachedRates.ratesChangedAt = restored.recordedAt || null;
+      console.log(
+        `[BOOT] Son kur anlık görüntüsü diskten geri yüklendi (${Object.keys(restored.rates).join(", ")} @ ${restored.recordedAt}).`
+      );
+    }
   } catch (err) {
-    console.warn("[SUPABASE-SYNC] Hydrate hatası:", err.message);
+    console.warn("[BOOT] Kur anlık görüntüsü geri yüklenemedi:", err.message);
   }
 
-  // Bootstrap (SQLite → Supabase) SADECE Supabase tamamen boşken (ilk kurulum).
-  // Hydrate başarılı olsa bile geri yazma YOK — aksi halde SoT ihlali.
-  if (isFreshInstall) {
-    bootstrapAdminDataToSupabase({
-      institutions: listAllInstitutionsForSync(),
-      branches: listAllBranchesForSync(),
-      adjustments: listAllAdjustmentsForSync(),
-    }).catch((err) => {
-      console.warn("[SUPABASE-SYNC] Bootstrap hatası:", err.message);
-    });
-  } else {
-    console.log(
-      `[SUPABASE-SYNC] Bootstrap ATLANDI — SoT=Supabase (hydrate ok=${hydrateResult.ok}, institutions=${hydrateResult.institutions}).`
-    );
-  }
-  
-  // ✅ ADIM 1: İlk yüklemede kurları çek ve SSE'ye hazırla
-  await refreshRatesCacheWithChangeDetection();
-
-  /**
-   * ✅ SADELEŞTIRILMIŞ: Merkez Bankası XML Kurlarına Odaklanılmış
-   * - Sadece Merkez Bankası XML kurları dinleniyor
-   * - Faiz, kredi ve mevduat API'leri tamamen kaldırıldı
-   * - 60 saniyeli güncelleme döngüsü
-   * - Cache fallback mekanizması aktif
-   */
-  const REFRESH_INTERVAL_MS = 60000; // 60 saniye - Merkez Bankası güncellemeleri
-  
-  setInterval(async () => {
-    await refreshRatesCacheWithChangeDetection();
-  }, REFRESH_INTERVAL_MS);
-
-  console.log(`[SCHEDULER] ✅ Merkez Bankası XML monitoring başlatıldı (${REFRESH_INTERVAL_MS / 1000}s interval)`);
-  console.log("[SCHEDULER] 📊 Sadece döviz kurları dinleniyor - Faiz/Kredi/Mevduat kaldırıldı");
-
+  // ✅ Y-02: ÖNCE dinlemeye başla — health check ve public uçlar hemen ayakta.
   app.listen(PORT, () => {
+    bootState.listening = true;
     console.log(`Backend API is running on http://localhost:${PORT}`);
     console.log("Rates endpoint: GET /api/kurlar");
     console.log("Auth endpoint: POST /api/auth/login");
     console.log("SSE Stream: GET /api/rates-stream");
-    console.log(`İlk yüklemede cache: totalBanks=${cachedRates.totalBanks}`);
   });
+
+  // Ağır işler arka planda; istekleri bloklamıyor.
+  bootstrapPersistence();
+
+  await refreshRatesCacheWithChangeDetection();
+  bootState.ratesPrimed = Boolean(cachedRates.centralBankRates);
+  console.log(`[BOOT] İlk kur yüklemesi: totalBanks=${cachedRates.totalBanks}`);
+
+  /** KKTC MB bülteni gün içinde nadiren değişir; 60 sn yeterli ve kaynağa nazik. */
+  const REFRESH_INTERVAL_MS = 60000;
+  setInterval(async () => {
+    await refreshRatesCacheWithChangeDetection();
+  }, REFRESH_INTERVAL_MS);
+
+  console.log(`[SCHEDULER] ✅ KKTC Merkez Bankası bülten takibi başlatıldı (${REFRESH_INTERVAL_MS / 1000}s aralık)`);
 }
 
 startServer();

@@ -1,3 +1,9 @@
+
+/** P-04: bilgilendirici log yalnızca geliştirmede. */
+const devLog = (...args) => {
+  if (import.meta.env.DEV) console.log(...args);
+};
+
 /**
  * Backend API base URL.
  *
@@ -31,6 +37,20 @@ export function apiUrl(path) {
   return `${API_BASE}${normalized}`;
 }
 
+/** Public media (logo path `/api/logos/:id`, data URL, or absolute http). */
+export function mediaUrl(path) {
+  if (!path) return null;
+  const value = String(path);
+  if (
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    /^https?:\/\//i.test(value)
+  ) {
+    return value;
+  }
+  return apiUrl(value);
+}
+
 /** SSE EventSource URL — localde localhost, production'da Render / env */
 export function ratesStreamUrl() {
   return apiUrl("/api/rates-stream");
@@ -38,5 +58,5 @@ export function ratesStreamUrl() {
 
 if (import.meta.env.DEV) {
   // Tek seferlik teşhis: hangi API'ye gidildiğini konsolda göster
-  console.info(`[API] base = ${API_BASE}`);
+  devLog(`[API] base = ${API_BASE}`);
 }

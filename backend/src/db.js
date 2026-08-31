@@ -44,6 +44,82 @@ function columnExists(table, column) {
 }
 
 /**
+ * Y-03: Mükerrer (currency, recorded_at) satırlarını temizler — her çift için
+ * en yüksek rowid'li (en son yazılan) kayıt tutulur. Tekillik indeksi ancak
+ * bundan sonra kurulabilir. Idempotent: temiz tabloda hiçbir şey yapmaz.
+ */
+function dedupeHistoricalRates() {
+  try {
+    const before = db.prepare(`SELECT COUNT(*) AS c FROM historical_rates`).get()?.c || 0;
+    if (before === 0) return { removed: 0 };
+
+    const dupes =
+      db
+        .prepare(
+          `SELECT COUNT(*) AS c FROM (
+             SELECT currency, recorded_at FROM historical_rates
+             GROUP BY currency, recorded_at HAVING COUNT(*) > 1
+           )`
+        )
+        .get()?.c || 0;
+    if (dupes === 0) return { removed: 0 };
+
+    runInTransaction(() => {
+      db.exec(`
+        DELETE FROM historical_rates
+        WHERE rowid NOT IN (
+          SELECT MAX(rowid) FROM historical_rates GROUP BY currency, recorded_at
+        )
+      `);
+    });
+
+    const after = db.prepare(`SELECT COUNT(*) AS c FROM historical_rates`).get()?.c || 0;
+    const removed = before - after;
+    console.log(
+      `[DB] ✅ Mükerrer kur kaydı temizlendi: ${removed} satır silindi (${before} → ${after}, ${dupes} çakışan grup).`
+    );
+    return { removed };
+  } catch (err) {
+    console.warn("[DB] Mükerrer kur temizliği başarısız:", err.message);
+    return { removed: 0, error: err.message };
+  }
+}
+
+/**
+ * Y-05: Sunucu açılışında değişim tespitini beslemek için diskteki EN SON kur
+ * anlık görüntüsü. Önceden previousRates yalnızca bellekteydi; her restart'ta
+ * null olduğundan ilk döngü "değişim var" sayılıyor ve müşteri panosundaki
+ * "Son Güncelleme" kur hiç değişmemişken tazeleniyordu.
+ *
+ * @returns {{rates: Record<string,{buy:number,sell:number}>, recordedAt: string|null}|null}
+ */
+function getLatestHistoricalRatesSnapshot(currencies = ["USD", "EUR", "GBP"]) {
+  try {
+    const rates = {};
+    let newest = null;
+    for (const currency of currencies) {
+      const row = db
+        .prepare(
+          `SELECT currency, buy_rate, sell_rate, recorded_at
+           FROM historical_rates
+           WHERE currency = ?
+           ORDER BY recorded_at DESC
+           LIMIT 1`
+        )
+        .get(currency);
+      if (!row) continue;
+      rates[currency] = { buy: Number(row.buy_rate), sell: Number(row.sell_rate) };
+      if (!newest || String(row.recorded_at) > String(newest)) newest = row.recorded_at;
+    }
+    if (Object.keys(rates).length === 0) return null;
+    return { rates, recordedAt: newest };
+  } catch (err) {
+    console.warn("[DB] Kur anlık görüntüsü okunamadı:", err.message);
+    return null;
+  }
+}
+
+/**
  * @param {object} [options]
  * @param {boolean} [options.skipBusinessSeed] - true ise katalog/varsayılan işletme
  *   seed'i atlanır (bkz. yukarıdaki açıklama). server.js, Supabase'te kurum olup
@@ -245,15 +321,22 @@ function initDb({ skipBusinessSeed = false } = {}) {
 
   // ✅ Eski (legacy) Render servisinden veri aktarımı sırasında aynı kaydın
   // tekrar tekrar eklenmesini önlemek için (idempotent migrate endpoint).
-  // Zaten çakışan (currency, recorded_at) kayıtları varsa index oluşturma
-  // sessizce başarısız olur — şema kurulumunun tamamını bozmaz.
+  /**
+   * ⚠️ VERİ DÜZELTMESİ (denetim bulgusu Y-03): Index oluşturma, tabloda ZATEN
+   * çakışan kayıtlar olduğu için her açılışta sessizce başarısız oluyordu; kimse
+   * temizlemediği için de kalıcı hale gelmişti (ölçüm: 19.306 satırın 5.779
+   * (currency, recorded_at) grubu mükerrer → grafikler aynı damgada birden çok
+   * nokta çiziyordu). Artık önce dedupe ediliyor, sonra index kuruluyor.
+   */
+  dedupeHistoricalRates();
   try {
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_historical_rates_unique
       ON historical_rates(currency, recorded_at)
     `);
+    console.log("[DB] ✅ idx_historical_rates_unique aktif — mükerrer kur kaydı artık imkânsız.");
   } catch (err) {
-    console.warn("[DB] idx_historical_rates_unique oluşturulamadı (çakışan kayıtlar olabilir):", err.message);
+    console.warn("[DB] idx_historical_rates_unique oluşturulamadı:", err.message);
   }
 
   if (!columnExists("rate_adjustments", "margin_type")) {
@@ -307,6 +390,21 @@ function initDb({ skipBusinessSeed = false } = {}) {
   if (!columnExists("institutions", "contact_person")) {
     db.exec(`ALTER TABLE institutions ADD COLUMN contact_person TEXT`);
   }
+  if (!columnExists("institutions", "last_login_at")) {
+    db.exec(`ALTER TABLE institutions ADD COLUMN last_login_at TEXT`);
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      actor TEXT,
+      institution_id TEXT,
+      institution_name TEXT,
+      detail TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
   if (!columnExists("branch_requests", "request_type")) {
     db.exec(
       `ALTER TABLE branch_requests ADD COLUMN request_type TEXT NOT NULL DEFAULT 'new'`
@@ -515,25 +613,25 @@ function seedCatalogInstitutionsIfNeeded() {
  */
 function seedSuperAdminIfNeeded() {
   const username = process.env.SUPERADMIN_USERNAME || "tuna";
-  const password = process.env.SUPERADMIN_INITIAL_PASSWORD || "123";
-  const passwordHash = bcrypt.hashSync(password, 10);
   const existing = db
     .prepare("SELECT id FROM institutions WHERE username = ?")
     .get(username);
 
   if (existing) {
+    // Mevcut hesabın şifresine dokunma — env şifresi yalnızca ilk oluşturmada kullanılır.
     db.prepare(`
       UPDATE institutions
       SET role = 'superadmin',
           institution_id = 'superadmin',
-          institution_name = COALESCE(institution_name, 'FinSight Super Admin'),
-          password_hash = ?
+          institution_name = COALESCE(NULLIF(institution_name, ''), 'FinSight Super Admin')
       WHERE username = ?
-    `).run(passwordHash, username);
-    console.log(`[DB] Super admin (${username}) güncellendi.`);
+    `).run(username);
+    console.log(`[DB] Super admin (${username}) doğrulandı (şifre korunuyor).`);
     return;
   }
 
+  const password = process.env.SUPERADMIN_INITIAL_PASSWORD || "123";
+  const passwordHash = bcrypt.hashSync(password, 10);
   db.prepare(`
     INSERT INTO institutions (username, password_hash, institution_id, institution_name, role, subscription)
     VALUES (?, ?, 'superadmin', 'FinSight Super Admin', 'superadmin', 'Enterprise')
@@ -616,9 +714,11 @@ function migrateAkbankMargins() {
   }
 }
 
+/** K-04: Test artık SÜRELİ bir deneme paketidir (eskiden sınırsızdı). */
+const TEST_TRIAL_DAYS = 14;
+
 function packageDays(subscriptionType, subscriptionDuration) {
-  // Test = sınırsız (end_date null); buradaki 14 yalnızca geriye dönük yedek
-  if (subscriptionType === "Test") return 14;
+  if (subscriptionType === "Test") return TEST_TRIAL_DAYS;
   if (subscriptionType === "Yıllık" || subscriptionDuration === "Yıllık") return 365;
   if (subscriptionType === "Aylık" || subscriptionDuration === "Aylık") return 30;
   return 30;
@@ -632,7 +732,8 @@ function endDateFromRemainingDays(days) {
 
 function normalizeSubscriptionType(raw) {
   const t = String(raw || "Test");
-  if (t === "Test" || t === "Aylık" || t === "Yıllık" || t === "Manuel") return t;
+  // "Ücretsiz": kalıcı, süresiz ve bilinçli listeleme (K-04 sonrası Test'in yerini almaz).
+  if (t === "Test" || t === "Aylık" || t === "Yıllık" || t === "Manuel" || t === "Ücretsiz") return t;
   if (t === "Abonelik") return "Yıllık";
   return "Test";
 }
@@ -752,9 +853,21 @@ function backfillInstitutionCreatedAtIfNeeded() {
 }
 
 /** Süresi bitmiş işletmeleri otomatik pasife alır (Test = sınırsız, hariç) */
+/**
+ * ⚠️ İŞ KURALI DÜZELTMESİ (denetim bulgusu K-04): Burada "Test" tipi daha ilk
+ * satırda atlanıyordu — yani deneme hesapları HİÇ sona ermiyordu. Sonuç: parasını
+ * ödeyen "Aylık"/"Yıllık" hesap süresi dolunca panodan kalkarken, ücretsiz "Test"
+ * hesap sonsuza kadar kalıyordu (ölçüm: Albaraka Türk ve Dablöz, end_date
+ * 2026-08-07 dolmuş olmasına rağmen panoda görünüyordu).
+ *
+ * Artık Test de süreli bir pakettir (TEST_TRIAL_DAYS) ve aynı deaktivasyon
+ * yolundan geçer. Süresiz ücretsiz listeleme gerekiyorsa bunun için ayrı ve
+ * açıkça adlandırılmış "Ücretsiz" tipi kullanılmalıdır.
+ */
 function deactivateIfExpired(row) {
   if (!row || row.role === "superadmin") return row;
-  if (normalizeSubscriptionType(row.subscription_type) === "Test") return row;
+  const type = normalizeSubscriptionType(row.subscription_type);
+  if (type === "Ücretsiz") return row; // kalıcı ücretsiz listeleme — bilinçli istisna
   const days = daysRemainingFrom(row.subscription_end_date);
   if (days != null && days <= 0 && !(row.is_active === 0 || row.is_active === false)) {
     db.prepare(`UPDATE institutions SET is_active = 0 WHERE id = ?`).run(row.id);
@@ -815,29 +928,34 @@ function resolveEffectiveBusinessSubscription(synced) {
   let subscription_end_date = synced.subscription_end_date || null;
   let days_remaining = daysRemainingFrom(subscription_end_date);
 
-  // Test + gelecek end_date tutarsızlığı: süreli abonelik gibi göster
-  if (
-    normalizeSubscriptionType(subscription_type) === "Test" &&
-    days_remaining != null &&
-    days_remaining > 0
-  ) {
-    subscription_type = "Manuel";
-  }
-
-  // Kurum Test kalmış ama şubede süreli abonelik varsa onu kullan
+  // Kurum Test kalmış ama şubede daha uzun süreli abonelik varsa onu kullan
   if (normalizeSubscriptionType(subscription_type) === "Test" && synced.id != null) {
     const best = pickBestTimedBranchForBusiness(synced.id);
-    if (best) {
+    if (best && (days_remaining == null || best.days_remaining > days_remaining)) {
       subscription_type = best.subscription_type;
       subscription_end_date = best.subscription_end_date;
       days_remaining = best.days_remaining;
     }
   }
 
-  if (normalizeSubscriptionType(subscription_type) === "Test") {
+  /**
+   * ⚠️ MANTIK DÜZELTMESİ (denetim bulguları K-01 + K-04): Burada Test hesapların
+   * subscription_end_date'i null'a çekiliyordu. Bunun iki yıkıcı sonucu vardı:
+   *
+   *  1) /api/kurlar'daki isBankVisible hiçbir zaman süre sonu göremiyordu →
+   *     süresi dolmuş deneme hesapları panoda kalıcı hale geliyordu (K-04).
+   *  2) Listeleme ucu bu "temizlenmiş" satırı, detay ucu ise HAM satırı
+   *     görünürlük kontrolüne veriyordu → aynı işletme listede var ama detay
+   *     sayfası 404 dönüyordu (K-01; ölçüm: albaraka ve dabloz 404, banka2/3
+   *     ve denizbank 200).
+   *
+   * Artık gerçek bitiş tarihi olduğu gibi taşınıyor; yalnızca bilinçli
+   * "Ücretsiz" tipi süresiz kalıyor.
+   */
+  if (normalizeSubscriptionType(subscription_type) === "Ücretsiz") {
     return {
-      subscription_type: "Test",
-      subscription: buildSubscriptionLabel("Test"),
+      subscription_type: "Ücretsiz",
+      subscription: buildSubscriptionLabel("Ücretsiz"),
       subscription_end_date: null,
       days_remaining: null,
     };
@@ -922,6 +1040,7 @@ function mapBusinessRow(row) {
     days_remaining: eff.days_remaining,
     branch_limit,
     branch_count,
+    last_login_at: synced.last_login_at || null,
   };
 }
 
@@ -1014,7 +1133,8 @@ function listBusinesses() {
               email,
               contact_person,
               working_hours,
-              created_at
+              created_at,
+              last_login_at
        FROM institutions
        WHERE COALESCE(role, 'business') != 'superadmin'
        ORDER BY institution_name COLLATE NOCASE ASC`
@@ -1100,6 +1220,29 @@ function normalizeContactEmail(email, { required = false } = {}) {
   return clean.toLowerCase();
 }
 
+/**
+ * U-14: Aynı işletme adının iki kez kaydedilmesini engeller (büyük/küçük harf ve
+ * Türkçe karakter duyarsız). excludeId verilirse o kayıt kendisiyle çakışmaz.
+ */
+function assertInstitutionNameAvailable(name, excludeId = null) {
+  const key = String(name || "").trim().toLocaleLowerCase("tr-TR");
+  if (!key) return;
+  const rows = db
+    .prepare(
+      `SELECT id, institution_name FROM institutions
+       WHERE COALESCE(role, 'business') != 'superadmin'`
+    )
+    .all();
+  const clash = rows.find(
+    (r) =>
+      String(r.institution_name || "").trim().toLocaleLowerCase("tr-TR") === key &&
+      (excludeId == null || Number(r.id) !== Number(excludeId))
+  );
+  if (clash) {
+    throw new Error(`"${name}" adında bir işletme zaten kayıtlı (ID ${clash.id}).`);
+  }
+}
+
 function createBusiness({
   username,
   password,
@@ -1119,9 +1262,9 @@ function createBusiness({
   const type = normalizeSubscriptionType(subscription_type);
   const label = buildSubscriptionLabel(type);
   const limit = normalizeBranchLimit(branch_limit);
-  // Test = sınırsız abonelik (subscription_end_date null)
+  // K-04: Yalnızca "Ücretsiz" süresizdir. Test artık TEST_TRIAL_DAYS günlük denemedir.
   let endDate = null;
-  if (type !== "Test") {
+  if (type !== "Ücretsiz") {
     let days =
       remaining_days != null
         ? Math.max(0, Number(remaining_days) || 0)
@@ -1139,6 +1282,13 @@ function createBusiness({
   if (!password || !cleanName) {
     throw new Error("İşletme adı, giriş ID, e-posta ve şifre zorunludur.");
   }
+
+  /**
+   * U-14: İşletme adında tekillik kontrolü yoktu; veritabanında aynı adla iki
+   * kayıt oluşabiliyordu (ölçüm: "Sun Döviz" hem sundoviz hem sun_doviz olarak).
+   * Süper admin listesinde bunlar birbirinden ayırt edilemiyordu.
+   */
+  assertInstitutionNameAvailable(cleanName, null);
 
   // Bilinen banka adına eşleşirse dashboard kartıyla aynı institution_id kullan
   const known = findInstitutionByName(cleanName);
@@ -1261,10 +1411,31 @@ function updateBusiness(id, {
     contact_person === undefined
       ? row.contact_person || null
       : String(contact_person || "").trim() || null;
-  const nextEmail =
-    email === undefined
-      ? row.email || null
-      : normalizeContactEmail(email, { required: true });
+  /**
+   * ⚠️ MANTIK DÜZELTMESİ (denetim bulgusu Y-01): E-posta her güncellemede zorunlu
+   * tutuluyordu. Düzenleme formu alanı `biz.email || ""` ile doldurduğu için,
+   * e-postası olmayan ESKİ kayıtlarda boş string gidiyor ve yönetici hiçbir
+   * değişikliği (abonelik uzatma, şube limiti, durum) kaydedemiyordu —
+   * 22 işletmenin 21'i bu durumdaydı.
+   *
+   * Yeni kural: e-posta yalnızca GERÇEKTEN bir değer girildiğinde doğrulanır.
+   * Kayıtta zaten e-posta varsa boşaltılmasına izin verilmez (veri kaybı olmaz);
+   * hiç yoksa boş bırakmak serbesttir.
+   */
+  const emailProvided =
+    email !== undefined && email !== null && String(email).trim() !== "";
+  let nextEmail;
+  if (emailProvided) {
+    nextEmail = normalizeContactEmail(email, { required: true });
+  } else if (email === undefined) {
+    nextEmail = row.email || null; // alan hiç gönderilmedi → dokunma
+  } else if (row.email) {
+    throw new Error(
+      "Bu işletmenin kayıtlı e-postası var; e-posta alanı boş bırakılarak silinemez."
+    );
+  } else {
+    nextEmail = null; // kayıtta da yok, girilmedi de → serbest
+  }
   const typeChanged = subscription_type != null || remaining_days != null;
   const nextType = typeChanged
     ? normalizeSubscriptionType(subscription_type ?? row.subscription_type)
@@ -1272,14 +1443,15 @@ function updateBusiness(id, {
   const nextLabel = typeChanged ? buildSubscriptionLabel(nextType) : (row.subscription || buildSubscriptionLabel(nextType));
   let endDate = row.subscription_end_date;
   if (typeChanged) {
-    if (nextType === "Test") {
+    // K-04: yalnızca "Ücretsiz" süresizdir; Test dahil diğerleri bitiş tarihi alır.
+    if (nextType === "Ücretsiz") {
       endDate = null;
     } else {
       endDate = endDateFromRemainingDays(
         remaining_days != null ? remaining_days : packageDays(nextType)
       );
     }
-  } else if (!endDate && nextType !== "Test") {
+  } else if (!endDate && nextType !== "Ücretsiz") {
     endDate = endDateFromRemainingDays(packageDays(nextType));
   }
   const active =
@@ -1297,9 +1469,8 @@ function updateBusiness(id, {
   if (!nextUsername || !nextName) {
     throw new Error("Giriş ID ve işletme adı zorunludur.");
   }
-  if (!nextEmail) {
-    throw new Error("E-posta zorunludur.");
-  }
+  assertInstitutionNameAvailable(nextName, id); // U-14
+
 
   const passwordHash =
     password && String(password).trim()
@@ -1420,13 +1591,25 @@ function updateBusinessStatus(id, is_active) {
 }
 
 function deleteBusiness(id) {
-  const row = db.prepare(`SELECT id, role FROM institutions WHERE id = ?`).get(id);
+  const row = db
+    .prepare(`SELECT id, role, institution_id FROM institutions WHERE id = ?`)
+    .get(id);
   if (!row) throw new Error("İşletme bulunamadı.");
   if (row.role === "superadmin") throw new Error("Super admin hesabı silinemez.");
 
-  db.prepare(`DELETE FROM branches WHERE business_id = ?`).run(id);
-  db.prepare(`DELETE FROM institutions WHERE id = ?`).run(id);
-  return { ok: true, id };
+  const slug = String(row.institution_id || "").trim();
+  runInTransaction(() => {
+    db.prepare(`DELETE FROM branches WHERE business_id = ?`).run(id);
+    db.prepare(`DELETE FROM branch_requests WHERE business_id = ?`).run(id);
+    db.prepare(`DELETE FROM business_notifications WHERE business_id = ?`).run(id);
+    db.prepare(`DELETE FROM password_resets WHERE institution_id = ?`).run(id);
+    if (slug) {
+      db.prepare(`DELETE FROM rate_adjustments WHERE institution_id = ?`).run(slug);
+      db.prepare(`DELETE FROM margin_history WHERE institution_id = ?`).run(slug);
+    }
+    db.prepare(`DELETE FROM institutions WHERE id = ?`).run(id);
+  });
+  return { ok: true, id, institution_id: slug || null };
 }
 
 function assertBusinessExists(businessId) {
@@ -1537,13 +1720,28 @@ function listBranchesByBusiness(businessId) {
 }
 
 /** Public görünürlük: aktif + abonelik süresi dolmamış */
+/**
+ * Bir kurumun public yüzeyde (pano, slug listesi, sitemap, detay sayfası)
+ * görünüp görünmeyeceğine karar veren TEK yer.
+ *
+ * ⚠️ MANTIK DÜZELTMESİ (denetim bulgusu K-01): Bu fonksiyon iki farklı biçimde
+ * besleniyordu — listeleme ucu mapBusinessRow'dan geçmiş satırı, detay ucu ise
+ * ham tablo satırını veriyordu. İkisi farklı sonuç verince aynı işletme listede
+ * görünüp detayında 404 dönüyordu. Artık girdi ne olursa olsun önce
+ * mapBusinessRow ile normalize ediliyor; çağıranlar arasında fark kalmıyor.
+ */
 function isInstitutionPubliclyVisible(row) {
   if (!row) return false;
   if (row.role === "superadmin") return false;
-  const synced = deactivateIfExpired(row);
-  if (synced.is_active === 0 || synced.is_active === false) return false;
-  if (synced.subscription_end_date) {
-    const end = new Date(synced.subscription_end_date).getTime();
+
+  // Ham satır geldiyse (id + username var, days_remaining yok) normalize et.
+  const normalized =
+    row.days_remaining === undefined && row.id != null ? mapBusinessRow(row) : row;
+  if (!normalized) return false;
+  if (normalized.is_active === 0 || normalized.is_active === false) return false;
+
+  if (normalized.subscription_end_date) {
+    const end = new Date(normalized.subscription_end_date).getTime();
     if (Number.isFinite(end) && end <= Date.now()) return false;
   }
   return true;
@@ -2700,7 +2898,7 @@ function getInstitutionFullById(id) {
                 subscription_end_date,
                 COALESCE(is_active, 1) AS is_active,
                 COALESCE(branch_limit, 1) AS branch_limit,
-                logo_url, email, phone, contact_person, working_hours, created_at
+                logo_url, email, phone, contact_person, working_hours, created_at, last_login_at
          FROM institutions WHERE id = ?`
       )
       .get(id) || null
@@ -2720,7 +2918,7 @@ function getInstitutionFullBySlug(institutionId) {
                 subscription_end_date,
                 COALESCE(is_active, 1) AS is_active,
                 COALESCE(branch_limit, 1) AS branch_limit,
-                logo_url, email, phone, contact_person, working_hours, created_at
+                logo_url, email, phone, contact_person, working_hours, created_at, last_login_at
          FROM institutions
          WHERE lower(institution_id) = ? AND COALESCE(role, 'business') != 'superadmin'
          LIMIT 1`
@@ -2778,7 +2976,7 @@ function listAllInstitutionsForSync() {
               subscription_end_date,
               COALESCE(is_active, 1) AS is_active,
               COALESCE(branch_limit, 1) AS branch_limit,
-              logo_url, email, phone, contact_person, working_hours, created_at
+              logo_url, email, phone, contact_person, working_hours, created_at, last_login_at
        FROM institutions
        WHERE COALESCE(role, 'business') != 'superadmin'`
     )
@@ -2831,6 +3029,7 @@ function applySupabaseInstitutionRow(row) {
          contact_person = COALESCE(?, contact_person),
          working_hours = COALESCE(?, working_hours),
          branch_limit = COALESCE(?, branch_limit),
+         last_login_at = COALESCE(?, last_login_at),
          created_at = COALESCE(created_at, ?)
        WHERE institution_id = ?`
     ).run(
@@ -2847,6 +3046,7 @@ function applySupabaseInstitutionRow(row) {
       row.contact_person || null,
       row.working_hours || null,
       row.branch_limit != null ? normalizeBranchLimit(row.branch_limit) : null,
+      row.last_login_at || null,
       row.created_at || null,
       row.institution_id
     );
@@ -2854,8 +3054,8 @@ function applySupabaseInstitutionRow(row) {
     db.prepare(
       `INSERT INTO institutions
         (username, password_hash, institution_id, institution_name, role, subscription,
-         subscription_type, subscription_end_date, is_active, logo_url, email, phone, contact_person, working_hours, branch_limit, created_at)
-       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         subscription_type, subscription_end_date, is_active, logo_url, email, phone, contact_person, working_hours, branch_limit, last_login_at, created_at)
+       VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       row.username || row.institution_id,
       row.password_hash || bcrypt.hashSync("123", 10),
@@ -2871,9 +3071,97 @@ function applySupabaseInstitutionRow(row) {
       row.contact_person || null,
       row.working_hours || null,
       normalizeBranchLimit(row.branch_limit ?? 1),
+      row.last_login_at || null,
       row.created_at || new Date().toISOString()
     );
   }
+}
+
+function applySupabaseBranchRequestRow(row) {
+  if (!row?.institution_id || !row?.branch_name) return;
+  const biz = db
+    .prepare(
+      `SELECT id FROM institutions
+       WHERE institution_id = ? AND COALESCE(role, 'business') != 'superadmin'`
+    )
+    .get(row.institution_id);
+  if (!biz) return;
+
+  const requestType = row.request_type === "reactivate" ? "reactivate" : "new";
+  const status = row.status || "pending";
+  let linkedBranchId = row.branch_id == null ? null : Number(row.branch_id);
+  if (requestType === "reactivate" || linkedBranchId != null) {
+    const byName = db
+      .prepare(`SELECT id FROM branches WHERE business_id = ? AND name = ? LIMIT 1`)
+      .get(biz.id, row.branch_name);
+    if (byName) linkedBranchId = byName.id;
+  }
+
+  const existing = db
+    .prepare(
+      `SELECT id FROM branch_requests
+       WHERE institution_id = ?
+         AND branch_name = ?
+         AND COALESCE(request_type, 'new') = ?
+         AND COALESCE(status, 'pending') = ?
+       LIMIT 1`
+    )
+    .get(row.institution_id, row.branch_name, requestType, status);
+
+  const isRead = row.is_read === true || row.is_read === 1 ? 1 : 0;
+  const lat = row.lat == null || row.lat === "" ? null : Number(row.lat);
+  const lng = row.lng == null || row.lng === "" ? null : Number(row.lng);
+
+  if (existing) {
+    db.prepare(
+      `UPDATE branch_requests SET
+         business_id = ?, business_name = ?, phone = ?, address = ?, lat = ?, lng = ?,
+         request_type = ?, branch_id = ?, status = ?, is_read = ?, admin_note = ?,
+         updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(
+      biz.id,
+      row.business_name || "",
+      row.phone || "",
+      row.address || "",
+      Number.isFinite(lat) ? lat : null,
+      Number.isFinite(lng) ? lng : null,
+      requestType,
+      linkedBranchId,
+      status,
+      isRead,
+      row.admin_note || null,
+      existing.id
+    );
+    return;
+  }
+
+  db.prepare(
+    `INSERT INTO branch_requests (
+       business_id, institution_id, business_name, branch_name, phone, address, lat, lng,
+       request_type, branch_id, status, is_read, admin_note, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    biz.id,
+    row.institution_id,
+    row.business_name || "",
+    row.branch_name,
+    row.phone || "",
+    row.address || "",
+    Number.isFinite(lat) ? lat : null,
+    Number.isFinite(lng) ? lng : null,
+    requestType,
+    linkedBranchId,
+    status,
+    isRead,
+    row.admin_note || null,
+    row.created_at || new Date().toISOString(),
+    row.updated_at || new Date().toISOString()
+  );
+}
+
+function listAllBranchRequestsForSync() {
+  return db.prepare(`SELECT * FROM branch_requests`).all().map(mapBranchRequestRow);
 }
 
 function applySupabaseAdjustmentRow(row) {
@@ -3273,7 +3561,7 @@ const DEFAULT_SEO_SETTINGS = {
   keywords:
     "kktc döviz, dolar tl, döviz bürosu, exchange, kktc exchange, lefkoşa döviz, girne döviz, gazimağusa döviz, euro kuru, sterlin kuru, kuzey kıbrıs döviz, adadöviz, ada döviz",
   canonical_url: "https://adadoviz.tunahangul.com/",
-  og_image: "https://adadoviz.tunahangul.com/adadoviz-logo.svg",
+  og_image: "https://adadoviz.tunahangul.com/adadoviz-og.svg",
   robots: "index, follow, max-image-preview:large",
   geo_region: "CY-Nicosia",
   geo_placename: "Northern Cyprus, KKTC",
@@ -3282,6 +3570,84 @@ const DEFAULT_SEO_SETTINGS = {
     "döviz, dolar tl, döviz bürosu, exchange, kktc döviz, lefkoşa exchange, euro tl",
   structured_data_enabled: true,
 };
+
+function touchLastLogin(username) {
+  const clean = String(username || "").trim();
+  if (!clean) return null;
+  const at = new Date().toISOString();
+  db.prepare(`UPDATE institutions SET last_login_at = ? WHERE username = ?`).run(at, clean);
+  return at;
+}
+
+function insertAuditLog({
+  action,
+  actor = null,
+  institution_id = null,
+  institution_name = null,
+  detail = null,
+} = {}) {
+  if (!action) return null;
+  const createdAt = new Date().toISOString();
+  const info = db
+    .prepare(
+      `INSERT INTO audit_log (action, actor, institution_id, institution_name, detail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      String(action),
+      actor || null,
+      institution_id || null,
+      institution_name || null,
+      detail || null,
+      createdAt
+    );
+  return {
+    id: Number(info.lastInsertRowid),
+    action: String(action),
+    actor: actor || null,
+    institution_id: institution_id || null,
+    institution_name: institution_name || null,
+    detail: detail || null,
+    created_at: createdAt,
+  };
+}
+
+function listAuditLogs(limit = 100) {
+  const n = Math.min(200, Math.max(1, Number(limit) || 100));
+  return db
+    .prepare(
+      `SELECT id, action, actor, institution_id, institution_name, detail, created_at
+       FROM audit_log
+       ORDER BY datetime(created_at) DESC
+       LIMIT ?`
+    )
+    .all(n);
+}
+
+function applySupabaseAuditRow(row) {
+  if (!row?.action || !row?.created_at) return;
+  const existing = db
+    .prepare(
+      `SELECT id FROM audit_log
+       WHERE action = ?
+         AND COALESCE(institution_id, '') = COALESCE(?, '')
+         AND created_at = ?
+       LIMIT 1`
+    )
+    .get(row.action, row.institution_id || null, row.created_at);
+  if (existing) return;
+  db.prepare(
+    `INSERT INTO audit_log (action, actor, institution_id, institution_name, detail, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    row.action,
+    row.actor || null,
+    row.institution_id || null,
+    row.institution_name || null,
+    row.detail || null,
+    row.created_at
+  );
+}
 
 function getSeoSettings() {
   const row = db.prepare(`SELECT value FROM site_settings WHERE key = 'seo'`).get();
@@ -3378,12 +3744,15 @@ module.exports = {
   applySupabaseInstitutionRow,
   applySupabaseAdjustmentRow,
   applySupabaseBranchRow,
+  applySupabaseBranchRequestRow,
+  listAllBranchRequestsForSync,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,
   recordHistoricalRates,
   getHistoricalRates,
   getHistoricalRatesCount,
+  getLatestHistoricalRatesSnapshot,
   getBusinessRateHistory,
   bulkInsertHistoricalRates,
   getVisitorStats,
@@ -3399,4 +3768,8 @@ module.exports = {
   updateInstitutionPassword,
   getSeoSettings,
   updateSeoSettings,
+  touchLastLogin,
+  insertAuditLog,
+  listAuditLogs,
+  applySupabaseAuditRow,
 };
