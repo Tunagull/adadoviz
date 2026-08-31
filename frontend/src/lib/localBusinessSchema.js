@@ -95,7 +95,7 @@ export function buildLocalBusinessJsonLd({
         ? `Currency exchange office in ${city}, Northern Cyprus (KKTC). Live USD, EUR and GBP rates.`
         : `${city}, KKTC döviz bürosu. Güncel USD, EUR ve GBP kurları.`),
     url,
-    image: logoUrl || `${SITE}/adadoviz-logo.svg`,
+    image: logoUrl || `${SITE}/adadoviz-mark.svg`,
     telephone: phone || undefined,
     address: postalAddress,
     areaServed: {

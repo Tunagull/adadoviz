@@ -17,7 +17,7 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { ChevronDown, Clock, MapPin, Navigation, X } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { trackCurrencyView } from "../lib/analytics";
-import { apiUrl } from "../lib/api";
+import { apiUrl, mediaUrl } from "../lib/api";
 import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
 import { HeaderActions } from "./HeaderActions";
@@ -474,7 +474,7 @@ export function BusinessDetailModal({
       businessSlug,
       workingHours: business.workingHours ?? business.working_hours,
       phone: business.phone,
-      logoUrl: business.logo_url,
+      logoUrl: mediaUrl(business.logo_url),
       branches: branchNodes,
       lang,
     });
@@ -489,42 +489,26 @@ export function BusinessDetailModal({
   const canExpandHours = Boolean(weekSchedule?.length && weekSchedule[0]?.key !== "legacy");
 
   const tabActiveClass =
-    "rounded-md px-2.5 py-1.5 text-xs font-semibold transition border border-teal-500/40 bg-teal-500/15 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300 sm:px-3";
+    "rounded-md px-2.5 py-1.5 text-xs font-semibold transition border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300 sm:px-3";
   const tabIdleClass =
-    "rounded-md px-2.5 py-1.5 text-xs font-semibold transition border border-transparent text-slate-500 hover:text-teal-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-teal-200 dark:hover:bg-slate-800/80 sm:px-3";
+    "rounded-md px-2.5 py-1.5 text-xs font-semibold transition border border-transparent text-ink-500 hover:text-brand-700 hover:bg-ink-100 dark:text-ink-400 dark:hover:text-brand-200 dark:hover:bg-ink-800/80 sm:px-3";
 
   if (!business) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[3000] flex items-end justify-center p-0 sm:items-center sm:p-3 md:p-4">
-      {localBusinessJsonLd ? (
-        <Helmet>
-          <script type="application/ld+json">{JSON.stringify(localBusinessJsonLd)}</script>
-        </Helmet>
-      ) : null}
-      <button
-        type="button"
-        aria-label="Kapat"
-        className="absolute inset-0 bg-slate-950/40 backdrop-blur-md dark:bg-slate-950/80"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="relative z-10 flex h-[min(94dvh,94vh)] max-h-[min(94dvh,94vh)] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/50 sm:h-[90vh] sm:max-h-[90vh] sm:w-[95%] sm:rounded-2xl md:w-full"
-      >
-        <div className="flex shrink-0 flex-col gap-2 border-b border-slate-200 px-3 py-3 dark:border-slate-800 sm:gap-3 sm:px-4">
+  const panelBody = (
+    <>
+        <div className="flex shrink-0 flex-col gap-2 border-b border-ink-200 px-3 py-3 dark:border-ink-800 sm:gap-3 sm:px-4">
           <div className="flex min-w-0 items-center justify-between gap-2">
             <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
               <img
                 src={
-                  business.logo_url ||
+                  mediaUrl(business.logo_url) ||
                   `https://www.google.com/s2/favicons?domain=${getFaviconDomain(displayName || business.name)}&sz=128`
                 }
                 alt=""
                 className="h-9 w-9 shrink-0 rounded-full bg-white p-0.5 object-cover shadow-sm"
               />
-              <h2 className="truncate text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
+              <h2 className="truncate text-base font-semibold text-ink-900 dark:text-white sm:text-lg">
                 {displayName || business.name}
               </h2>
             </div>
@@ -533,7 +517,7 @@ export function BusinessDetailModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label="Kapat"
               >
                 <X size={22} />
@@ -541,7 +525,7 @@ export function BusinessDetailModal({
             </div>
           </div>
 
-          <div className="flex w-full rounded-lg border border-slate-200 bg-slate-50 p-0.5 dark:border-slate-700 dark:bg-slate-950">
+          <div className="flex w-full rounded-lg border border-ink-200 bg-ink-50 p-0.5 dark:border-ink-700 dark:bg-ink-950">
             <button
               type="button"
               onClick={() => setActiveView("grafik")}
@@ -561,7 +545,7 @@ export function BusinessDetailModal({
 
         {activeView === "grafik" && (
           <>
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-800 sm:px-4">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-ink-200 px-3 py-2.5 dark:border-ink-800 sm:px-4">
               {PERIOD_TABS.map((tab) => (
                 <button
                   key={tab.id}
@@ -569,14 +553,14 @@ export function BusinessDetailModal({
                   onClick={() => setPeriodId(tab.id)}
                   className={`rounded-lg px-3 py-1.5 text-sm font-medium transition sm:px-4 sm:py-2 ${
                     periodId === tab.id
-                      ? "border border-teal-500/40 bg-teal-500/15 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300"
-                      : "border border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/80 dark:hover:text-white"
+                      ? "border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
+                      : "border border-transparent text-ink-500 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-ink-800/80 dark:hover:text-white"
                   }`}
                 >
                   {t(tab.labelKey)}
                 </button>
               ))}
-              <div className="mx-1 hidden h-6 w-px bg-slate-200 dark:bg-slate-700 sm:block" />
+              <div className="mx-1 hidden h-6 w-px bg-ink-200 dark:bg-ink-700 sm:block" />
               {CURRENCIES.map((code) => (
                 <button
                   key={code}
@@ -587,8 +571,8 @@ export function BusinessDetailModal({
                   }}
                   className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
                     currency === code
-                      ? "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900"
-                      : "bg-slate-100 text-slate-500 hover:text-slate-800 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-white"
+                      ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900"
+                      : "bg-ink-100 text-ink-500 hover:text-ink-800 dark:bg-ink-800 dark:text-ink-400 dark:hover:text-white"
                   }`}
                 >
                   {code}
@@ -597,19 +581,19 @@ export function BusinessDetailModal({
             </div>
 
             <div className="flex min-h-[280px] flex-1 flex-col overflow-hidden px-3 py-3 sm:min-h-0 sm:px-4 md:min-h-[420px]">
-              <div className="min-h-[260px] w-full flex-1 rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950/60 sm:min-h-0">
+              <div className="min-h-[260px] w-full flex-1 rounded-xl border border-ink-200 bg-ink-50 p-2 dark:border-ink-800 dark:bg-ink-950/60 sm:min-h-0">
                 {loading ? (
-                  <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+                  <div className="flex h-full min-h-[280px] items-center justify-center text-sm text-ink-500 dark:text-ink-400">
                     {t("loadingGeneric")}
                   </div>
                 ) : error ? (
-                  <div className="flex h-full min-h-[280px] items-center justify-center px-4 text-center text-sm text-rose-600 dark:text-rose-300">
+                  <div className="flex h-full min-h-[280px] items-center justify-center px-4 text-center text-sm text-danger-700 dark:text-danger-300">
                     {error}
                   </div>
                 ) : finalChartData.length === 0 ? (
-                  <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-1 px-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                  <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-1 px-4 text-center text-sm text-ink-500 dark:text-ink-400">
                     <span>{t("businessChartInsufficientData")}</span>
-                    <span className="text-xs text-slate-400 dark:text-slate-500">
+                    <span className="text-xs text-ink-600 dark:text-ink-400">
                       {t("businessChartWillBuild")}
                     </span>
                   </div>
@@ -696,17 +680,17 @@ export function BusinessDetailModal({
         {activeView === "konum" && (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 sm:gap-4 sm:p-4 md:grid-cols-3 md:overflow-hidden md:min-h-[400px]">
             <div className="col-span-1 flex min-h-0 flex-col gap-3 overflow-y-auto md:max-h-full">
-              <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  <MapPin size={12} className="shrink-0 text-teal-600 dark:text-teal-400" />
+              <div className="shrink-0 rounded-xl border border-ink-200 bg-ink-50 p-3 dark:border-ink-800 dark:bg-ink-950/60">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink-500">
+                  <MapPin size={12} className="shrink-0 text-brand-600 dark:text-brand-400" />
                   {t("branchesLabel")}
                 </p>
                 {branchesLoading ? (
-                  <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">{t("branchesLoading")}</p>
+                  <p className="py-4 text-center text-sm text-ink-500 dark:text-ink-400">{t("branchesLoading")}</p>
                 ) : branchesError ? (
-                  <p className="py-4 text-center text-sm text-rose-600 dark:text-rose-300">{branchesError}</p>
+                  <p className="py-4 text-center text-sm text-danger-700 dark:text-danger-300">{branchesError}</p>
                 ) : branches.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                  <p className="py-4 text-center text-sm text-ink-500 dark:text-ink-400">
                     {t("branchesEmpty")}
                   </p>
                 ) : (
@@ -721,8 +705,8 @@ export function BusinessDetailModal({
                             title={branch.name}
                             className={`w-full truncate rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-all duration-300 ${
                               selected
-                                ? "border-teal-500/50 bg-teal-500/10 text-teal-700 shadow-[0_0_12px_rgba(45,212,191,0.2)] dark:text-teal-300"
-                                : "border-slate-200 bg-white text-slate-700 hover:border-teal-500/40 hover:text-teal-700 dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:text-teal-200"
+                                ? "border-brand-500/50 bg-brand-500/10 text-brand-700 shadow-[0_0_12px_rgba(45,212,191,0.2)] dark:text-brand-300"
+                                : "border-ink-200 bg-white text-ink-700 hover:border-brand-500/40 hover:text-brand-700 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:text-brand-200"
                             }`}
                           >
                             {branch.name}
@@ -735,28 +719,28 @@ export function BusinessDetailModal({
               </div>
 
               {selectedBranch ? (
-                <div className="min-h-0 shrink-0 rounded-xl border border-slate-200 bg-white p-4 shadow-lg dark:border-slate-700 dark:bg-slate-900/90 md:overflow-y-auto">
-                  <h3 className="mb-3 truncate text-sm font-semibold text-slate-900 dark:text-white">
+                <div className="min-h-0 shrink-0 rounded-xl border border-ink-200 bg-white p-4 shadow-lg dark:border-ink-700 dark:bg-ink-900/90 md:overflow-y-auto">
+                  <h3 className="mb-3 truncate text-sm font-semibold text-ink-900 dark:text-white">
                     {selectedBranch.name}
                   </h3>
                   <dl className="space-y-3 text-sm">
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-slate-500">
+                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
                         {t("addressLabelShort")}
                       </dt>
-                      <dd className="mt-0.5 break-words text-slate-700 dark:text-slate-200">
+                      <dd className="mt-0.5 break-words text-ink-700 dark:text-ink-200">
                         {selectedBranch.address || t("workingHoursNotSet")}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-slate-500">
+                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
                         {t("phoneLabelShort")}
                       </dt>
-                      <dd className="mt-0.5 text-slate-700 dark:text-slate-200">
+                      <dd className="mt-0.5 text-ink-700 dark:text-ink-200">
                         {selectedBranch.phone ? (
                           <a
                             href={`tel:${String(selectedBranch.phone).replace(/\s/g, "")}`}
-                            className="text-teal-700 hover:underline dark:text-teal-300"
+                            className="text-brand-700 hover:underline dark:text-brand-300"
                           >
                             {selectedBranch.phone}
                           </a>
@@ -766,16 +750,16 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-slate-500">
+                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
                         {t("whatsappLabelShort")}
                       </dt>
-                      <dd className="mt-0.5 text-slate-700 dark:text-slate-200">
+                      <dd className="mt-0.5 text-ink-700 dark:text-ink-200">
                         {selectedBranch.whatsapp ? (
                           <a
                             href={`https://wa.me/${String(selectedBranch.whatsapp).replace(/\D/g, "")}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-teal-700 hover:underline dark:text-teal-300"
+                            className="text-brand-700 hover:underline dark:text-brand-300"
                           >
                             {selectedBranch.whatsapp}
                           </a>
@@ -785,12 +769,12 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div ref={hoursPopoverRef} className="relative">
-                      <dt className="mb-1.5 text-[10px] uppercase tracking-wide text-slate-500">
+                      <dt className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-500">
                         {t("workingHoursLabel")}
                       </dt>
                       <dd>
                         {!todayHours ? (
-                          <span className="text-slate-700 dark:text-slate-200">
+                          <span className="text-ink-700 dark:text-ink-200">
                             {t("workingHoursNotSet")}
                           </span>
                         ) : (
@@ -801,21 +785,21 @@ export function BusinessDetailModal({
                               disabled={!canExpandHours}
                               aria-expanded={hoursExpanded}
                               title={canExpandHours ? t("viewWeeklySchedule") : undefined}
-                              className={`flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 text-left transition dark:border-slate-800 dark:bg-slate-950/50 ${
+                              className={`flex w-full items-center gap-2 rounded-lg border border-ink-200 bg-ink-50 px-2.5 py-2 text-left transition dark:border-ink-800 dark:bg-ink-950/50 ${
                                 canExpandHours
-                                  ? "hover:border-teal-500/40 hover:bg-teal-500/5 cursor-pointer"
+                                  ? "hover:border-brand-500/40 hover:bg-brand-500/5 cursor-pointer"
                                   : "cursor-default"
                               }`}
                             >
                               <Clock
                                 size={14}
-                                className="shrink-0 text-teal-600 dark:text-teal-400"
+                                className="shrink-0 text-brand-600 dark:text-brand-400"
                               />
                               <span
                                 className={`min-w-0 flex-1 truncate text-xs font-medium ${
                                   todayHours.closed
-                                    ? "text-rose-600 dark:text-rose-400/90"
-                                    : "text-slate-800 dark:text-slate-100"
+                                    ? "text-danger-700 dark:text-danger-400/90"
+                                    : "text-ink-800 dark:text-ink-100"
                                 }`}
                               >
                                 {todayHours.key === "legacy"
@@ -825,7 +809,7 @@ export function BusinessDetailModal({
                               {canExpandHours ? (
                                 <ChevronDown
                                   size={14}
-                                  className={`shrink-0 text-slate-400 transition-transform duration-200 ${
+                                  className={`shrink-0 text-ink-600 dark:text-ink-400 transition-transform duration-200 ${
                                     hoursExpanded ? "rotate-180" : ""
                                   }`}
                                 />
@@ -833,8 +817,8 @@ export function BusinessDetailModal({
                             </button>
 
                             {hoursExpanded && canExpandHours ? (
-                              <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-30 overflow-hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10 ring-1 ring-black/5 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/40 dark:ring-white/5">
-                                <p className="mb-1.5 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                              <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-dropdown overflow-hidden rounded-xl border border-ink-200 bg-white p-2 shadow-xl shadow-ink-900/10 ring-1 ring-black/5 dark:border-ink-700 dark:bg-ink-900 dark:shadow-black/40 dark:ring-white/5">
+                                <p className="mb-1.5 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-400">
                                   {t("weeklyHoursTitle")}
                                 </p>
                                 <ul className="max-h-52 space-y-0.5 overflow-y-auto">
@@ -845,15 +829,15 @@ export function BusinessDetailModal({
                                         key={row.key}
                                         className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-xs ${
                                           isToday
-                                            ? "bg-teal-500/10 text-teal-800 dark:text-teal-200"
-                                            : "text-slate-600 dark:text-slate-300"
+                                            ? "bg-brand-500/10 text-brand-800 dark:text-brand-200"
+                                            : "text-ink-600 dark:text-ink-300"
                                         }`}
                                       >
                                         <span
                                           className={
                                             isToday
                                               ? "font-semibold"
-                                              : "text-slate-500 dark:text-slate-400"
+                                              : "text-ink-500 dark:text-ink-400"
                                           }
                                         >
                                           {row.label}
@@ -861,7 +845,7 @@ export function BusinessDetailModal({
                                         <span
                                           className={
                                             row.closed
-                                              ? "font-medium text-rose-600 dark:text-rose-400/90"
+                                              ? "font-medium text-danger-700 dark:text-danger-400/90"
                                               : "font-medium tabular-nums"
                                           }
                                         >
@@ -883,7 +867,7 @@ export function BusinessDetailModal({
                       href={`https://www.google.com/maps/dir/?api=1&destination=${selectedBranch.lat},${selectedBranch.lng}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-teal-500/40 bg-teal-500/10 px-3 py-2.5 text-sm font-semibold text-teal-700 transition hover:bg-teal-500/20 dark:text-teal-300"
+                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-500/20 dark:text-brand-300"
                     >
                       <Navigation size={16} />
                       {t("getDirectionsBtn")}
@@ -893,13 +877,13 @@ export function BusinessDetailModal({
               ) : null}
             </div>
 
-            <div className="relative col-span-1 min-h-[280px] overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950 md:col-span-2 md:min-h-0">
+            <div className="relative col-span-1 min-h-[280px] overflow-hidden rounded-xl border border-ink-200 bg-ink-100 dark:border-ink-800 dark:bg-ink-950 md:col-span-2 md:min-h-0">
               {!selectedBranch ? (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500 dark:text-slate-400">
+                <div className="flex h-full items-center justify-center text-sm text-ink-500 dark:text-ink-400">
                   {t("selectBranchForMap")}
                 </div>
               ) : !hasValidCoords(selectedBranch) ? (
-                <div className="flex h-full items-center justify-center px-4 text-center text-sm text-slate-500 dark:text-slate-400">
+                <div className="flex h-full items-center justify-center px-4 text-center text-sm text-ink-500 dark:text-ink-400">
                   {t("branchNoCoords")}
                 </div>
               ) : (
@@ -922,7 +906,7 @@ export function BusinessDetailModal({
                     href={`https://www.google.com/maps/dir/?api=1&destination=${selectedBranch.lat},${selectedBranch.lng}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="absolute bottom-3 right-3 z-[1000] inline-flex items-center gap-2 rounded-lg border border-teal-500/40 bg-white/95 px-3 py-2 text-xs font-semibold text-teal-700 shadow-lg backdrop-blur transition hover:border-teal-400 dark:bg-slate-950/90 dark:text-teal-300"
+                    className="absolute bottom-3 right-3 z-overlay inline-flex items-center gap-2 rounded-lg border border-brand-500/40 bg-white/95 px-3 py-2 text-xs font-semibold text-brand-700 shadow-lg backdrop-blur transition hover:border-brand-400 dark:bg-ink-950/90 dark:text-brand-300"
                   >
                     <Navigation size={14} />
                     {t("getDirectionsBtn")}
@@ -932,6 +916,29 @@ export function BusinessDetailModal({
             </div>
           </div>
         )}
+    </>
+  );
+
+  return createPortal(
+    <div className="fixed inset-0 z-modal flex items-end justify-center p-0 sm:items-center sm:p-3 md:p-4">
+      {localBusinessJsonLd ? (
+        <Helmet>
+          <script type="application/ld+json">{JSON.stringify(localBusinessJsonLd)}</script>
+        </Helmet>
+      ) : null}
+      <button
+        type="button"
+        aria-label="Kapat"
+        className="absolute inset-0 bg-ink-950/40 backdrop-blur-md dark:bg-ink-950/80"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={displayName || business.name}
+        className="relative z-raised flex h-[min(94dvh,94vh)] max-h-[min(94dvh,94vh)] w-full max-w-5xl flex-col overflow-hidden rounded-t-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900 dark:shadow-black/50 sm:h-[90vh] sm:max-h-[90vh] sm:w-[95%] sm:rounded-card md:w-full"
+      >
+        {panelBody}
       </div>
     </div>,
     document.body

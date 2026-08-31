@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="AdaDöviz — KKTC canlı döviz kurları">
+  <title>AdaDöviz — KKTC canlı döviz kurları</title>
+  <defs>
+    <linearGradient id="ogMark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="ogRule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#0e7490" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#0b1220"/>
+
+  <!-- Marka işareti -->
+  <g transform="translate(96 208) scale(2.25)">
+    <rect width="64" height="64" rx="15" fill="url(#ogMark)"/>
+    <g fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M18 25h22"/>
+      <path d="M34.5 19.5 40 25l-5.5 5.5"/>
+      <path d="M46 39H24" opacity=".88"/>
+      <path d="M29.5 33.5 24 39l5.5 5.5" opacity=".88"/>
+    </g>
+  </g>
+
+  <!-- Kelime markası -->
+  <text x="270" y="300" font-family="Inter, 'Segoe UI', Tahoma, Helvetica, Arial, sans-serif" font-size="86" letter-spacing="-2">
+    <tspan fill="#e2e8f0" font-weight="500">Ada</tspan><tspan fill="#ffffff" font-weight="800">Döviz</tspan>
+  </text>
+  <text x="272" y="356" font-family="Inter, 'Segoe UI', Tahoma, Helvetica, Arial, sans-serif" font-size="30" font-weight="500" fill="#7dd3fc" letter-spacing="4">KKTC CANLI DÖVİZ KURLARI</text>
+
+  <rect x="96" y="430" width="640" height="3" rx="1.5" fill="url(#ogRule)"/>
+
+  <!-- Kur şeridi -->
+  <g font-family="Inter, 'Segoe UI', Tahoma, Helvetica, Arial, sans-serif" fill="#94a3b8" font-size="30" font-weight="600" letter-spacing="3">
+    <text x="96" y="500">USD</text>
+    <text x="266" y="500">EUR</text>
+    <text x="436" y="500">GBP</text>
+  </g>
+  <g font-family="Inter, 'Segoe UI', Tahoma, Helvetica, Arial, sans-serif" fill="#f1f5f9" font-size="42" font-weight="700">
+    <text x="96" y="552">₺</text>
+    <text x="266" y="552">₺</text>
+    <text x="436" y="552">₺</text>
+  </g>
+  <g fill="#22d3ee" opacity=".55">
+    <rect x="130" y="524" width="86" height="34" rx="6"/>
+    <rect x="300" y="524" width="86" height="34" rx="6"/>
+    <rect x="470" y="524" width="86" height="34" rx="6"/>
+  </g>
+
+  <text x="96" y="600" font-family="Inter, 'Segoe UI', Tahoma, Helvetica, Arial, sans-serif" font-size="26" font-weight="500" fill="#64748b">KKTC Merkez Bankası referans kurları · adadoviz.tunahangul.com</text>
+</svg>

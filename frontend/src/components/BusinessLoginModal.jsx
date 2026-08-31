@@ -113,25 +113,25 @@ export function BusinessLoginModal({ isOpen, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-end justify-center p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-dropdown flex items-end justify-center p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="business-login-title"
     >
       <button
         type="button"
-        className="absolute inset-0 bg-slate-500/30 backdrop-blur-sm dark:bg-[#020617]/80"
+        className="absolute inset-0 bg-ink-500/30 backdrop-blur-sm dark:bg-[#020617]/80"
         onClick={onClose}
         aria-label="Modalı kapat"
       />
 
-      <div className="relative z-10 max-h-[min(94dvh,94vh)] w-full max-w-md overflow-y-auto overflow-x-hidden rounded-t-2xl border border-slate-200 bg-white shadow-2xl shadow-indigo-950/20 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95 dark:shadow-indigo-950/50 sm:rounded-2xl">
-        <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+      <div className="relative z-raised max-h-[min(94dvh,94vh)] w-full max-w-md overflow-y-auto overflow-x-hidden rounded-t-2xl border border-ink-200 bg-white shadow-2xl shadow-brand-900/20 backdrop-blur-xl dark:border-white/10 dark:bg-ink-900/95 dark:shadow-brand-900/50 sm:rounded-2xl">
+        <div className="absolute right-3 top-3 z-raised flex items-center gap-2">
           <HeaderActions compact />
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+            className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
             aria-label="Kapat"
           >
             <X size={22} />
@@ -139,27 +139,27 @@ export function BusinessLoginModal({ isOpen, onClose }) {
         </div>
         {isLoggingIn ? (
           <div className="p-12 flex flex-col items-center justify-center min-h-[300px]">
-            <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
-              <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24">
+            <div className="w-16 h-16 bg-brand-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
+              <svg className="w-8 h-8 text-brand-400" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             </div>
-            <h3 className="text-slate-900 dark:text-white text-xl font-bold">{t("loggingInTitle")}</h3>
-            <p className="text-slate-500 dark:text-slate-300 text-sm mt-3">{t("loggingInSubtitle")}</p>
+            <h3 className="text-ink-900 dark:text-white text-xl font-bold">{t("loggingInTitle")}</h3>
+            <p className="text-ink-500 dark:text-ink-300 text-sm mt-3">{t("loggingInSubtitle")}</p>
           </div>
         ) : (
           <>
-            <div className="border-b border-slate-200 bg-gradient-to-r from-white via-slate-50 to-indigo-50 px-4 py-5 pr-14 dark:border-white/10 dark:from-slate-900 dark:via-slate-900 dark:to-indigo-950/40 sm:px-6 sm:pr-16">
+            <div className="border-b border-ink-200 bg-gradient-to-r from-white via-ink-50 to-brand-50 px-4 py-5 pr-14 dark:border-white/10 dark:from-ink-900 dark:via-ink-900 dark:to-brand-900/40 sm:px-6 sm:pr-16">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="shrink-0 rounded-xl bg-gradient-to-tr from-indigo-500 to-teal-400 p-2.5 text-white shadow-lg shadow-indigo-900/40">
+                <div className="shrink-0 rounded-xl bg-gradient-to-tr bg-brand-gradient p-2.5 text-white shadow-lg shadow-brand-900/40">
                   <Building2 className="size-5" />
                 </div>
                 <div className="min-w-0">
-                  <h2 id="business-login-title" className="truncate text-lg font-bold text-slate-900 dark:text-white">
+                  <h2 id="business-login-title" className="truncate text-lg font-bold text-ink-900 dark:text-white">
                     {t("businessLogin")}
                   </h2>
-                  <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{t("businessLoginSubtitle")}</p>
+                  <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">{t("businessLoginSubtitle")}</p>
                 </div>
               </div>
             </div>
@@ -168,12 +168,12 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               <div className="space-y-2">
                 <label
                   htmlFor="business-username"
-                  className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
                 >
                   {t("usernameLabel")}
                 </label>
                 <div className="relative">
-                  <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
                   <input
                     id="business-username"
                     type="text"
@@ -181,7 +181,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder={t("usernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                     required
                   />
                 </div>
@@ -190,12 +190,12 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               <div className="space-y-2">
                 <label
                   htmlFor="business-password"
-                  className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
                 >
                   {t("passwordLabel")}
                 </label>
                 <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                  <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
                   <input
                     id="business-password"
                     type="password"
@@ -203,7 +203,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="••••••••"
-                    className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                     required
                   />
                 </div>
@@ -213,9 +213,9 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                       type="checkbox"
                       checked={rememberMe}
                       onChange={(e) => setRememberMe(e.target.checked)}
-                      className="size-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 dark:border-slate-600 dark:bg-slate-950"
+                      className="size-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500 dark:border-ink-600 dark:bg-ink-950"
                     />
-                    <span className="text-xs text-slate-600 dark:text-slate-300">
+                    <span className="text-xs text-ink-600 dark:text-ink-300">
                       {t("rememberMe")}
                     </span>
                   </label>
@@ -227,7 +227,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                       setForgotEmail("");
                       setShowForgotModal(true);
                     }}
-                    className="text-xs text-teal-400 transition-colors hover:text-teal-300"
+                    className="text-xs text-brand-400 transition-colors hover:text-brand-300"
                   >
                     {t("forgotPassword")}
                   </button>
@@ -235,11 +235,11 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               </div>
 
               {error ? (
-                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
                   {error}
                 </div>
               ) : successMessage ? (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 font-semibold dark:text-emerald-200">
+                <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 font-semibold dark:text-success-200">
                   ✓ {successMessage}
                 </div>
               ) : null}
@@ -249,14 +249,14 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   type="button"
                   onClick={onClose}
                   disabled={loading}
-                  className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                  className="flex-1 rounded-lg border border-ink-300 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-60 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
                 >
                   {t("cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:opacity-60"
+                  className="btn-primary flex-1"
                 >
                   {loading ? t("loggingIn") : t("loginButton")}
                 </button>
@@ -268,44 +268,44 @@ export function BusinessLoginModal({ isOpen, onClose }) {
 
       {showForgotModal ? (
         <div
-          className="absolute inset-0 z-20 flex items-center justify-center p-4"
+          className="absolute inset-0 z-raised flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="forgot-password-title"
         >
           <button
             type="button"
-            className="absolute inset-0 bg-slate-950/70"
+            className="absolute inset-0 bg-ink-950/70"
             onClick={() => setShowForgotModal(false)}
             aria-label="Şifremi unuttum modalını kapat"
           />
-          <div className="relative z-10 w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+          <div className="relative z-raised w-full max-w-sm overflow-hidden rounded-2xl border border-ink-200 bg-white p-5 shadow-2xl dark:border-ink-700 dark:bg-ink-900">
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
               <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowForgotModal(false)}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label="Kapat"
               >
                 <X size={20} />
               </button>
             </div>
-            <h3 id="forgot-password-title" className="pt-8 text-base font-bold text-slate-900 dark:text-slate-100 sm:pt-0 sm:pr-[7.5rem]">
+            <h3 id="forgot-password-title" className="pt-8 text-base font-bold text-ink-900 dark:text-ink-100 sm:pt-0 sm:pr-[7.5rem]">
               {t("forgotPasswordTitle")}
             </h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("forgotPasswordDesc")}</p>
+            <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">{t("forgotPasswordDesc")}</p>
 
             <form onSubmit={handleForgotSubmit} className="mt-4 space-y-4">
               <div className="space-y-2">
                 <label
                   htmlFor="forgot-email"
-                  className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
+                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
                 >
                   {t("emailOrUsername")}
                 </label>
                 <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
                   <input
                     id="forgot-email"
                     type="text"
@@ -313,7 +313,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder={t("emailOrUsernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    className="h-11 w-full rounded-lg border border-ink-200 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
                     required
                     disabled={forgotLoading}
                   />
@@ -321,12 +321,12 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               </div>
 
               {forgotError ? (
-                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
                   {forgotError}
                 </div>
               ) : null}
               {forgotSuccess ? (
-                <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
+                <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 dark:text-success-200">
                   {forgotSuccess}
                 </div>
               ) : null}
@@ -335,14 +335,14 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                 <button
                   type="button"
                   onClick={() => setShowForgotModal(false)}
-                  className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-300 hover:text-white"
+                  className="flex-1 rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 text-sm text-ink-300 hover:text-white"
                 >
                   {t("cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={forgotLoading}
-                  className="flex-1 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                  className="btn-primary flex-1"
                 >
                   {forgotLoading ? t("sending") : t("send")}
                 </button>

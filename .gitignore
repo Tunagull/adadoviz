@@ -24,3 +24,6 @@ backend/check-db.js
 backend/clean-mock-anomaly.js
 backend/clean-mock-anomaly2.js
 MARKET_SUMMARY_COMPLETE_CODE.txt
+
+# Tool output
+graphify-out/

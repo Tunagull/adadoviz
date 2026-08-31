@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, memo } from "react";
-import { shouldShowTestBadge } from "../lib/subscriptionBadge";
+import { Award, MapPin, Phone } from "lucide-react";
+import { mediaUrl } from "../lib/api";
+import { useLanguage } from "../context/LanguageContext";
 
 function getCurrencyDisplay(currency) {
   return currency;
@@ -24,7 +26,7 @@ const bankDomains = {
   "sun döviz": "sundoviz.com.tr",
 };
 
-function formatRate(rate, currency) {
+function formatRate(rate) {
   if (rate === null || rate === undefined || rate === "") {
     return "—";
   }
@@ -35,7 +37,16 @@ function formatRate(rate, currency) {
   return n.toFixed(2);
 }
 
-function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }) {
+/**
+ * @param {object} props
+ * @param {{EUR?:{buy:number,sell:number},USD?:{buy:number,sell:number},GBP?:{buy:number,sell:number}}} [props.bestRates]
+ *   U-10: Panodaki en iyi alış / en iyi satış değerleri. Bu kart o değeri
+ *   tutturuyorsa ilgili hücre işaretlenir — ürünün tek satış argümanı
+ *   "büroları karşılaştır" olduğu halde ekranda hiçbir karşılaştırma
+ *   işareti yoktu.
+ */
+function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, bestRates = null, branches = [] }) {
+  const { t } = useLanguage();
   // ✅ ADIM 2: Flash effect durumları
   const [flashColor, setFlashColor] = useState(null); // 'green' | 'red' | null
   const prevRatesRef = useRef({});
@@ -105,27 +116,35 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
 
   // ✅ ADIM 3: Tailwind Flash Effect - Dinamik sınıflar + Smooth Fade
   // Hover glow = Admin Paneli butonuyla birebir aynı:
-  // hover:border-cyan-400 + hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]
+  // hover:border-brand-400 + hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]
   const getCardClasses = () => {
     const baseClasses =
       "group overflow-hidden rounded-2xl backdrop-blur-lg transition-all duration-300 cursor-pointer";
 
     if (flashColor === "green") {
-      return `${baseClasses} border-emerald-500/80 bg-emerald-500/20 shadow-lg shadow-emerald-500/30 border`;
+      return `${baseClasses} border-success-500/80 bg-success-500/20 shadow-lg shadow-success-500/30 border`;
     } else if (flashColor === "red") {
-      return `${baseClasses} border-rose-500/80 bg-rose-500/20 shadow-lg shadow-rose-500/30 border`;
+      return `${baseClasses} border-danger-500/80 bg-danger-500/20 shadow-lg shadow-danger-500/30 border`;
     } else {
-      return `${baseClasses} border border-slate-200 bg-white/90 shadow-xl dark:border-white/10 dark:bg-slate-900/60 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]`;
+      return `${baseClasses} border border-ink-200 bg-white/90 shadow-xl dark:border-white/10 dark:bg-ink-900/60 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]`;
     }
   };
 
   const rawName = bank.name || "";
-  const isTestAccount = shouldShowTestBadge({
-    subscription_type: bank.subscription_type,
-    subscription_end_date: bank.subscription_end_date,
-    days_remaining: bank.days_remaining,
-  });
+  /**
+   * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-13): Burada müşteri panosunda gerçek
+   * işletmelerin kartına "TEST" rozeti basılıyordu (ölçüm: Albaraka Türk ve
+   * Dablöz). Abonelik durumu yöneticinin bilmesi gereken bir şeydir, müşterinin
+   * değil — rozet süper admin listesinde kaldı, panodan kaldırıldı.
+   */
   const displayName = rawName.replace(/\s*\([Tt]est\)\s*/g, "").trim();
+  /** M-01: karttan doğrudan arama / yol tarifi için en uygun şube. */
+  const contactBranch = bank.nearestBranch || branches?.[0] || null;
+  const contactPhone = contactBranch?.phone || contactBranch?.whatsapp || bank.phone || null;
+  const hasCoords =
+    contactBranch &&
+    Number.isFinite(Number(contactBranch.lat)) &&
+    Number.isFinite(Number(contactBranch.lng));
   const nearest = showNearestBranch ? bank.nearestBranch : null;
   const nearestLabel =
     nearest?.name && Number.isFinite(nearest.distanceKm)
@@ -159,7 +178,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
       <div className="flex items-center gap-3 px-1 pb-4">
         <img
           src={
-            bank.logo_url ||
+            mediaUrl(bank.logo_url) ||
             `https://www.google.com/s2/favicons?domain=${bankDomains[String(bank.name || "").toLowerCase()] || "bank.com"}&sz=128`
           }
           alt={displayName || bank.name}
@@ -169,98 +188,171 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
           <h3
             className={`min-w-0 text-base font-semibold leading-tight transition-all duration-300 ${
               flashColor === "green"
-                ? "text-emerald-700 dark:text-emerald-200"
+                ? "text-success-700 dark:text-success-200"
                 : flashColor === "red"
-                  ? "text-rose-700 dark:text-rose-200"
-                  : "text-slate-800 dark:text-slate-100 group-hover:text-cyan-600 dark:group-hover:text-cyan-400"
+                  ? "text-danger-700 dark:text-danger-200"
+                  : "text-ink-800 dark:text-ink-100 group-hover:text-brand-600 dark:group-hover:text-brand-400"
             }`}
           >
             <span className="block truncate">{displayName || bank.name}</span>
             {nearestLabel ? (
-              <span className="mt-0.5 block truncate text-xs font-medium text-teal-600 dark:text-teal-300">
+              <span className="mt-0.5 block truncate text-xs font-medium text-brand-600 dark:text-brand-300">
                 {nearestLabel}
               </span>
             ) : null}
           </h3>
-          {isTestAccount && (
-            <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider text-rose-500 bg-rose-500/10 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.5)]">
-              TEST
-            </span>
-          )}
         </div>
       </div>
 
       {mode === "exchange" ? (
         <div className="px-1 pb-1">
-          <div className="divide-y divide-slate-200 dark:divide-slate-700/60">
-            {exchangeRates.map((rate) => (
-              <div key={rate.currency} className="flex items-center justify-between py-3">
-                <span className={`inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors duration-700 ease-out ${
-                  flashColor === "green" ? "bg-emerald-500/30 text-emerald-700 dark:text-emerald-200" :
-                  flashColor === "red" ? "bg-rose-500/30 text-rose-700 dark:text-rose-200" :
-                  "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                }`}>
-                  {getCurrencyDisplay(rate.currency)}
-                </span>
+          <div className="divide-y divide-ink-200 dark:divide-ink-700/60">
+            {exchangeRates.map((rate) => {
+              /**
+               * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-10): Ürünün tek satış
+               * argümanı "büroları karşılaştır" olduğu halde ekranda en iyi
+               * kuru gösteren hiçbir işaret yoktu. Müşteri için en iyi alış =
+               * en YÜKSEK (dövizini daha pahalıya bozdurur), en iyi satış =
+               * en DÜŞÜK (dövizi daha ucuza alır).
+               */
+              const best = bestRates?.[rate.currency];
+              const isBestBuy =
+                best?.buy != null && rate.buy != null && Math.abs(best.buy - rate.buy) < 1e-9;
+              const isBestSell =
+                best?.sell != null && rate.sell != null && Math.abs(best.sell - rate.sell) < 1e-9;
 
-                <div className="flex items-center gap-5">
-                  <div className="text-right">
-                    <span className={`mb-0.5 block text-[10px] font-medium uppercase tracking-wider transition-colors duration-700 ease-out ${
-                      flashColor === "green" ? "text-emerald-300" :
-                      flashColor === "red" ? "text-rose-300" :
-                      "text-slate-500"
-                    }`}>
-                      ALIS
-                    </span>
-                    <span className={`font-mono text-xl font-bold transition-colors duration-700 ease-out ${
-                      flashColor === "green" ? "text-emerald-300" :
-                      flashColor === "red" ? "text-rose-300" :
-                      "text-emerald-400"
-                    }`}>
-                      {formatRate(rate.buy, rate.currency)}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className={`mb-0.5 block text-[10px] font-medium uppercase tracking-wider transition-colors duration-700 ease-out ${
-                      flashColor === "green" ? "text-emerald-300" :
-                      flashColor === "red" ? "text-rose-300" :
-                      "text-slate-500"
-                    }`}>
-                      SATIS
-                    </span>
-                    <span className={`font-mono text-xl font-bold transition-colors duration-700 ease-out ${
-                      flashColor === "green" ? "text-emerald-300" :
-                      flashColor === "red" ? "text-rose-300" :
-                      "text-rose-400"
-                    }`}>
-                      {formatRate(rate.sell, rate.currency)}
-                    </span>
+              return (
+                <div key={rate.currency} className="flex items-center justify-between gap-3 py-3">
+                  <span
+                    className={`inline-flex items-center justify-center rounded-control px-3 py-1.5 text-xs font-semibold transition-colors duration-700 ease-out ${
+                      flashColor === "green"
+                        ? "bg-success-500/25 text-success-700 dark:text-success-400"
+                        : flashColor === "red"
+                          ? "bg-danger-500/25 text-danger-700 dark:text-danger-400"
+                          : "bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-200"
+                    }`}
+                  >
+                    {getCurrencyDisplay(rate.currency)}
+                  </span>
+
+                  <div className="flex items-center gap-5">
+                    {/*
+                      ⚠️ TASARIM DÜZELTMESİ (denetim bulgusu D-08): Alış sürekli
+                      yeşil, satış sürekli kırmızıydı. Finansal arayüzlerde
+                      yeşil/kırmızı "yükseldi/düştü" demektir; burada "alış/satış"
+                      için kullanılıyordu ve aynı kartta yanıp sönen değişim
+                      rengiyle karışıyordu. Ayrım artık ETİKET ve HİZALAMA ile
+                      yapılıyor; renk yalnızca değişim yönünü anlatıyor.
+                    */}
+                    <div className="text-right">
+                      <span className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-medium tracking-wide text-ink-600 dark:text-ink-400">
+                        {isBestBuy ? (
+                          <Award
+                            size={11}
+                            className="text-brand-600 dark:text-brand-400"
+                            aria-label={t("bestBuy")}
+                          />
+                        ) : null}
+                        {t("buyShort")}
+                      </span>
+                      <span
+                        className={`font-mono text-xl font-bold tabular-nums transition-colors duration-700 ease-out ${
+                          flashColor === "green"
+                            ? "text-success-700 dark:text-success-400"
+                            : flashColor === "red"
+                              ? "text-danger-700 dark:text-danger-400"
+                              : isBestBuy
+                                ? "text-brand-700 dark:text-brand-300"
+                                : "text-ink-900 dark:text-white"
+                        }`}
+                      >
+                        {formatRate(rate.buy)}
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-medium tracking-wide text-ink-600 dark:text-ink-400">
+                        {isBestSell ? (
+                          <Award
+                            size={11}
+                            className="text-brand-600 dark:text-brand-400"
+                            aria-label={t("bestSell")}
+                          />
+                        ) : null}
+                        {t("sellShort")}
+                      </span>
+                      <span
+                        className={`font-mono text-xl font-bold tabular-nums transition-colors duration-700 ease-out ${
+                          flashColor === "green"
+                            ? "text-success-700 dark:text-success-400"
+                            : flashColor === "red"
+                              ? "text-danger-700 dark:text-danger-400"
+                              : isBestSell
+                                ? "text-brand-700 dark:text-brand-300"
+                                : "text-ink-900 dark:text-white"
+                        }`}
+                      >
+                        {formatRate(rate.sell)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
+
+          {/*
+            ⚠️ ÜRÜN HARİTASI M-01: Panoda tek bir tel: bağlantısı veya harita linki
+            yoktu; müşteri önce detay panelini açmak zorundaydı. Oysa bir döviz
+            bürosu ararken asıl eylem "ara" ve "yol tarifi al".
+          */}
+          {contactPhone || hasCoords ? (
+            <div className="flex gap-2 border-t border-ink-200 px-1 pt-3 dark:border-ink-700/60">
+              {contactPhone ? (
+                <a
+                  href={`tel:${String(contactPhone).replace(/[^\d+]/g, "")}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="btn-subtle btn-sm min-h-[2.5rem] flex-1"
+                >
+                  <Phone size={14} aria-hidden="true" />
+                  {t("callBtn")}
+                </a>
+              ) : null}
+              {hasCoords ? (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${contactBranch.lat},${contactBranch.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="btn-ghost btn-sm min-h-[2.5rem] flex-1"
+                >
+                  <MapPin size={14} aria-hidden="true" />
+                  {t("directionsBtn")}
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : mode === "interest" ? (
         <div className="px-1 pb-1">
           {simulatedDepositRows.length > 0 ? (
-            <div className="divide-y divide-slate-700/60">
+            <div className="divide-y divide-ink-700/60">
               {simulatedDepositRows.map((item) => (
                 <div key={item.label} className="flex items-center justify-between py-3">
-                  <span className="text-sm text-slate-400">{item.label}</span>
-                  <span className="font-mono text-xl font-bold text-emerald-300">%{item.rate.toFixed(2)}</span>
+                  <span className="text-sm text-ink-600 dark:text-ink-400">{item.label}</span>
+                  <span className="font-mono text-xl font-bold text-success-300">%{item.rate.toFixed(2)}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-center px-4 py-8 text-center text-sm text-slate-400">
+            <div className="flex items-center justify-center px-4 py-8 text-center text-sm text-ink-600 dark:text-ink-400">
               Bu kaynakta faiz verisi yayınlanmıyor; yalnızca döviz özeti kullanılıyor.
             </div>
           )}
         </div>
       ) : (
         <div className="px-1 pb-1">
-          <div className="divide-y divide-slate-700/60">
+          <div className="divide-y divide-ink-700/60">
             {[
               { key: "tasit", label: "Taşıt Kredisi" },
               { key: "konut", label: "Konut Kredisi" },
@@ -270,8 +362,8 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false }
               const value = typeof raw === "number" ? raw : Number.parseFloat(String(raw ?? "").replace(",", "."));
               return (
                 <div key={item.key} className="flex items-center justify-between py-3">
-                  <span className="text-sm text-slate-300">{item.label}</span>
-                  <span className="font-mono text-2xl font-bold text-amber-300">
+                  <span className="text-sm text-ink-300">{item.label}</span>
+                  <span className="font-mono text-2xl font-bold text-warning-300">
                     {Number.isFinite(value) ? `%${value.toFixed(2)}` : "—"}
                   </span>
                 </div>

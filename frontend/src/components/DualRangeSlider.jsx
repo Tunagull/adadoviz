@@ -97,11 +97,11 @@ export function DualRangeSlider({
       {/* Track Container */}
       <div
         ref={trackRef}
-        className="relative h-2 bg-slate-300 rounded-full cursor-pointer dark:bg-slate-700"
+        className="relative h-2 bg-ink-300 rounded-full cursor-pointer dark:bg-ink-700"
       >
         {/* Aktif Alan (Cyan Highlight) */}
         <div
-          className="absolute h-2 bg-cyan-500 dark:bg-cyan-500 rounded-full"
+          className="absolute h-2 bg-brand-500 dark:bg-brand-500 rounded-full"
           style={{
             left: `${minPercent}%`,
             right: `${100 - maxPercent}%`,
@@ -111,7 +111,7 @@ export function DualRangeSlider({
         {/* Min Thumb */}
         <div
           onMouseDown={handleMinMouseDown}
-          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-cyan-500 dark:bg-slate-800 dark:border-cyan-400 rounded-full cursor-grab active:cursor-grabbing shadow-lg transition ${
+          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-brand-500 dark:bg-ink-800 dark:border-brand-400 rounded-full cursor-grab active:cursor-grabbing shadow-lg transition ${
             disabled ? "opacity-50 cursor-not-allowed" : ""
           }`}
           style={{
@@ -123,7 +123,7 @@ export function DualRangeSlider({
         {/* Max Thumb */}
         <div
           onMouseDown={handleMaxMouseDown}
-          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-cyan-500 dark:bg-slate-800 dark:border-cyan-400 rounded-full cursor-grab active:cursor-grabbing shadow-lg transition ${
+          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-brand-500 dark:bg-ink-800 dark:border-brand-400 rounded-full cursor-grab active:cursor-grabbing shadow-lg transition ${
             disabled ? "opacity-50 cursor-not-allowed" : ""
           }`}
           style={{
@@ -134,7 +134,7 @@ export function DualRangeSlider({
       </div>
 
       {/* Değerleri Display Edebilmek İçin (İsteğe Bağlı) */}
-      <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 px-1 pointer-events-none">
+      <div className="flex justify-between text-xs text-ink-500 dark:text-ink-400 px-1 pointer-events-none">
         <span>00:00</span>
         <span>24:00</span>
       </div>

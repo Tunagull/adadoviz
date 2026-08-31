@@ -8,17 +8,23 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   font-family: Inter, "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-  overflow-x: hidden;
   max-width: 100vw;
+  overflow-x: clip;
 }
 
-/* Prevent flex/grid children from forcing horizontal page scroll */
+h1 {
+  @apply text-2xl font-bold tracking-tight text-ink-900 dark:text-white sm:text-3xl;
+}
+
+h2 {
+  @apply text-lg font-semibold tracking-tight text-ink-900 dark:text-white sm:text-xl;
+}
+
 img,
 svg,
 video,
@@ -26,11 +32,117 @@ canvas {
   max-width: 100%;
 }
 
-/* Safer tap targets on coarse pointers without changing desktop look */
+/**
+ * ⚠️ ERİŞİLEBİLİRLİK DÜZELTMESİ (denetim bulgusu A-01): Kod tabanında
+ * `outline-none` 45 yerde kullanılıyordu ama odak halkası yalnızca 6 yerde
+ * geri konuyordu. Klavyeyle gezen kullanıcı nerede olduğunu göremiyordu
+ * (ölçüm: süper admin durum anahtarında outline-style: none).
+ *
+ * Bu global kural, `outline-none` yazılmış olsa bile klavye odağına HER ZAMAN
+ * görünür bir halka verir. Fare tıklamasında tetiklenmez (:focus değil,
+ * :focus-visible), yani görsel gürültü yaratmaz.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid theme("colors.brand.500");
+  outline-offset: 2px;
+  border-radius: theme("borderRadius.control");
+}
+
 @media (pointer: coarse) {
   button,
   [role="button"],
   a {
     -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer components {
+  /**
+   * ⚠️ TASARIM DÜZELTMESİ (denetim bulguları D-01 / D-04): Uygulamada aynı işi
+   * yapan birincil buton BEŞ farklı gradyanla çiziliyordu (biri diğerinin ters
+   * yönü) ve tek bir sayfada 240 butonun 33 farklı sınıf kombinasyonu vardı.
+   * Ortak sınıflar vardı ama ~13.000 satırda yalnızca 13 kez kullanılıyor,
+   * kullanıldıkları yerde de `!px-3 !py-1.5 !text-xs` ile eziliyordu.
+   *
+   * Artık tek kaynak burası. Boyut varyantları tanımlı olduğu için
+   * `!important` ezmelerine gerek kalmıyor.
+   */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-control
+           text-sm font-semibold transition
+           disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none;
+  }
+
+  .btn-sm {
+    @apply gap-1.5 px-3 py-1.5 text-xs;
+  }
+
+  /* A-06: mobil dokunma hedefi için minimum 44px yükseklik. */
+  .btn-md {
+    @apply min-h-[2.75rem] px-4 py-2.5 text-sm;
+  }
+
+  .btn-lg {
+    @apply min-h-[3rem] px-5 py-3 text-base;
+  }
+
+  .btn-primary {
+    @apply btn btn-md bg-brand-gradient text-white shadow-lg shadow-brand-500/20
+           hover:brightness-110 disabled:hover:brightness-100;
+  }
+
+  .btn-danger {
+    @apply btn btn-md border border-danger-600 bg-transparent text-danger-700
+           hover:bg-danger-500/10 dark:border-danger-500 dark:text-danger-400;
+  }
+
+  .btn-ghost {
+    @apply btn btn-md border border-ink-200 bg-white text-ink-700
+           hover:border-ink-300 hover:bg-ink-50
+           dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-ink-600;
+  }
+
+  .btn-subtle {
+    @apply btn btn-md border border-brand-500/40 bg-brand-500/10 text-brand-700
+           hover:bg-brand-500/20 dark:text-brand-300;
+  }
+
+  /** Kart yüzeyi — tek tanım (eskiden her ekranda ayrı ayrı yazılıyordu). */
+  .surface-card {
+    @apply rounded-card border border-ink-200 bg-white shadow-card
+           dark:border-white/10 dark:bg-ink-900/60 dark:shadow-card-dark;
+  }
+
+  /** Form alanı — tek tanım. */
+  .field {
+    @apply w-full rounded-control border border-ink-200 bg-white px-3 py-2.5 text-sm
+           text-ink-900 placeholder:text-ink-500
+           dark:border-ink-700 dark:bg-ink-950 dark:text-white dark:placeholder:text-ink-400;
+  }
+
+  /**
+   * Etiket — tek tanım. text-transform: uppercase KULLANILMIYOR: lang="tr"
+   * altında tarayıcı "i" harfini "İ" yapıyor ve İngilizce terimler bozuluyordu
+   * (D-09; ölçüm: "DUAL-WRİTE", "SQLİTE").
+   */
+  .field-label {
+    @apply mb-1.5 block text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-300;
+  }
+}
+
+/* Leaflet panes default z-index 400–1000; isolate so they cannot cover the sticky header. */
+.leaflet-container {
+  isolation: isolate;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

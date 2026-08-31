@@ -6,8 +6,23 @@
 
 const { supabase } = require("./supabaseClient");
 
+const DUAL_WRITE_ERROR_LIMIT = 50;
+const dualWriteErrors = [];
+
 function logErr(op, err) {
-  console.warn(`[SUPABASE-SYNC] ${op}:`, err?.message || err);
+  const rec = {
+    at: new Date().toISOString(),
+    op: String(op || "unknown"),
+    message: String(err?.message || err || "bilinmeyen hata"),
+  };
+  dualWriteErrors.unshift(rec);
+  if (dualWriteErrors.length > DUAL_WRITE_ERROR_LIMIT) dualWriteErrors.pop();
+  console.warn(`[SUPABASE-SYNC] ${op}:`, rec.message);
+}
+
+function getDualWriteErrors(limit = 20) {
+  const n = Math.min(DUAL_WRITE_ERROR_LIMIT, Math.max(1, Number(limit) || 20));
+  return dualWriteErrors.slice(0, n);
 }
 
 async function safe(op, fn) {
@@ -43,26 +58,10 @@ function institutionPayload(row) {
       : null,
     created_at: row.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString(),
+    branch_limit: row.branch_limit == null ? 1 : Number(row.branch_limit) || 1,
+    contact_person: row.contact_person || null,
+    last_login_at: row.last_login_at || null,
   };
-}
-
-/**
- * Supabase institutions şemasında henüz olmayan kolonlar (PGRST204).
- * Bunlar payload'a eklenirse tüm upsert (email dahil) sessizce fail olur.
- * SQL migration: backend/scripts/supabase-institutions-columns.sql
- */
-const INSTITUTION_SYNC_OPTIONAL_COLUMNS = ["branch_limit", "contact_person"];
-
-function stripUnknownInstitutionColumns(payload, missingColumn) {
-  if (!payload) return payload;
-  const next = { ...payload };
-  if (missingColumn && next[missingColumn] !== undefined) {
-    delete next[missingColumn];
-  }
-  for (const col of INSTITUTION_SYNC_OPTIONAL_COLUMNS) {
-    if (next[col] !== undefined) delete next[col];
-  }
-  return next;
 }
 
 function parseMissingColumn(err) {
@@ -72,11 +71,8 @@ function parseMissingColumn(err) {
 }
 
 async function syncInstitutionUpsert(row) {
-  let payload = institutionPayload(row);
+  const payload = institutionPayload(row);
   if (!payload?.institution_id) return false;
-
-  // Eski şemada olmayan alanları baştan çıkar (email sync'inin düşmesini engelle)
-  payload = stripUnknownInstitutionColumns(payload);
 
   const logoUrl = payload.logo_url || null;
   // Önce çekirdek alanları yaz (logo ayrı — büyük data URL tüm upsert'i düşürmesin)
@@ -89,23 +85,28 @@ async function syncInstitutionUpsert(row) {
     if (error) throw error;
   };
 
-  try {
-    await tryUpsert(corePayload);
-  } catch (err) {
-    const missing = parseMissingColumn(err);
-    if (missing && corePayload[missing] !== undefined) {
-      const stripped = stripUnknownInstitutionColumns(corePayload, missing);
-      logErr(
-        "institution.upsert",
-        `${missing} kolonu Supabase'te yok — alansız tekrar deneniyor. (${err.message})`
-      );
-      try {
-        await tryUpsert(stripped);
-      } catch (err2) {
-        logErr("institution.upsert.retry", err2);
-        return false;
+  // branch_limit / contact_person dahil dene; kolon yoksa yalnızca o alanı çıkarıp tekrar dene.
+  let body = { ...corePayload };
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await tryUpsert(body);
+      break;
+    } catch (err) {
+      const missing = parseMissingColumn(err);
+      if (missing && body[missing] !== undefined) {
+        logErr(
+          "institution.upsert",
+          `${missing} kolonu Supabase'te yok — alansız tekrar deneniyor. (${err.message})`
+        );
+        const next = { ...body };
+        delete next[missing];
+        body = next;
+        if (attempt === 5) {
+          logErr("institution.upsert.retry", err);
+          return false;
+        }
+        continue;
       }
-    } else {
       logErr("institution.upsert", err);
       return false;
     }
@@ -136,6 +137,9 @@ async function syncInstitutionDelete(institutionId) {
     await supabase.from("branches").delete().eq("institution_id", id);
     await supabase.from("rate_adjustments").delete().eq("institution_id", id);
     await supabase.from("margin_history").delete().eq("institution_id", id);
+    await supabase.from("branch_requests").delete().eq("institution_id", id);
+    await supabase.from("business_notifications").delete().eq("institution_id", id);
+    await supabase.from("password_resets").delete().eq("institution_slug", id);
     const { error } = await supabase
       .from("institutions")
       .delete()
@@ -215,6 +219,53 @@ async function syncRateAdjustmentsMap(institutionId, adjustments) {
   }
 }
 
+async function syncBranchRequestUpsert(row) {
+  if (!row?.institution_id || !row?.branch_name) return false;
+  return safe("branch_requests.upsert", async () => {
+    const payload = {
+      local_id: row.id ?? null,
+      business_local_id: row.business_id ?? null,
+      institution_id: row.institution_id,
+      business_name: row.business_name || "",
+      branch_name: row.branch_name,
+      phone: row.phone || "",
+      address: row.address || "",
+      lat: row.lat == null || row.lat === "" ? null : Number(row.lat),
+      lng: row.lng == null || row.lng === "" ? null : Number(row.lng),
+      request_type: row.request_type || "new",
+      branch_id: row.branch_id == null ? null : Number(row.branch_id),
+      status: row.status || "pending",
+      is_read: !!(row.is_read === true || row.is_read === 1),
+      admin_note: row.admin_note || null,
+      created_at: row.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: existingRows, error: findErr } = await supabase
+      .from("branch_requests")
+      .select("id")
+      .eq("institution_id", payload.institution_id)
+      .eq("branch_name", payload.branch_name)
+      .eq("status", payload.status)
+      .eq("request_type", payload.request_type)
+      .limit(1);
+    if (findErr) throw findErr;
+    const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+
+    if (existing?.id) {
+      const { error } = await supabase
+        .from("branch_requests")
+        .update(payload)
+        .eq("id", existing.id);
+      if (error) throw error;
+      return;
+    }
+
+    const { error } = await supabase.from("branch_requests").insert([payload]);
+    if (error) throw error;
+  });
+}
+
 async function syncPartnershipApplication(row) {
   return safe("partnership.insert", async () => {
     const { error } = await supabase.from("partnership_applications").insert([
@@ -229,6 +280,95 @@ async function syncPartnershipApplication(row) {
     ]);
     if (error) throw error;
   });
+}
+
+async function syncAuditLog(row) {
+  if (!row?.action) return false;
+  return safe("audit_log.insert", async () => {
+    const { error } = await supabase.from("audit_log").insert([
+      {
+        action: row.action,
+        actor: row.actor || null,
+        institution_id: row.institution_id || null,
+        institution_name: row.institution_name || null,
+        detail: row.detail || null,
+        created_at: row.created_at || new Date().toISOString(),
+      },
+    ]);
+    if (error) throw error;
+  });
+}
+
+async function compareInstitutionDrift(sqliteRows = []) {
+  const drifts = [];
+  try {
+    const { data, error } = await supabase
+      .from("institutions")
+      .select("institution_id, email, branch_limit")
+      .neq("role", "superadmin");
+    if (error) throw error;
+
+    const remote = new Map();
+    for (const row of data || []) {
+      if (row?.institution_id) remote.set(String(row.institution_id), row);
+    }
+
+    const localIds = new Set();
+    for (const row of sqliteRows || []) {
+      const id = String(row.institution_id || "").trim();
+      if (!id) continue;
+      localIds.add(id);
+      const other = remote.get(id);
+      if (!other) {
+        drifts.push({
+          institution_id: id,
+          institution_name: row.institution_name || id,
+          field: "missing_in_supabase",
+          sqlite: "var",
+          supabase: "yok",
+        });
+        continue;
+      }
+      const localEmail = String(row.email || "").trim().toLowerCase();
+      const remoteEmail = String(other.email || "").trim().toLowerCase();
+      if (localEmail !== remoteEmail) {
+        drifts.push({
+          institution_id: id,
+          institution_name: row.institution_name || id,
+          field: "email",
+          sqlite: row.email || "—",
+          supabase: other.email || "—",
+        });
+      }
+      const localLimit = Number(row.branch_limit) || 1;
+      const remoteLimit = Number(other.branch_limit) || 1;
+      if (localLimit !== remoteLimit) {
+        drifts.push({
+          institution_id: id,
+          institution_name: row.institution_name || id,
+          field: "branch_limit",
+          sqlite: localLimit,
+          supabase: remoteLimit,
+        });
+      }
+    }
+
+    for (const [id] of remote) {
+      if (!localIds.has(id)) {
+        drifts.push({
+          institution_id: id,
+          institution_name: id,
+          field: "missing_in_sqlite",
+          sqlite: "yok",
+          supabase: "var",
+        });
+      }
+    }
+  } catch (err) {
+    logErr("drift.compare", err);
+    return { ok: false, error: err?.message || String(err), drifts: [] };
+  }
+  return { ok: true, error: null, drifts };
 }
 
 async function syncPasswordReset(row) {
@@ -428,8 +568,40 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
     logErr("hydrate.branches", err);
   }
 
+  let branchRequests = 0;
+  try {
+    const { data: reqRows, error: reqErr } = await supabase
+      .from("branch_requests")
+      .select("*");
+    if (reqErr) throw reqErr;
+    for (const row of reqRows || []) {
+      if (typeof applyFns.upsertBranchRequestRow === "function") {
+        applyFns.upsertBranchRequestRow(row);
+        branchRequests += 1;
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.branch_requests", err);
+  }
+
+  try {
+    const { data: auditRows, error: auditErr } = await supabase
+      .from("audit_log")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (auditErr) throw auditErr;
+    for (const row of auditRows || []) {
+      if (typeof applyFns.upsertAuditRow === "function") {
+        applyFns.upsertAuditRow(row);
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.audit_log", err);
+  }
+
   console.log(
-    `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} branches=${branches} branchesOk=${branchesOk}`
+    `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} branches=${branches} branchRequests=${branchRequests} branchesOk=${branchesOk}`
   );
 
   if (soTUntrusted && institutions === 0) {
@@ -453,6 +625,7 @@ async function bootstrapAdminDataToSupabase({
   institutions = [],
   branches = [],
   adjustments = [],
+  branchRequests = [],
 } = {}) {
   console.log("[SUPABASE-SYNC] Bootstrap başlıyor...");
   let ok = 0;
@@ -479,6 +652,11 @@ async function bootstrapAdminDataToSupabase({
     done ? (ok += 1) : (fail += 1);
   }
 
+  for (const req of branchRequests) {
+    const done = await syncBranchRequestUpsert(req);
+    done ? (ok += 1) : (fail += 1);
+  }
+
   console.log(`[SUPABASE-SYNC] Bootstrap bitti — ok=${ok} fail=${fail}`);
   return { ok, fail };
 }
@@ -491,10 +669,14 @@ module.exports = {
   syncRateAdjustment,
   syncRateAdjustmentsMap,
   syncPartnershipApplication,
+  syncBranchRequestUpsert,
   syncPasswordReset,
   syncVisitorSession,
   syncSiteStats,
   checkSupabaseHasInstitutions,
   hydrateAdminDataFromSupabase,
   bootstrapAdminDataToSupabase,
+  getDualWriteErrors,
+  syncAuditLog,
+  compareInstitutionDrift,
 };

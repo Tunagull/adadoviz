@@ -201,11 +201,11 @@ export function SearchableSelect({
               zIndex: 9999,
               transform: placement === "top" ? "translateY(-100%)" : undefined,
             }}
-            className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+            className="overflow-hidden rounded-xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onKeyDown={onListKeyDown}
           >
-            <div className="relative border-b border-slate-200 p-2 dark:border-slate-700">
-              <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+            <div className="relative border-b border-ink-200 p-2 dark:border-ink-700">
+              <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
               <input
                 ref={searchRef}
                 type="text"
@@ -216,7 +216,7 @@ export function SearchableSelect({
                 }}
                 onKeyDown={onListKeyDown}
                 placeholder={t("searchPlaceholder")}
-                className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs text-slate-900 outline-none focus:border-teal-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                className="h-9 w-full rounded-lg border border-ink-200 bg-ink-50 pl-8 pr-3 text-xs text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
               />
             </div>
             <ul
@@ -226,7 +226,7 @@ export function SearchableSelect({
               className="max-h-56 overflow-y-auto py-1"
             >
               {filtered.length === 0 ? (
-                <li className="px-3 py-2 text-xs text-slate-500">{t("noResults")}</li>
+                <li className="px-3 py-2 text-xs text-ink-500">{t("noResults")}</li>
               ) : (
                 filtered.map((opt, idx) => {
                   const active = String(opt.value) === String(value);
@@ -244,10 +244,10 @@ export function SearchableSelect({
                       }}
                       className={`cursor-pointer px-3 py-2 text-sm transition ${
                         hi
-                          ? "bg-slate-950 border-l-2 border-l-cyan-400 text-cyan-300 dark:bg-slate-950 dark:text-cyan-300"
+                          ? "bg-ink-950 border-l-2 border-l-cyan-400 text-brand-300 dark:bg-ink-950 dark:text-brand-300"
                           : active
-                            ? "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white"
-                            : "text-slate-700 dark:text-slate-200"
+                            ? "bg-ink-100 text-ink-900 dark:bg-ink-800 dark:text-white"
+                            : "text-ink-700 dark:text-ink-200"
                       }`}
                     >
                       {opt.label}
@@ -272,13 +272,13 @@ export function SearchableSelect({
         aria-label={ariaLabel || placeholder}
         onClick={() => !disabled && setOpen((o) => !o)}
         onKeyDown={onTriggerKeyDown}
-        className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 text-left text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400 disabled:opacity-60 disabled:hover:border-slate-300 disabled:hover:shadow-none dark:disabled:hover:border-slate-700"
+        className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-ink-300 bg-white px-3 text-left text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
       >
-        <span className={`truncate ${selected ? "" : "text-slate-400 dark:text-slate-500"}`}>
+        <span className={`truncate ${selected ? "" : "text-ink-600 dark:text-ink-400"}`}>
           {selected?.label || placeholder}
         </span>
         <ChevronDown
-          className={`size-4 shrink-0 text-slate-400 transition ${open ? "rotate-180" : ""}`}
+          className={`size-4 shrink-0 text-ink-600 dark:text-ink-400 transition ${open ? "rotate-180" : ""}`}
         />
       </button>
       {menu}

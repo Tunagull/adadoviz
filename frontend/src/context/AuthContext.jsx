@@ -54,7 +54,7 @@ export function AuthProvider({ children }) {
               : stored.days_remaining != null
                 ? stored.days_remaining
                 : null,
-          is_active: me.is_active !== false,
+          is_active: !(me.is_active === false || me.is_active === 0 || me.is_active === "0"),
         };
         saveAuth(next, { remember: getRememberPreference() });
         if (!cancelled) setAuth(next);

@@ -5,17 +5,18 @@ import {
   Search,
   TrendingUp,
   TrendingDown,
-  ArrowUpDown,
   LogOut,
   ChevronLeft,
   ChevronRight,
   ZoomIn,
   X,
   Clock,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { V0BankCard } from "./V0BankCard";
+import { Sheet } from "./Sheet";
 import { BusinessLoginModal } from "./BusinessLoginModal";
 import { SearchableSelect } from "./SearchableSelect";
 import { HeaderActions } from "./HeaderActions";
@@ -26,6 +27,12 @@ import { useLanguage } from "../context/LanguageContext";
 import { trackBusinessClick, trackCurrencyView } from "../lib/analytics";
 import { apiUrl, ratesStreamUrl } from "../lib/api";
 import { buildBranchSlug, buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
+
+/** P-04: bilgilendirici log yalnızca geliştirmede. */
+const devLog = (...args) => {
+  if (import.meta.env.DEV) console.log(...args);
+};
+
 
 const SEO_SITE_URL = "https://adadoviz.tunahangul.com";
 
@@ -43,7 +50,7 @@ function buildCurrencyConversionJsonLd({ lang, banksCount }) {
       "@type": "Organization",
       name: "AdaDöviz",
       url: `${SEO_SITE_URL}/`,
-      logo: `${SEO_SITE_URL}/adadoviz-logo.svg`,
+      logo: `${SEO_SITE_URL}/adadoviz-mark.svg`,
     },
     areaServed: {
       "@type": "Place",
@@ -598,8 +605,8 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
-        <p className="text-xs text-slate-500 dark:text-slate-400">{t("loadingGeneric")}</p>
+      <div className="rounded-xl border border-ink-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-ink-800 dark:bg-ink-900/80">
+        <p className="text-xs text-ink-500 dark:text-ink-400">{t("loadingGeneric")}</p>
       </div>
     );
   }
@@ -607,16 +614,16 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   // Yalnızca gerçekten hiç rate yoksa "Veri yok" — navigasyon sonrası boş pencere kartı öldürmesin
   if (error || chartData.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
-        <p className="text-xs text-slate-500 dark:text-slate-400">{error ? `❌ ${error}` : t("chartNoData")}</p>
+      <div className="rounded-xl border border-ink-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-ink-800 dark:bg-ink-900/80">
+        <p className="text-xs text-ink-500 dark:text-ink-400">{error ? `❌ ${error}` : t("chartNoData")}</p>
       </div>
     );
   }
 
   if (displayChartData.length === 0) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-slate-800 dark:bg-slate-900/80">
-        <p className="text-xs text-slate-500 dark:text-slate-400">{t("chartNoPointsInRange")}</p>
+      <div className="rounded-xl border border-ink-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-ink-800 dark:bg-ink-900/80">
+        <p className="text-xs text-ink-500 dark:text-ink-400">{t("chartNoPointsInRange")}</p>
       </div>
     );
   }
@@ -632,19 +639,9 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const tooltipColor = isDark ? "#fff" : "#0f172a";
   const tooltipBorder = isDark ? "none" : "1px solid #e2e8f0";
   const areaOpacity = isDark ? 0.3 : 0.18;
-  // ✅ Sol ve sağ ok butonları TEK ortak stil setini paylaşır (simetri için)
-  const chartNavBtnDisabled = isDark
-    ? "text-slate-600 opacity-40 cursor-not-allowed border-white/10 bg-slate-900/90"
-    : "text-slate-400 opacity-40 cursor-not-allowed border-slate-200 bg-white";
-  const chartNavBtnActive = isDark
-    ? "text-slate-300 hover:bg-slate-800 hover:text-white border-white/10 bg-slate-900/90"
-    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 border-slate-200 bg-white shadow-sm";
-
   // ✅ DRY: Aynı grafik hem küçük kartta hem tam ekran modalda kullanılır
   const renderChartContent = (isExpanded = false) => {
     const tickFont = isExpanded ? 12 : 11;
-    const chevronSize = isExpanded ? 22 : 16;
-    const btnPad = isExpanded ? 'p-2.5' : 'p-1.5';
     const gradId = `${gradientId}${isExpanded ? '-modal' : ''}`;
 
     const chartInner = (
@@ -714,40 +711,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
   return (
     <>
-      {isModalOpen ? (
-        <Helmet prioritizeSeoTags>
-          <title>
-            {lang === "en"
-              ? `AdaDöviz | ${currency}/TRY Live Chart (${period}) – KKTC Market Summary`
-              : `AdaDöviz | ${currency}/TRY Canlı Grafik (${period}) – KKTC Piyasa Özeti`}
-          </title>
-          <meta
-            name="description"
-            content={
-              lang === "en"
-                ? `Follow live ${currency}/TRY exchange rate trends in Northern Cyprus (KKTC). AdaDöviz market summary charts for ${period.toLowerCase()} FX moves.`
-                : `KKTC ${currency}/TRY canlı döviz kuru grafiği. AdaDöviz Piyasa Özeti ile ${period.toLowerCase()} kur hareketlerini takip edin.`
-            }
-          />
-          <meta
-            property="og:title"
-            content={
-              lang === "en"
-                ? `AdaDöviz | ${currency}/TRY Live Chart – KKTC`
-                : `AdaDöviz | ${currency}/TRY Canlı Grafik – KKTC`
-            }
-          />
-          <meta
-            property="og:description"
-            content={
-              lang === "en"
-                ? `Northern Cyprus ${currency}/TRY market summary and historical rates.`
-                : `Kuzey Kıbrıs ${currency}/TRY piyasa özeti ve geçmiş kurlar.`
-            }
-          />
-        </Helmet>
-      ) : null}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 relative overflow-hidden dark:border-slate-800 dark:bg-slate-900">
+      <div className="rounded-xl border border-ink-200 bg-white p-4 relative overflow-hidden dark:border-ink-800 dark:bg-ink-900">
         {/* Sol Ok - Kartın sol kenarına yakın (border'dan ~8px uzak) */}
         <button
           type="button"
@@ -756,10 +720,10 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
           }}
           disabled={timeWindow.isLeftDisabled}
-          className={`absolute top-1/2 z-20 -translate-y-1/2 rounded-full transition-all border ${
+          className={`absolute top-1/2 z-raised -translate-y-1/2 rounded-full transition-all border ${
             timeWindow.isLeftDisabled 
-              ? "text-slate-600 opacity-40 cursor-not-allowed border-white/10 bg-slate-900/90 dark:text-slate-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-slate-900/90"
-              : "text-slate-300 hover:bg-slate-800 hover:text-white border-white/10 bg-slate-900/90 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white dark:border-white/10 dark:bg-slate-900/90"
+              ? "text-ink-600 opacity-40 cursor-not-allowed border-white/10 bg-ink-900/90 dark:text-ink-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-ink-900/90"
+              : "text-ink-300 hover:bg-ink-800 hover:text-white border-white/10 bg-ink-900/90 dark:text-ink-300 dark:hover:bg-ink-800 dark:hover:text-white dark:border-white/10 dark:bg-ink-900/90"
           }`}
           style={{ left: '8px' }}
           aria-label="Önceki dönem"
@@ -775,10 +739,10 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.max(0, prev - 1));
           }}
           disabled={timeOffset === 0}
-          className={`absolute top-1/2 z-20 -translate-y-1/2 rounded-full transition-all border ${
+          className={`absolute top-1/2 z-raised -translate-y-1/2 rounded-full transition-all border ${
             timeOffset === 0 
-              ? "text-slate-600 opacity-40 cursor-not-allowed border-white/10 bg-slate-900/90 dark:text-slate-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-slate-900/90"
-              : "text-slate-300 hover:bg-slate-800 hover:text-white border-white/10 bg-slate-900/90 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white dark:border-white/10 dark:bg-slate-900/90"
+              ? "text-ink-600 opacity-40 cursor-not-allowed border-white/10 bg-ink-900/90 dark:text-ink-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-ink-900/90"
+              : "text-ink-300 hover:bg-ink-800 hover:text-white border-white/10 bg-ink-900/90 dark:text-ink-300 dark:hover:bg-ink-800 dark:hover:text-white dark:border-white/10 dark:bg-ink-900/90"
           }`}
           style={{ right: '8px' }}
           aria-label="Sonraki dönem"
@@ -787,14 +751,14 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
         </button>
 
         {/* Merkez Kısım: Tarih Aralığı ve Büyüteç İkonu */}
-        <div className="absolute top-3 left-1/2 z-10 flex max-w-[calc(100%-5.5rem)] -translate-x-1/2 flex-col items-center justify-center gap-1 px-1">
-          <span className="max-w-full truncate text-center text-[10px] font-medium text-slate-500 dark:text-slate-400">
+        <div className="absolute top-3 left-1/2 z-raised flex max-w-[calc(100%-5.5rem)] -translate-x-1/2 flex-col items-center justify-center gap-1 px-1">
+          <span className="max-w-full truncate text-center text-[10px] font-medium text-ink-500 dark:text-ink-400">
             {formatHeaderDate(timeWindow.windowStart)} - {formatHeaderDate(timeWindow.windowEnd)}
           </span>
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
-            className="text-slate-500 hover:text-slate-800 transition-colors p-1 dark:text-slate-400 dark:hover:text-white"
+            className="text-ink-500 hover:text-ink-800 transition-colors p-1 dark:text-ink-400 dark:hover:text-white"
             title="Detaylı Analiz"
             aria-label="Grafiği büyüt"
           >
@@ -805,19 +769,19 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
         {/* Üst başlık */}
         <div className="relative flex items-center justify-between mb-3 min-h-[4.5rem]">
           <div>
-            <p className="text-xs uppercase text-slate-500 dark:text-slate-400">{currency}/TRY</p>
-            <p className="text-lg font-bold text-slate-800 mt-1 dark:text-slate-100">{last.toFixed(4)}</p>
-            <span className={`text-xs font-semibold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+            <p className="text-xs uppercase text-ink-500 dark:text-ink-400">{currency}/TRY</p>
+            <p className="text-lg font-bold text-ink-800 mt-1 dark:text-ink-100">{last.toFixed(4)}</p>
+            <span className={`text-xs font-semibold ${isPositive ? 'text-success-700 dark:text-success-400' : 'text-danger-700 dark:text-danger-400'}`}>
               {isPositive ? '+' : ''}{change}%
             </span>
             {dataInfo?.isLimitedByAvailableData && period !== 'Yıllık' && (
-              <p className="text-[10px] text-amber-600/90 mt-1 dark:text-amber-400/80">
+              <p className="text-[10px] text-warning-600/90 mt-1 dark:text-warning-400/80">
                 Sınırlı geçmiş veri ({dataInfo.actualSpanDays} gün / {dataInfo.requestedSpanDays} gün gerekli)
               </p>
             )}
           </div>
 
-          {isPositive ? <TrendingUp size={20} className="text-emerald-600 dark:text-emerald-400" /> : <TrendingDown size={20} className="text-rose-600 dark:text-rose-400" />}
+          {isPositive ? <TrendingUp size={20} className="text-success-700 dark:text-success-400" /> : <TrendingDown size={20} className="text-danger-700 dark:text-danger-400" />}
         </div>
 
         {renderChartContent(false)}
@@ -825,19 +789,19 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
       {isModalOpen && createPortal(
         <div
-          className="fixed inset-0 z-[99999] flex w-screen items-center justify-center bg-slate-950/50 p-3 backdrop-blur-md sm:p-4 md:p-6 dark:bg-slate-950/80"
+          className="fixed inset-0 z-toast flex w-screen items-center justify-center bg-ink-950/50 p-3 backdrop-blur-md sm:p-4 md:p-6 dark:bg-ink-950/80"
           onClick={() => setIsModalOpen(false)}
         >
           <div
-            className="relative flex max-h-[min(92dvh,90vh)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-slate-600/60 dark:border-t-slate-400/50 dark:bg-slate-900/70"
+            className="relative flex max-h-[min(92dvh,90vh)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-ink-600/60 dark:border-t-slate-400/50 dark:bg-ink-900/70"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="absolute right-2 top-2 z-30 flex items-center gap-1.5 sm:right-3 sm:top-3 sm:gap-2">
+            <div className="absolute right-2 top-2 z-dropdown flex items-center gap-1.5 sm:right-3 sm:top-3 sm:gap-2">
               <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label="Kapat"
               >
                 <X size={22} />
@@ -845,7 +809,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             </div>
 
             {/* Özel Tarih Seçici — mobilde üst şerit, masaüstünde sol üst */}
-            <div className="relative z-20 flex flex-wrap items-center gap-2 border-b border-slate-200/80 bg-slate-50/90 px-3 py-2.5 backdrop-blur-sm dark:border-slate-700/50 dark:bg-slate-900/50 sm:absolute sm:left-4 sm:top-4 sm:max-w-[min(100%,22rem)] sm:rounded-lg sm:border sm:border-slate-200 sm:p-1.5 md:left-6 dark:sm:border-slate-700/50">
+            <div className="relative z-raised flex flex-wrap items-center gap-2 border-b border-ink-200/80 bg-ink-50/90 px-3 py-2.5 backdrop-blur-sm dark:border-ink-700/50 dark:bg-ink-900/50 sm:absolute sm:left-4 sm:top-4 sm:max-w-[min(100%,22rem)] sm:rounded-lg sm:border sm:border-ink-200 sm:p-1.5 md:left-6 dark:sm:border-ink-700/50">
               <input
                 type="date"
                 lang={localeCode}
@@ -865,9 +829,9 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                   });
                   setTimeOffset(0);
                 }}
-                className="min-w-0 flex-1 cursor-pointer rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:border-emerald-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-200 sm:flex-none md:text-sm"
+                className="min-w-0 flex-1 cursor-pointer rounded border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 focus:border-success-500 focus:outline-none dark:border-ink-600 dark:bg-ink-800/80 dark:text-ink-200 sm:flex-none md:text-sm"
               />
-              <span className="shrink-0 text-sm text-slate-400">-</span>
+              <span className="shrink-0 text-sm text-ink-600 dark:text-ink-400">-</span>
               <input
                 type="date"
                 lang={localeCode}
@@ -882,13 +846,13 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                     return { ...prev, end: newEndMs };
                   });
                 }}
-                className="min-w-0 flex-1 cursor-pointer rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800 focus:border-emerald-500 focus:outline-none dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-200 sm:flex-none md:text-sm"
+                className="min-w-0 flex-1 cursor-pointer rounded border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 focus:border-success-500 focus:outline-none dark:border-ink-600 dark:bg-ink-800/80 dark:text-ink-200 sm:flex-none md:text-sm"
               />
             </div>
 
             <div className="flex flex-shrink-0 flex-col items-center px-3 pb-0 pt-3 sm:p-4 sm:pb-0 md:p-6 md:pb-0 md:pt-14">
-              <h2 className="max-w-full truncate px-12 text-center text-lg font-bold text-slate-800 dark:text-slate-100 sm:px-16 md:text-2xl">{currency}/TRY Detaylı Analiz</h2>
-              <span className={`mt-1 text-base font-bold md:text-xl ${displayPercentage >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+              <h2 className="max-w-full truncate px-12 text-center text-lg font-bold text-ink-800 dark:text-ink-100 sm:px-16 md:text-2xl">{currency}/TRY Detaylı Analiz</h2>
+              <span className={`mt-1 text-base font-bold md:text-xl ${displayPercentage >= 0 ? 'text-success-700 dark:text-success-400' : 'text-danger-700 dark:text-danger-400'}`}>
                 {displayPercentage > 0 ? '+' : ''}{displayPercentage.toFixed(2)}%
               </span>
             </div>
@@ -924,7 +888,7 @@ function PartnershipForm() {
   const PHONE_MASK_TEMPLATE = "0(5XX) XXX XXXX";
 
   const partnershipInputClass =
-    "h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400";
+    "h-11 rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400";
 
   const formatPhoneDisplay = (rawDigits) => {
     let d = String(rawDigits || "").replace(/\D/g, "").slice(0, 10);
@@ -1107,28 +1071,28 @@ function PartnershipForm() {
   return (
     <section
       id="partnership"
-      className="mt-12 scroll-mt-28 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-slate-900/60 sm:p-6"
+      className="mt-12 scroll-mt-28 rounded-2xl border border-ink-200 bg-white p-4 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-ink-900/60 sm:p-6"
     >
       <div className="mb-6">
-        <h3 className="text-xl font-bold text-slate-900 dark:text-white">{t("partnership")}</h3>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("partnershipDesc")}</p>
+        <h2 className="text-xl font-bold text-ink-900 dark:text-white">{t("partnership")}</h2>
+        <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">{t("partnershipDesc")}</p>
       </div>
 
       {submitted ? (
-        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-200">
+        <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-4 py-3 text-sm text-success-700 dark:text-success-200">
           {t("applicationSuccess")}
         </div>
       ) : (
         <>
           {error && (
-            <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
+            <div className="mb-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-sm text-danger-700 dark:text-danger-200">
               {error}
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("institutionName")}</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("institutionName")}</label>
                 <input
                   type="text"
                   name="institution_name"
@@ -1140,7 +1104,7 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("contactPerson")}</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("contactPerson")}</label>
                 <input
                   type="text"
                   name="contact_person"
@@ -1156,7 +1120,7 @@ function PartnershipForm() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("emailLabel")}</label>
+                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("emailLabel")}</label>
                 <input
                   type="email"
                   name="email"
@@ -1168,14 +1132,14 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-white">{t("phoneLabel")}</label>
-                <div className="relative h-11 flex items-center rounded-lg border border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 focus-within:border-cyan-400 focus-within:shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all duration-300">
-                  <span className="absolute left-3 z-10 text-sm font-mono font-bold text-slate-800 dark:text-white pointer-events-none">
+                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("phoneLabel")}</label>
+                <div className="relative h-11 flex items-center rounded-lg border border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all duration-300">
+                  <span className="absolute left-3 z-raised text-sm font-mono font-bold text-ink-800 dark:text-white pointer-events-none">
                     +90
                   </span>
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-slate-400 dark:text-slate-500 select-none"
+                    className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-ink-600 dark:text-ink-400 select-none"
                   >
                     {buildPhoneMaskGhost(rawPhone)}
                   </span>
@@ -1191,27 +1155,27 @@ function PartnershipForm() {
                     inputMode="numeric"
                     autoComplete="tel-national"
                     required
-                    className="relative z-10 h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-slate-800 outline-none caret-cyan-500 dark:text-slate-100"
+                    className="relative z-raised h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-ink-800 outline-none caret-brand-500 dark:text-ink-100"
                   />
                 </div>
               </div>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium uppercase tracking-wide text-white">{t("messageLabel")}</label>
+              <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("messageLabel")}</label>
               <textarea
                 name="message"
                 rows={4}
                 placeholder={t("messagePlaceholder")}
                 value={formData.message}
                 onChange={handleChange}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400"
+                className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
               />
               {messageIsEmpty ? (
-                <div className="rounded-lg border border-dashed border-cyan-500/40 bg-cyan-500/5 px-3 py-2.5">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
+                <div className="rounded-lg border border-dashed border-brand-500/40 bg-brand-500/5 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
                     {t("messageTemplatePreviewLabel")}
                   </p>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                  <p className="mt-1 text-xs leading-relaxed text-ink-600 dark:text-ink-300">
                     {messagePreview}
                   </p>
                 </div>
@@ -1220,7 +1184,7 @@ function PartnershipForm() {
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg border border-transparent bg-gradient-to-r from-teal-400 to-indigo-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:brightness-110 disabled:opacity-60"
+              className="btn-primary w-full sm:w-auto"
             >
               {loading ? t("submitting") : t("submitApplication")}
             </button>
@@ -1251,15 +1215,30 @@ const LOCAL_BANKS = [
   { id: "sun_doviz", name: "Sun Döviz", websiteUrl: "https://www.sundoviz.com.tr" },
 ];
 
+/**
+ * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-04): Altı sıralama seçeneğinin ALTISI DA
+ * alış tarafındaydı. Oysa turist "elimde TL var, dolar alacağım" derken SATIŞ
+ * kuruna bakar — o sıralama hiç yoktu. Sıralama mantığı zaten
+ * sortBy.split("-") ile [para, tip, yön] okuduğu için algoritma değişmedi;
+ * yalnızca eksik seçenekler eklendi.
+ *
+ * Müşteri için "iyi": alışta EN YÜKSEK, satışta EN DÜŞÜK.
+ */
 const EXCHANGE_SORT_OPTIONS = [
   { value: "nearest", labelKey: "sortNearest" },
   { value: "none", labelKey: "sortNone" },
-  { value: "gbp-buy-high", labelKey: "sortGbpBuyHigh" },
-  { value: "gbp-buy-low", labelKey: "sortGbpBuyLow" },
   { value: "usd-buy-high", labelKey: "sortUsdBuyHigh" },
-  { value: "usd-buy-low", labelKey: "sortUsdBuyLow" },
+  { value: "usd-sell-low", labelKey: "sortUsdSellLow" },
   { value: "eur-buy-high", labelKey: "sortEurBuyHigh" },
+  { value: "eur-sell-low", labelKey: "sortEurSellLow" },
+  { value: "gbp-buy-high", labelKey: "sortGbpBuyHigh" },
+  { value: "gbp-sell-low", labelKey: "sortGbpSellLow" },
+  { value: "usd-buy-low", labelKey: "sortUsdBuyLow" },
+  { value: "usd-sell-high", labelKey: "sortUsdSellHigh" },
   { value: "eur-buy-low", labelKey: "sortEurBuyLow" },
+  { value: "eur-sell-high", labelKey: "sortEurSellHigh" },
+  { value: "gbp-buy-low", labelKey: "sortGbpBuyLow" },
+  { value: "gbp-sell-high", labelKey: "sortGbpSellHigh" },
 ];
 
 /** Çalışma saati — string ("09:00 - 17:30") veya haftalık obje */
@@ -1400,32 +1379,6 @@ function toNumberForCompare(value) {
   return parseRateNumber(value) ?? 0;
 }
 
-/**
- * Dinamik Final Kur Hesaplama:
- * Baz Fiyat (Fixed): Final = XML_Kur + Margin_Value
- * Yüzde (Percent): Final = XML_Kur + (XML_Kur * Margin_Value / 100)
- */
-function applyMarginToRawRate(rawRate, marginType, marginValue) {
-  const base = Number(rawRate);
-  const m = Math.max(0, Number(marginValue) || 0);
-  if (!Number.isFinite(base) || !Number.isFinite(m)) return base;
-  if (marginType === "percent") {
-    return base + (base * m) / 100;
-  }
-  return base + m;
-}
-
-function getBestGBPBuyRate(bankList) {
-  let best = null;
-  for (const bank of bankList) {
-    const gbpRate = bank.exchangeRates.find((r) => r.currency === "GBP");
-    const gbpBuy = toNumberForCompare(gbpRate?.buy);
-    if (gbpBuy > 0 && (!best || gbpBuy > best.rate)) {
-      best = { bank, rate: gbpBuy };
-    }
-  }
-  return best;
-}
 
 function getRate(bank, currency, type) {
   const rate = bank.exchangeRates.find((r) => r.currency === currency);
@@ -1442,16 +1395,6 @@ function getLoanRate(bank, loanType) {
   return parseRateNumber(bank?.loans?.[loanType]) ?? 0;
 }
 
-function getBestDepositRate(bankList) {
-  let best = null;
-  for (const bank of bankList) {
-    const rate = getDepositRate(bank);
-    if (rate > 0 && (!best || rate > best.rate)) {
-      best = { bank, rate };
-    }
-  }
-  return best;
-}
 
 export function V0FinancialDashboard() {
   const navigate = useNavigate();
@@ -1480,7 +1423,7 @@ export function V0FinancialDashboard() {
       window.location.href = "/";  // ✅ React Router'dan önce tam yenileme
     }, 1000);
   };
-  const [mode, setMode] = useState("exchange");
+  const [mode] = useState("exchange");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("none");
   const [openNowOnly, setOpenNowOnly] = useState(false);
@@ -1492,8 +1435,10 @@ export function V0FinancialDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const lastUpdatedRef = useRef(null);
   const ratesFingerprintRef = useRef("");
-  const [rawCentralBankRates, setRawCentralBankRates] = useState(null); // ✅ SAF XML kurları
-  const [marginAdjustments, setMarginAdjustments] = useState({}); // ✅ DB'den gelen marjlar
+  /** SSE sinyali geldiğinde kurları yeniden çekmek için (K-02). */
+  const refetchBanksRef = useRef(null);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [, setRawCentralBankRates] = useState(null); // ✅ SAF XML kurları
   const [calculatorBank, setCalculatorBank] = useState("");
   const [isBusinessLoginOpen, setIsBusinessLoginOpen] = useState(false);
   const [showLogoutPopup, setShowLogoutPopup] = useState(false);  // ✅ YENİ: Çıkış Modal
@@ -1563,7 +1508,7 @@ export function V0FinancialDashboard() {
               setLastUpdated(data.ratesChangedAt);
             }
           }
-        } catch (err) {
+        } catch {
           // Sessizce yut - tekil mesaj parse hatası kritik değil
         }
       };
@@ -1588,39 +1533,19 @@ export function V0FinancialDashboard() {
     };
   }, []);
 
-  // ⚠️ DÜZELTME (bkz. project_audit_report.md, 1.6 "SSE ile kart kurları kopuk"):
-  // SSE mesajı `liveRates` state'ine yazılıyordu ama hiçbir yerde `banks` dizisini
-  // (kartların gerçekte gösterdiği kurları) güncellemiyordu — V0BankCard'ın flash
-  // efekti bile `bank.exchangeRates`'i (5 dakikalık poll'dan gelen) karşılaştırıyordu,
-  // yani SSE bağlantısı fiilen faydasız bir "heartbeat"ten ibaretti.
-  // Şimdi: Merkez Bankası'nda değişiklik olduğu an (SSE), aynı marj formülü
-  // (applyMarginToRawRate) mevcut `marginAdjustments` ile yeniden uygulanarak
-  // TÜM kartların `exchangeRates` alanı anlık güncellenir; 5 dakikalık poll artık
-  // yalnızca meta veriyi (yeni işletme, abonelik durumu vb.) tazelemek için kalır.
+  /**
+   * SSE ile Merkez Bankası değişimi geldiğinde kartları tazele.
+   *
+   * ⚠️ K-02 sonrası: Burada marjlar tarayıcıda tutulup nihai kur yeniden
+   * HESAPLANIYORDU. Marj artık istemciye hiç inmediği için (ve inmemesi
+   * gerektiği için) SSE bir "yeniden çek" sinyaline dönüştü — nihai kuru
+   * her zaman backend hesaplar.
+   */
   useEffect(() => {
     if (!liveRates) return;
     setRawCentralBankRates(liveRates);
-    setBanks((prevBanks) => {
-      if (!prevBanks.length) return prevBanks;
-      return prevBanks.map((bank) => {
-        if (!bank.institutionId) return bank;
-        const bankMargins = marginAdjustments[bank.institutionId] || {};
-        const nextExchangeRates = ["EUR", "USD", "GBP"].map((currency) => {
-          const rawKur = liveRates[currency];
-          if (!rawKur) {
-            const existing = bank.exchangeRates?.find((r) => r.currency === currency);
-            return existing || { currency, buy: null, sell: null };
-          }
-          const buyMargin = bankMargins[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
-          const sellMargin = bankMargins[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
-          const finalBuy = applyMarginToRawRate(rawKur.buy, buyMargin.margin_type, buyMargin.margin_value);
-          const finalSell = applyMarginToRawRate(rawKur.sell, sellMargin.margin_type, sellMargin.margin_value);
-          return { currency, buy: finalBuy, sell: finalSell };
-        });
-        return { ...bank, exchangeRates: nextExchangeRates };
-      });
-    });
-  }, [liveRates, marginAdjustments]);
+    refetchBanksRef.current?.();
+  }, [liveRates]);
 
   const scrollToPartnership = () => {
     document.getElementById("partnership")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1649,30 +1574,21 @@ export function V0FinancialDashboard() {
 
     const fetchBanks = async () => {
       try {
-        // ✅ Kurlar ve marjları parallel olarak çek
-        const [ratesRes, marginsRes] = await Promise.all([
-          fetch(apiUrl("/api/kurlar")),
-          fetch(apiUrl("/api/margins")),
-        ]);
-        
+        /**
+         * ⚠️ GÜVENLİK + MİMARİ DÜZELTMESİ (denetim bulgusu K-02): Burada
+         * /api/kurlar ile birlikte /api/margins de çekiliyor ve nihai kur
+         * TARAYICIDA yeniden hesaplanıyordu. İki sorunu vardı:
+         *   1) /api/margins public'ti ve 20 işletmenin kâr marjını herkese
+         *      açıyordu (rakip istihbaratı). Uç artık superadmin'e kapalı.
+         *   2) Aynı sayı iki yerde hesaplanıyordu — backend'de ve frontend'de.
+         * Nihai kurun tek kaynağı artık backend'dir.
+         */
+        const ratesRes = await fetch(apiUrl("/api/kurlar"));
         if (!ratesRes.ok) {
           throw new Error(`Kurlar API error: ${ratesRes.status}`);
         }
-        
         const data = await ratesRes.json();
-        console.log("[DASHBOARD] Backend'den Gelen Veri:", data);
-        
-        // Marjları yükle (hata olsa bile devam et)
-        let marginsData = {};
-        if (marginsRes.ok) {
-          const margins = await marginsRes.json();
-          marginsData = margins?.margins || {};
-          setMarginAdjustments(marginsData);
-          console.log("[DASHBOARD] Marjlar yüklendi:", marginsData);
-        } else {
-          console.warn("[DASHBOARD] Marjlar alınamadı, varsayılanlar kullanılacak");
-        }
-        
+
         const incomingBanks = Array.isArray(data?.banks) ? data.banks : [];
         const websiteByName = new Map(
           LOCAL_BANKS.map((bank) => [normalizeText(bank.name), bank.websiteUrl])
@@ -1687,42 +1603,8 @@ export function V0FinancialDashboard() {
           // ✅ KILIT: Backend'ten gelen institutionId kullan (örn: 'akbank', 'ziraat', 'garanti')
           const institutionId = apiBank?.institutionId;
           
-          // SAF kurlarından başla, marjları ekle
-          let exchangeRates = [
-            { currency: "EUR", buy: null, sell: null },
-            { currency: "USD", buy: null, sell: null },
-            { currency: "GBP", buy: null, sell: null },
-          ];
-          
-          if (data?.rawCentralBankRates && institutionId) {
-            // ✅ SADECE bu bankanın marjlarını bul (dış bankaların marjlarını değil!)
-            const currentBankMargins = marginsData[institutionId] || {};
-            console.log(`[DASHBOARD] ${apiName} (${institutionId}) marjları:`, currentBankMargins);
-            
-            exchangeRates = ["EUR", "USD", "GBP"].map((currency) => {
-              const rawKur = data.rawCentralBankRates[currency];
-              if (!rawKur) return { currency, buy: null, sell: null };
-              
-              // ✅ SADECE bu banka için: buyMargin ve sellMargin bul
-              const buyMargin = currentBankMargins[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
-              const sellMargin = currentBankMargins[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
-              
-              // ✅ FORMÜL: Final = XML_Kur + Margin (Fixed) veya Final = XML_Kur * (1 + Margin/100) (Percent)
-              const finalBuy = applyMarginToRawRate(rawKur.buy, buyMargin.margin_type, buyMargin.margin_value);
-              const finalSell = applyMarginToRawRate(rawKur.sell, sellMargin.margin_type, sellMargin.margin_value);
-              
-              return { currency, buy: finalBuy, sell: finalSell };
-            });
-          } else if (data?.rawCentralBankRates) {
-            // Fallback: institutionId yoksa, saf XML kurlarını kullan
-            exchangeRates = ["EUR", "USD", "GBP"].map((currency) => {
-              const rawKur = data.rawCentralBankRates[currency];
-              return { currency, buy: rawKur?.buy || null, sell: rawKur?.sell || null };
-            });
-          } else {
-            // Fallback: Backend'den gelen hesaplanmış kurları kullan
-            exchangeRates = mapApiBankToExchangeRows(apiBank);
-          }
+          // Nihai kur backend'den gelir (K-02): tek gerçeklik kaynağı.
+          const exchangeRates = mapApiBankToExchangeRows(apiBank);
 
           return {
             id: `api-bank-${index + 1}`,
@@ -1781,7 +1663,7 @@ export function V0FinancialDashboard() {
         // ✅ SAF XML kurlarını kaydet (Dinamik hesaplama için)
         if (data?.rawCentralBankRates) {
           setRawCentralBankRates(data.rawCentralBankRates);
-          console.log("[DASHBOARD] SAF XML kurları kaydedildi:", data.rawCentralBankRates);
+          devLog("[DASHBOARD] SAF XML kurları kaydedildi:", data.rawCentralBankRates);
         }
 
         if (mounted) {
@@ -1815,7 +1697,7 @@ export function V0FinancialDashboard() {
             setLastUpdated(serverChangedAt);
           }
 
-          console.log(`[DASHBOARD] ${mappedBanks.length} banka yüklendi, FirstBank: ${mappedBanks[0]?.name || "N/A"}`);
+          devLog(`[DASHBOARD] ${mappedBanks.length} banka yüklendi, FirstBank: ${mappedBanks[0]?.name || "N/A"}`);
         }
       } catch (error) {
         console.error("[DASHBOARD] Kur verisi alınamadı:", error);
@@ -1826,10 +1708,11 @@ export function V0FinancialDashboard() {
       }
     };
 
+    refetchBanksRef.current = fetchBanks;
     fetchBanks();
     const intervalId = setInterval(fetchBanks, 300000); // 5 dakika = 300000ms
     
-    console.log("[DASHBOARD] Otomatik yenileme başlatıldı - 5 dakika aralığıyla");
+    devLog("[DASHBOARD] Otomatik yenileme başlatıldı - 5 dakika aralığıyla");
 
     return () => {
       mounted = false;
@@ -2005,6 +1888,12 @@ export function V0FinancialDashboard() {
         const currencyUpper = currency.toUpperCase();
         const rateA = getRate(a, currencyUpper, type);
         const rateB = getRate(b, currencyUpper, type);
+        // Kuru olmayan işletmeler sıralamanın sonuna düşsün (NaN sıralamayı bozmasın).
+        const okA = Number.isFinite(rateA);
+        const okB = Number.isFinite(rateB);
+        if (!okA && !okB) return 0;
+        if (!okA) return 1;
+        if (!okB) return -1;
         return direction === "high" ? rateB - rateA : rateA - rateB;
       });
     } else {
@@ -2019,7 +1908,50 @@ export function V0FinancialDashboard() {
     return result;
   }, [banks, searchQuery, sortBy, openNowOnly, userLocation, branchesByInstitution]);
 
-  const bestDeposit = getBestDepositRate(banks);
+  /**
+   * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-10): Panoda beş büronun da kuru
+   * kuruşuna kadar aynı görünüyordu ve en iyi kuru gösteren hiçbir işaret
+   * yoktu — yani "büroları karşılaştır" vaadi ekranda hiç görünmüyordu.
+   *
+   * Müşteri açısından en iyi ALIŞ = en yüksek (dövizini daha pahalıya
+   * bozdurur), en iyi SATIŞ = en düşük (dövizi daha ucuza alır).
+   * Sonuç V0BankCard'a `bestRates` olarak geçer ve ilgili hücre işaretlenir.
+   */
+  const bestRates = useMemo(() => {
+    if (mode !== "exchange" || filteredAndSortedBanks.length < 2) return null;
+    const result = {};
+    for (const currency of ["EUR", "USD", "GBP"]) {
+      let bestBuy = null;
+      let bestSell = null;
+      for (const bank of filteredAndSortedBanks) {
+        const row = bank.exchangeRates?.find((r) => r.currency === currency);
+        const buy = Number(row?.buy);
+        const sell = Number(row?.sell);
+        if (Number.isFinite(buy) && (bestBuy == null || buy > bestBuy)) bestBuy = buy;
+        if (Number.isFinite(sell) && (bestSell == null || sell < bestSell)) bestSell = sell;
+      }
+      // Herkes aynı kuru veriyorsa "en iyi" işareti bilgi taşımaz — işaretleme.
+      let worstBuy = null;
+      let worstSell = null;
+      for (const bank of filteredAndSortedBanks) {
+        const row = bank.exchangeRates?.find((r) => r.currency === currency);
+        const buy = Number(row?.buy);
+        const sell = Number(row?.sell);
+        if (Number.isFinite(buy) && (worstBuy == null || buy < worstBuy)) worstBuy = buy;
+        if (Number.isFinite(sell) && (worstSell == null || sell > worstSell)) worstSell = sell;
+      }
+      const buySpread = bestBuy != null && worstBuy != null && bestBuy - worstBuy > 1e-9;
+      const sellSpread = bestSell != null && worstSell != null && worstSell - bestSell > 1e-9;
+      if (buySpread || sellSpread) {
+        result[currency] = {
+          buy: buySpread ? bestBuy : null,
+          sell: sellSpread ? bestSell : null,
+        };
+      }
+    }
+    return Object.keys(result).length > 0 ? result : null;
+  }, [filteredAndSortedBanks, mode]);
+
   const selectedCalculatorBank = banks.find((b) => b.name === calculatorBank) ?? null;
   const selectedExchangePair =
     selectedCalculatorBank?.exchangeRates?.find((r) => r.currency === exchangeCurrency) ?? null;
@@ -2072,27 +2004,56 @@ export function V0FinancialDashboard() {
       : null;
   const loanTotal = Number.isFinite(loanInstallment) ? loanInstallment * months : null;
   const activeLoanRate = Number.isFinite(monthlyRate) ? monthlyRate : null;
+  // A-06: üst bar çipleri 26px yükseklikteydi; parmakla isabet ettirilemiyordu.
   const headerBtnClass = headerCompact
-    ? "rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition-all duration-300"
-    : "rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-300";
+    ? "inline-flex items-center justify-center min-h-[2.25rem] rounded-full border px-3 text-[11px] font-semibold transition-all duration-300"
+    : "inline-flex items-center justify-center min-h-[2.75rem] rounded-full border px-3.5 text-xs font-semibold transition-all duration-300";
 
-  const homeTitle =
-    lang === "en"
-      ? "AdaDöviz | KKTC Live Exchange Rates & Currency Converter"
-      : "AdaDöviz | KKTC Canlı Döviz Kurları ve Çevirici";
-  const homeDescription =
-    lang === "en"
-      ? "Compare live USD, EUR and GBP rates across Northern Cyprus (KKTC) exchange offices. Instant currency converter for Lefkoşa, Girne and Gazimağusa."
-      : "KKTC döviz bürolarının güncel USD, EUR ve GBP kurlarını karşılaştırın. Lefkoşa, Girne ve Gazimağusa için anlık döviz çevirici.";
 
-  const marketPeriodLabel =
-    {
-      Saatlik: lang === "en" ? "hourly" : "saatlik",
-      Günlük: lang === "en" ? "daily" : "günlük",
-      Haftalık: lang === "en" ? "weekly" : "haftalık",
-      Aylık: lang === "en" ? "monthly" : "aylık",
-      Yıllık: lang === "en" ? "yearly" : "yıllık",
-    }[chartPeriod] || chartPeriod;
+  /** Sıralama ve "Şu An Açık" kontrolleri hem satır içi hem Sheet'te kullanılır. */
+  const sortControl = (
+    <SearchableSelect
+      value={sortBy}
+      onChange={handleSortChange}
+      options={currentSortOptions}
+      placeholder={t("sortLabel")}
+      aria-label={t("sortLabel")}
+      className="w-full"
+    />
+  );
+
+  const openNowControl = (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={openNowOnly}
+      onClick={() => setOpenNowOnly((v) => !v)}
+      className={`inline-flex h-11 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-medium transition-all duration-300 border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 hover:border-brand-400 dark:hover:border-brand-400 sm:w-auto sm:justify-start ${
+        openNowOnly ? "text-brand-700 dark:text-brand-300" : "text-ink-600 dark:text-ink-300"
+      }`}
+    >
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <Clock className={`size-4 shrink-0 transition-colors duration-300 ${openNowOnly ? "text-brand-600 dark:text-brand-400" : ""}`} />
+        <span className="truncate">{t("openNow")}</span>
+      </span>
+      <span
+        className={`relative ml-1 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-all duration-300 ${
+          openNowOnly
+            ? "border-brand-400/60 bg-brand-gradient"
+            : "border-ink-400 bg-ink-300 dark:border-ink-600 dark:bg-ink-700"
+        }`}
+      >
+        <span
+          className={`inline-block size-3.5 rounded-full bg-white shadow transition ${
+            openNowOnly ? "translate-x-4" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+    </button>
+  );
+
+  /** Mobil filtre düğmesindeki rozet: kaç filtre aktif? */
+  const activeFilterCount = (sortBy !== "none" ? 1 : 0) + (openNowOnly ? 1 : 0);
 
   const currencyConversionLd = useMemo(
     () => JSON.stringify(buildCurrencyConversionJsonLd({ lang, banksCount: banks.length })),
@@ -2101,22 +2062,25 @@ export function V0FinancialDashboard() {
   const financialProductLd = useMemo(() => JSON.stringify(buildFinancialProductJsonLd(lang)), [lang]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 relative dark:bg-[#020617] dark:text-white">
-      <Helmet prioritizeSeoTags>
-        <title>{homeTitle}</title>
-        <meta name="description" content={homeDescription} />
-        <meta property="og:title" content={homeTitle} />
-        <meta property="og:description" content={homeDescription} />
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content={`${SEO_SITE_URL}/`} />
-        <meta name="twitter:title" content={homeTitle} />
-        <meta name="twitter:description" content={homeDescription} />
-        <link rel="canonical" href={`${SEO_SITE_URL}/`} />
+    <div className="min-h-screen bg-ink-50 text-ink-900 relative dark:bg-[#020617] dark:text-white">
+      {/*
+        ⚠️ SEO DÜZELTMESİ (denetim bulgusu U-09): Bu sayfada DÖRT rakip <Helmet>
+        vardı — SeoHead (veritabanından), ana başlık, piyasa özeti bloğu ve
+        çevirici bloğu. Üçü prioritizeSeoTags taşıyordu; hangisinin son
+        güncellendiğine göre sayfa başlığı değişiyordu (ölçüm: arka arkaya iki
+        okuma iki farklı <title> döndürdü) ve çeviricide para birimi seçmek
+        sayfanın kimliğini değiştiriyordu.
+
+        Artık title/description/canonical/og'un TEK sahibi App.jsx'teki
+        <SeoHead /> — yani süper admin'in SEO paneli gerçekten çalışıyor.
+        Burada yalnızca yapısal veri (JSON-LD) kalıyor.
+      */}
+      <Helmet>
         <script type="application/ld+json">{currencyConversionLd}</script>
         <script type="application/ld+json">{financialProductLd}</script>
       </Helmet>
       <header
-        className={`sticky top-0 z-[100] w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-[#020617]/80 ${
+        className={`sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-[#020617]/80 ${
           headerCompact ? "px-3 py-2 shadow-sm sm:px-6 sm:py-2.5" : "px-3 py-3 sm:px-6 sm:py-4 md:py-5"
         }`}
       >
@@ -2128,13 +2092,13 @@ export function V0FinancialDashboard() {
         <BrandLogo className="min-w-0 shrink" compact={headerCompact} />
         <div className={`flex min-w-0 shrink-0 flex-wrap items-center justify-end transition-all duration-300 ${headerCompact ? "gap-1 sm:gap-2" : "gap-1.5 sm:gap-3"}`}>
           <div
-            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 font-medium text-cyan-700 transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:text-cyan-300 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
+            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 font-medium text-brand-700 transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:text-brand-300 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >
             <span className="relative inline-flex size-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex size-2 rounded-full bg-emerald-400"></span>
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span>
+              <span className="relative inline-flex size-2 rounded-full bg-success-400"></span>
             </span>
             {t("liveMarket")}
           </div>
@@ -2146,7 +2110,7 @@ export function V0FinancialDashboard() {
                 ? navigate(isSuperAdmin ? "/super-admin" : "/admin")
                 : setIsBusinessLoginOpen(true)
             }
-            className={`${headerBtnClass} max-w-[9.5rem] truncate border-slate-300 bg-white text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:max-w-none`}
+            className={`${headerBtnClass} max-w-[9.5rem] truncate border-ink-300 bg-white text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:max-w-none`}
           >
             {isAuthenticated
               ? isSuperAdmin
@@ -2159,7 +2123,7 @@ export function V0FinancialDashboard() {
             <button
               type="button"
               onClick={handleLogout}
-              className={`inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 font-semibold text-red-600 transition-all duration-300 hover:bg-red-500/20 hover:border-red-500/60 dark:text-red-200 ${
+              className={`inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 font-semibold text-danger-700 dark:text-danger-400 transition-all duration-300 hover:bg-danger-500/20 hover:border-danger-500/60 dark:text-danger-200 ${
                 headerCompact ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
               }`}
               title={t("logout")}
@@ -2172,7 +2136,7 @@ export function V0FinancialDashboard() {
           <button
             type="button"
             onClick={scrollToPartnership}
-            className={`hidden sm:inline-flex rounded-full border border-slate-300 bg-white font-semibold text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
+            className={`hidden sm:inline-flex items-center min-h-[2.75rem] px-3.5 rounded-full border border-ink-300 bg-white font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >
@@ -2184,8 +2148,8 @@ export function V0FinancialDashboard() {
         </div>
       </header>
       <BusinessLoginModal isOpen={isBusinessLoginOpen} onClose={() => setIsBusinessLoginOpen(false)} />
-      <div className="pointer-events-none fixed -left-60 -top-40 z-0 h-[40rem] w-[40rem] rounded-full bg-teal-500/15 blur-[140px] dark:bg-teal-500/20"></div>
-      <div className="pointer-events-none fixed -right-40 top-10 z-0 h-[45rem] w-[45rem] rounded-full bg-indigo-500/15 blur-[140px] dark:bg-indigo-500/20"></div>
+      <div className="pointer-events-none fixed -left-60 -top-40 z-0 h-[40rem] w-[40rem] rounded-full bg-brand-500/15 blur-[140px] dark:bg-brand-500/20"></div>
+      <div className="pointer-events-none fixed -right-40 top-10 z-0 h-[45rem] w-[45rem] rounded-full bg-brand-500/15 blur-[140px] dark:bg-brand-500/20"></div>
       <div
         className="pointer-events-none fixed inset-0 z-0 opacity-[0.05] dark:opacity-[0.08]"
         style={{
@@ -2194,43 +2158,22 @@ export function V0FinancialDashboard() {
           backgroundSize: "38px 38px",
         }}
       />
-      <div className="relative z-10 w-full max-w-[1600px] mx-auto px-3 sm:px-4 md:px-8 pb-10 md:pb-12 flex flex-col gap-6 md:gap-8">
-      <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="relative z-raised mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 pb-10 pt-6 sm:px-4 md:gap-8 md:px-8 md:pb-12 md:pt-8">
+      <div className="flex w-full flex-col gap-1">
+        <h1>{t("homeH1")}</h1>
+        <p className="text-sm text-ink-600 dark:text-ink-400">{t("homeLead")}</p>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-xl backdrop-blur-lg transition-all hover:border-teal-500/30 dark:border-white/10 dark:bg-slate-900/60 md:p-6">
-        <Helmet>
-          <title>
-            {lang === "en"
-              ? `AdaDöviz | KKTC Live Rates & Converter – ${marketPeriodLabel} Market Summary`
-              : `AdaDöviz | KKTC Canlı Döviz Kurları ve Çevirici – ${marketPeriodLabel} Piyasa Özeti`}
-          </title>
-          <meta
-            name="description"
-            content={
-              lang === "en"
-                ? `Northern Cyprus (KKTC) market summary: live ${marketPeriodLabel} USD/TRY, EUR/TRY and GBP/TRY charts based on central bank reference rates.`
-                : `KKTC Piyasa Özeti: Merkez Bankası referanslı ${marketPeriodLabel} USD/TRY, EUR/TRY ve GBP/TRY canlı döviz kuru grafikleri.`
-            }
-          />
-          <meta
-            property="og:title"
-            content={
-              lang === "en"
-                ? "AdaDöviz | KKTC Market Summary – Live FX Charts"
-                : "AdaDöviz | KKTC Piyasa Özeti – Canlı Döviz Grafikleri"
-            }
-          />
-        </Helmet>
+      <div className="rounded-2xl border border-ink-200 bg-white/80 p-4 shadow-xl backdrop-blur-lg transition-all hover:border-brand-500/30 dark:border-white/10 dark:bg-ink-900/60 md:p-6">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">{t("marketSummary")}</h3>
-            <p className="text-sm text-slate-500 mt-1 dark:text-slate-400">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">{t("marketSummary")}</h2>
+            <p className="text-sm text-ink-500 mt-1 dark:text-ink-400">
               {t("marketSummaryNote")}
             </p>
           </div>
           {/* ✅ YENİ: Filtre Butonu (Saatlik / Günlük / Haftalık / Aylık) - Kur Temasıyla Uyumlu */}
-          <div className="flex w-full max-w-full flex-wrap gap-1 bg-slate-100/80 p-1 rounded-lg border border-slate-200 backdrop-blur-md dark:bg-slate-950/70 dark:border-white/10 sm:w-auto">
+          <div className="flex w-full max-w-full flex-wrap gap-1 bg-ink-100/80 p-1 rounded-lg border border-ink-200 backdrop-blur-md dark:bg-ink-950/70 dark:border-white/10 sm:w-auto">
             {[
               { key: "Saatlik", label: t("periodHourly") },
               { key: "Günlük", label: t("periodDaily") },
@@ -2241,10 +2184,10 @@ export function V0FinancialDashboard() {
               <button 
                 key={key}
                 onClick={() => setChartPeriod(key)}
-                className={`px-2.5 py-1.5 text-[11px] sm:text-xs font-medium rounded-md transition-all duration-300 ease-in-out ${
+                className={`min-h-[2.75rem] px-3 py-1.5 text-[11px] sm:text-xs font-medium rounded-md transition-all duration-300 ease-in-out ${
                   chartPeriod === key 
-                    ? 'bg-gradient-to-r from-teal-400 to-indigo-500 text-white shadow-lg shadow-teal-500/20 sm:scale-105' 
-                    : 'text-slate-600 hover:text-slate-900 bg-transparent hover:bg-slate-200/60 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-900/40'
+                    ? 'bg-brand-gradient text-white shadow-lg shadow-brand-500/20 sm:scale-105' 
+                    : 'text-ink-600 hover:text-ink-900 bg-transparent hover:bg-ink-200/60 dark:text-ink-300 dark:hover:text-white dark:hover:bg-ink-900/40'
                 }`}
               >
                 {label}
@@ -2265,68 +2208,22 @@ export function V0FinancialDashboard() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 sm:p-6 shadow-xl backdrop-blur-lg transition-all hover:border-teal-500/30 dark:border-white/10 dark:bg-slate-900/60">
-        {mode === "exchange" && exchangeCurrency ? (
-          <Helmet prioritizeSeoTags>
-            <title>
-              {lang === "en"
-                ? `AdaDöviz | ${exchangeCurrency}/TRY Currency Converter – KKTC Live Rates`
-                : `AdaDöviz | ${exchangeCurrency}/TRY Döviz Çevirici – KKTC Canlı Kur`}
-            </title>
-            <meta
-              name="description"
-              content={
-                lang === "en"
-                  ? `Convert ${exchangeCurrency} to TRY with live Northern Cyprus (KKTC) exchange office rates on AdaDöviz.`
-                  : `AdaDöviz ile KKTC döviz bürosu canlı kurlarıyla ${exchangeCurrency}/TRY çevirisi yapın.`
-              }
-            />
-            <meta
-              property="og:title"
-              content={
-                lang === "en"
-                  ? `AdaDöviz | ${exchangeCurrency}/TRY Currency Converter`
-                  : `AdaDöviz | ${exchangeCurrency}/TRY Döviz Çevirici`
-              }
-            />
-          </Helmet>
-        ) : mode === "exchange" ? (
-          <Helmet>
-            <title>{homeTitle}</title>
-            <meta
-              name="description"
-              content={
-                lang === "en"
-                  ? "Free KKTC currency converter: convert USD, EUR and GBP to TRY using live exchange office buy/sell rates. Compare Northern Cyprus exchange offices."
-                  : "Ücretsiz KKTC döviz çevirici: USD, EUR ve GBP’yi canlı alış/satış kurlarıyla TL’ye çevirin. Kuzey Kıbrıs döviz bürolarını karşılaştırın."
-              }
-            />
-            <meta
-              property="og:title"
-              content={
-                lang === "en"
-                  ? "AdaDöviz | KKTC Currency Converter"
-                  : "AdaDöviz | KKTC Döviz Çevirici"
-              }
-            />
-            <meta property="og:description" content={homeDescription} />
-          </Helmet>
-        ) : null}
+      <div className="rounded-2xl border border-ink-200 bg-white/80 p-4 sm:p-6 shadow-xl backdrop-blur-lg transition-all hover:border-brand-500/30 dark:border-white/10 dark:bg-ink-900/60">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-300">
             {mode === "exchange"
               ? t("currencyConverter")
               : mode === "interest"
                 ? t("depositCalculator")
                 : t("loanCalculator")}
-          </h3>
+          </h2>
         </div>
 
         {mode === "exchange" ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-12">
             {/* 1️⃣ DÖVIZ BİRİMİ (Sol taraf) */}
             <div className="flex min-w-0 flex-col gap-1 xl:col-span-2">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">{t("currencyUnit")}</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("currencyUnit")}</label>
               <SearchableSelect
                 value={exchangeCurrency}
                 onChange={setExchangeCurrency}
@@ -2343,15 +2240,15 @@ export function V0FinancialDashboard() {
 
             {/* 2️⃣ İŞLEM TÜRÜ (Alış / Satış) */}
             <div className="flex min-w-0 flex-col gap-1 xl:col-span-2">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">{t("operationType")}</label>
-              <div className="inline-flex w-full rounded-lg border border-slate-200 bg-slate-50/80 p-1 backdrop-blur-md dark:border-white/10 dark:bg-slate-900/80">
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("operationType")}</label>
+              <div className="inline-flex w-full rounded-lg border border-ink-200 bg-ink-50/80 p-1 backdrop-blur-md dark:border-white/10 dark:bg-ink-900/80">
                 <button
                   type="button"
                   onClick={() => setExchangeOperation("buy")}
                   className={`min-w-0 flex-1 rounded-md px-2 py-2 text-sm font-bold transition sm:px-3 ${
                     exchangeOperation === "buy"
-                      ? "bg-gradient-to-r from-teal-400 to-indigo-500 text-white shadow-lg shadow-teal-500/20"
-                      : "text-slate-600 dark:text-slate-300"
+                      ? "bg-brand-gradient text-white shadow-lg shadow-brand-500/20"
+                      : "text-ink-600 dark:text-ink-300"
                   }`}
                 >
                   {t("buy")}
@@ -2360,7 +2257,7 @@ export function V0FinancialDashboard() {
                   type="button"
                   onClick={() => setExchangeOperation("sell")}
                   className={`min-w-0 flex-1 rounded-md px-2 py-2 text-sm font-bold transition sm:px-3 ${
-                    exchangeOperation === "sell" ? "bg-emerald-600 text-white shadow-lg shadow-emerald-500/20" : "text-slate-600 dark:text-slate-300"
+                    exchangeOperation === "sell" ? "bg-success-600 text-white shadow-lg shadow-success-500/20" : "text-ink-600 dark:text-ink-300"
                   }`}
                 >
                   {t("sell")}
@@ -2370,7 +2267,7 @@ export function V0FinancialDashboard() {
 
             {/* 3️⃣ DÖVİZ BÜROSU SEÇİN (Dinamik kur gösterimi) */}
             <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 xl:col-span-3">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">{t("selectBank")}</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("selectBank")}</label>
               <SearchableSelect
                 value={calculatorBank}
                 onChange={(value) => {
@@ -2402,9 +2299,12 @@ export function V0FinancialDashboard() {
 
             {/* 4️⃣ ÇEVRİLECEK TUTAR — büro seçilince açılır */}
             <div className="flex min-w-0 flex-col gap-1 xl:col-span-2">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">
                 {exchangeOperation === "buy"
-                  ? `${t("amountCurrency")} (${exchangeCurrency})`
+                  ? // Para birimi henüz seçilmediyse boş parantez gösterme.
+                    exchangeCurrency
+                    ? `${t("amountCurrency")} (${exchangeCurrency})`
+                    : t("amountCurrency")
                   : t("amountTl")}
               </label>
               <input
@@ -2413,23 +2313,23 @@ export function V0FinancialDashboard() {
                 disabled={!calculatorBank}
                 value={!calculatorBank ? "" : exchangeAmount === "0" ? "" : exchangeAmount}
                 onChange={(e) => setExchangeAmount(e.target.value === "" ? "0" : e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-slate-300 disabled:hover:shadow-none dark:disabled:hover:border-slate-700"
+                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
                 placeholder={!calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
               />
             </div>
 
             {/* 5️⃣ SONUÇ — tutar girilince açılır */}
             <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 xl:col-span-3">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">
                 {exchangeOperation === "buy"
                   ? t("resultSell")
                   : `${t("resultBuy")} ${exchangeCurrency || ""}`.trim()}
               </label>
               <div
-                className={`flex h-11 w-full items-center overflow-hidden rounded-lg border px-3 text-sm outline-none transition-all duration-300 dark:border-slate-700 dark:bg-slate-950 ${
+                className={`flex h-11 w-full items-center overflow-hidden rounded-lg border px-3 text-sm outline-none transition-all duration-300 dark:border-ink-700 dark:bg-ink-950 ${
                   Number.isFinite(exchangeResult) && calculatorBank && Number(exchangeAmount) > 0
-                    ? "border-slate-300 bg-white font-semibold text-slate-900 dark:text-slate-100"
-                    : "cursor-not-allowed border-slate-300 bg-white text-slate-400 opacity-60 dark:text-slate-500"
+                    ? "border-ink-300 bg-white font-semibold text-ink-900 dark:text-ink-100"
+                    : "cursor-not-allowed border-ink-300 bg-white text-ink-600 dark:text-ink-400 opacity-60 dark:text-ink-500"
                 }`}
               >
                 <span className="truncate">
@@ -2449,7 +2349,7 @@ export function V0FinancialDashboard() {
         ) : mode === "interest" ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">{t("selectBank")}</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("selectBank")}</label>
               <SearchableSelect
                 value={calculatorBank}
                 onChange={setCalculatorBank}
@@ -2460,18 +2360,18 @@ export function V0FinancialDashboard() {
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Anapara Tutarı (TL)</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Anapara Tutarı (TL)</label>
               <input
                 type="number"
                 min="0"
                 value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
                 placeholder="Anapara (TL)"
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Vade Türü</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade Türü</label>
               <SearchableSelect
                 value={depositType}
                 onChange={setDepositType}
@@ -2483,19 +2383,19 @@ export function V0FinancialDashboard() {
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Vade Süresi (Gün)</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade Süresi (Gün)</label>
               <input
                 type="number"
                 min="1"
                 value={depositDays}
                 onChange={(e) => setDepositDays(e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
                 placeholder="Vade (Gün)"
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Net Getiri</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Net Getiri</label>
+              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
                 <span className="truncate">
                 {Number.isFinite(depositProfit)
                   ? `${depositProfit.toLocaleString(localeCode, {
@@ -2507,8 +2407,8 @@ export function V0FinancialDashboard() {
               </div>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Vade Sonu Toplam</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade Sonu Toplam</label>
+              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
                 <span className="truncate">
                 {Number.isFinite(depositTotal)
                   ? `${depositTotal.toLocaleString(localeCode, {
@@ -2519,7 +2419,7 @@ export function V0FinancialDashboard() {
                 </span>
               </div>
             </div>
-            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-300">
+            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-300">
               {Number.isFinite(selectedDepositRate)
                 ? `Kullanılan Faiz Oranı: %${selectedDepositRate.toFixed(2)} (${depositType === "daily" ? "Günlük" : depositType === "monthly" ? "Aylık" : "Yıllık"} baz)`
                 : "Faiz oranı döviz bürosu verisine göre belirlenecektir."}
@@ -2528,7 +2428,7 @@ export function V0FinancialDashboard() {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">{t("selectBank")}</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("selectBank")}</label>
               <SearchableSelect
                 value={calculatorBank}
                 onChange={setCalculatorBank}
@@ -2539,7 +2439,7 @@ export function V0FinancialDashboard() {
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Kredi Türü</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Kredi Türü</label>
               <SearchableSelect
                 value={loanType}
                 onChange={setLoanType}
@@ -2551,30 +2451,30 @@ export function V0FinancialDashboard() {
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Kredi Tutarı (TL)</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Kredi Tutarı (TL)</label>
               <input
                 type="number"
                 min="0"
                 value={loanAmount}
                 onChange={(e) => setLoanAmount(e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
                 placeholder="Kredi Tutarı (TL)"
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Vade (Ay)</label>
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade (Ay)</label>
               <input
                 type="number"
                 min="1"
                 value={loanMonths}
                 onChange={(e) => setLoanMonths(e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
                 placeholder="Vade (Ay)"
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Aylık Taksit Tutarı</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Aylık Taksit Tutarı</label>
+              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
                 <span className="truncate">
                 {Number.isFinite(loanInstallment)
                   ? `${loanInstallment.toLocaleString(localeCode, {
@@ -2586,8 +2486,8 @@ export function V0FinancialDashboard() {
               </div>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-indigo-600 dark:text-indigo-300">Toplam Geri Ödeme</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-indigo-300/60 bg-indigo-50 px-3 text-sm text-slate-900 dark:border-indigo-700/60 dark:bg-indigo-900/50 dark:text-slate-100">
+              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Toplam Geri Ödeme</label>
+              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
                 <span className="truncate">
                 {Number.isFinite(loanTotal)
                   ? `${loanTotal.toLocaleString(localeCode, {
@@ -2598,7 +2498,7 @@ export function V0FinancialDashboard() {
                 </span>
               </div>
             </div>
-            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-300">
+            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-700 dark:text-brand-300">
               {Number.isFinite(activeLoanRate) && selectedCalculatorBank
                 ? `💡 Uygulanan Aylık Faiz: %${activeLoanRate.toFixed(2)} (${selectedCalculatorBank.name} ${
                     loanType === "tasit" ? "Taşıt Kredisi" : loanType === "konut" ? "Konut Kredisi" : "İhtiyaç Kredisi"
@@ -2609,76 +2509,96 @@ export function V0FinancialDashboard() {
         )}
       </div>
 
+      <h2 className="text-lg font-semibold text-ink-900 dark:text-white">{t("homeH2Offices")}</h2>
+
+      {/*
+        A-06 / mobil UX: Arama + sıralama + "Şu An Açık" üç kontrolü 375px'te
+        dar alana sıkışıyordu. Mobilde arama görünür kalır, sıralama ve filtre
+        alttan açılan Sheet'e taşınır; sm+ ekranlarda hepsi eskisi gibi satır içi.
+      */}
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative w-full min-w-0 sm:max-w-xs sm:flex-1 lg:w-64 lg:flex-none">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
             <input
               type="search"
               placeholder={t("searchBanks")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 w-full rounded-lg border border-slate-300 bg-white pl-10 pr-3 text-sm text-slate-900 outline-none transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-cyan-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:border-cyan-400 dark:focus:border-cyan-400"
+              className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
             />
           </div>
 
-          <div className="w-full min-w-0 sm:max-w-[14rem] sm:flex-1 lg:w-56 lg:flex-none">
-            <SearchableSelect
-              value={sortBy}
-              onChange={handleSortChange}
-              options={currentSortOptions}
-              placeholder={t("sortLabel")}
-              aria-label={t("sortLabel")}
-              className="w-full"
-            />
-          </div>
-
+          {/* Mobil: tek düğme → Sheet */}
           <button
             type="button"
-            role="switch"
-            aria-checked={openNowOnly}
-            onClick={() => setOpenNowOnly((v) => !v)}
-            className={`inline-flex h-11 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-medium transition-all duration-300 border-slate-300 bg-white dark:border-slate-700 dark:bg-slate-950 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:hover:border-cyan-400 sm:w-auto sm:justify-start ${
-              openNowOnly
-                ? "text-cyan-300 dark:text-cyan-300"
-                : "text-slate-600 dark:text-slate-300"
-            }`}
-            title={t("openNow")}
+            onClick={() => setFilterSheetOpen(true)}
+            className="btn-ghost w-full justify-between sm:hidden"
           >
-            <span className="inline-flex min-w-0 items-center gap-2">
-              <Clock className={`size-4 shrink-0 transition-colors duration-300 ${openNowOnly ? "text-cyan-400" : ""}`} />
-              <span className="truncate">{t("openNow")}</span>
+            <span className="inline-flex items-center gap-2">
+              <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
+              {t("sortLabel")}
             </span>
-            <span
-              className={`relative ml-1 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-all duration-300 ${
-                openNowOnly
-                  ? "border-cyan-400/60 bg-gradient-to-r from-cyan-500 to-indigo-500 shadow-[0_0_10px_rgba(34,211,238,0.55)]"
-                  : "border-slate-400 bg-slate-300 dark:border-slate-600 dark:bg-slate-700"
-              }`}
-            >
-              <span
-                className={`inline-block size-3.5 rounded-full bg-white shadow transition ${
-                  openNowOnly ? "translate-x-4" : "translate-x-0.5"
-                }`}
-              />
-            </span>
+            {activeFilterCount > 0 ? (
+              <span className="ml-2 inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-xs font-bold text-white">
+                {activeFilterCount}
+              </span>
+            ) : null}
           </button>
+
+          {/* sm+ : satır içi kontroller */}
+          <div className="hidden w-full min-w-0 sm:block sm:max-w-[14rem] sm:flex-1 lg:w-56 lg:flex-none">
+            {sortControl}
+          </div>
+          <div className="hidden sm:block">{openNowControl}</div>
         </div>
       </div>
 
+      <Sheet
+        open={filterSheetOpen}
+        onOpenChange={setFilterSheetOpen}
+        title={t("sortLabel")}
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setSortBy("none");
+                setOpenNowOnly(false);
+              }}
+            >
+              {t("clearFilters")}
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setFilterSheetOpen(false)}
+            >
+              {t("showResults")} ({filteredAndSortedBanks.length})
+            </button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4 pt-1">
+          {sortControl}
+          {openNowControl}
+        </div>
+      </Sheet>
+
       {geoToast ? (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+        <div className="rounded-lg border border-warning-500/30 bg-warning-500/10 px-3 py-2 text-sm text-warning-800 dark:text-warning-200">
           {geoToast}
         </div>
       ) : null}
 
       {showLocationConsent ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-ink-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-ink-200 bg-white p-5 shadow-2xl dark:border-ink-700 dark:bg-ink-900">
+            <h3 className="text-base font-bold text-ink-900 dark:text-white">
               {t("locationShareTitle")}
             </h3>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
               {t("locationShareConfirm")}
             </p>
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -2689,7 +2609,7 @@ export function V0FinancialDashboard() {
                   setSortBy("none");
                   setGeoToast(t("locationPermissionRequired"));
                 }}
-                className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                className="btn-ghost flex-1"
               >
                 {t("locationShareDeny")}
               </button>
@@ -2699,7 +2619,7 @@ export function V0FinancialDashboard() {
                   setShowLocationConsent(false);
                   requestNearestSort();
                 }}
-                className="flex-1 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-teal-500"
+                className="btn-primary flex-1"
               >
                 {t("locationShareAllow")}
               </button>
@@ -2709,7 +2629,7 @@ export function V0FinancialDashboard() {
       ) : null}
 
       {banks.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white/80 p-6 py-10 text-center text-slate-600 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300">
+        <div className="rounded-2xl border border-ink-200 bg-white/80 p-6 py-10 text-center text-ink-600 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-ink-900/60 dark:text-ink-300">
           {t("banksLoading")}
         </div>
       ) : filteredAndSortedBanks.length > 0 ? (
@@ -2719,6 +2639,12 @@ export function V0FinancialDashboard() {
               key={bank.institutionId || bank.id}
               bank={bank}
               mode={mode}
+              bestRates={bestRates}
+              branches={
+                branchesByInstitution[bank.institutionId] ||
+                branchesByInstitution[normalizeText(bank.name)] ||
+                []
+              }
               showNearestBranch={sortBy === "nearest" && Boolean(userLocation)}
               onSelect={(biz) => {
                 const name = String(biz?.name || "")
@@ -2739,15 +2665,16 @@ export function V0FinancialDashboard() {
           ))}
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white/80 p-6 py-10 text-center text-slate-600 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-300">
+        <div className="rounded-2xl border border-ink-200 bg-white/80 p-6 py-10 text-center text-ink-600 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-ink-900/60 dark:text-ink-300">
           {t("noBanksMatch")}
         </div>
       )}
 
       {lastUpdated ? (
         <div className="mt-10 flex justify-center px-2">
-          <div className="rounded-lg border border-slate-200 bg-white/80 px-4 py-2.5 text-center text-xs tracking-wide text-slate-500 shadow-sm dark:border-slate-700/80 dark:bg-slate-950/60">
-            {`${t("lastUpdate")}: ${new Date(lastUpdated).toLocaleDateString(localeCode)} - ${new Date(lastUpdated).toLocaleTimeString(localeCode)}`}
+          <div className="rounded-lg border border-ink-200 bg-white/80 px-4 py-2.5 text-center text-xs tracking-wide text-ink-500 shadow-sm dark:border-ink-700/80 dark:bg-ink-950/60">
+            {/* U-05: bu değer sunucunun son kontrol anı, bültenin tarihi değil. */}
+            {`${t("lastChecked")}: ${new Date(lastUpdated).toLocaleDateString(localeCode)} - ${new Date(lastUpdated).toLocaleTimeString(localeCode)}`}
           </div>
         </div>
       ) : null}
@@ -2756,16 +2683,16 @@ export function V0FinancialDashboard() {
 
         {/* ✅ FIXED MODAL - ÇIKIS */}
         {showLogoutPopup && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
-            <div className="flex w-full max-w-sm flex-col items-center rounded-2xl border border-gray-700 bg-[#1a1f2e] p-6 shadow-2xl transition-all sm:p-8">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-rose-500/20 animate-spin">
-                <svg className="h-8 w-8 text-rose-500" fill="none" viewBox="0 0 24 24">
+          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
+            <div className="flex w-full max-w-sm flex-col items-center rounded-2xl border border-ink-700 bg-[#1a1f2e] p-6 shadow-2xl transition-all sm:p-8">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-danger-500/20 animate-spin">
+                <svg className="h-8 w-8 text-danger-500" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </div>
               <h3 className="text-center text-lg font-bold text-white sm:text-xl">Çıkış Yapılıyor...</h3>
-              <p className="mt-2 text-center text-sm text-slate-300">Anasayfaya yönlendiriliyorsunuz</p>
+              <p className="mt-2 text-center text-sm text-ink-300">Anasayfaya yönlendiriliyorsunuz</p>
             </div>
           </div>
         )}

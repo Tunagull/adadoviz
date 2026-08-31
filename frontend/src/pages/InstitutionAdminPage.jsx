@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
+import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell } from "lucide-react";
 import Cropper from "react-easy-crop";
@@ -17,17 +18,27 @@ import {
   updateBusinessProfile,
   fetchBusinessBranches,
   updateBusinessBranch,
+  createBusinessBranch,
   createBusinessBranchRequest,
+  fetchBusinessSubscription,
   fetchBusinessNotifications,
   markBusinessNotificationsRead,
 } from "../lib/auth";
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
+import { Sheet } from "../components/Sheet";
 import { DualRangeSlider } from "../components/DualRangeSlider";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { shouldShowTestBadge } from "../lib/subscriptionBadge";
+import { mediaUrl } from "../lib/api";
 import { getCroppedImg } from "../components/LogoCropModal";
 import "leaflet/dist/leaflet.css";
+
+/** P-04: bilgilendirici log yalnızca geliştirmede. */
+const devLog = (...args) => {
+  if (import.meta.env.DEV) console.log(...args);
+};
+
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -165,6 +176,8 @@ function sanitizeNonNegative(value) {
 export function InstitutionAdminPage() {
   const navigate = useNavigate();
   const { auth, isAuthenticated, bootstrapping, logout } = useAuth();
+  const isAccountInactive =
+    auth?.is_active === false || auth?.is_active === 0 || auth?.is_active === "0";
   const { lang, t } = useLanguage();
   const marginLabels = MARGIN_LABELS[lang] || MARGIN_LABELS.tr;
   // Granüler state
@@ -186,8 +199,8 @@ export function InstitutionAdminPage() {
   const [saving, setSaving] = useState(false);
   const [isSaving, setIsSaving] = useState(false);  // ✅ YENİ: Yükleniyor durumu
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [showPopup, setShowPopup] = useState(false);  // ✅ Kaydetme başarısı
+  const [, setSuccess] = useState("");
+  // ✅ Kaydetme başarısı
   const [showSuccessModal, setShowSuccessModal] = useState(false);  // ✅ YENİ: Başarı modal
   const [showLogoutPopup, setShowLogoutPopup] = useState(false);  // ✅ Çıkış modal
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -201,8 +214,7 @@ export function InstitutionAdminPage() {
   
   // ✅ Logo Yönetimi Modal
   const [showLogoModal, setShowLogoModal] = useState(false);
-  const [logoFile, setLogoFile] = useState(null);
-  const [logoPreview, setLogoPreview] = useState(null);
+  const [, setLogoFile] = useState(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState(null); // Object URL
   const [logoCropStep, setLogoCropStep] = useState(false); // false: select, true: crop
   const [logoCrop, setLogoCrop] = useState({ x: 0, y: 0 });
@@ -228,6 +240,8 @@ export function InstitutionAdminPage() {
   const [branchName, setBranchName] = useState("");
   const [locationGeocoding, setLocationGeocoding] = useState(false);
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(false);
+  /** İ-01 / İ-02 / İ-03: kendi aboneliği, ödeme geçmişi ve performansı. */
+  const [subInfo, setSubInfo] = useState(null);
   const [subscriptionBranches, setSubscriptionBranches] = useState([]);
   const [subscriptionPanelLoading, setSubscriptionPanelLoading] = useState(false);
   const subscriptionPanelRef = useRef(null);
@@ -246,7 +260,7 @@ export function InstitutionAdminPage() {
   });
   const [branchLimit, setBranchLimit] = useState(1);
   const [branchCount, setBranchCount] = useState(0);
-  const canAddBranchDirectly = branchCount < branchLimit;
+  const canAddBranchDirectly = !isAccountInactive && branchCount < branchLimit;
   const [renewRequestLoadingId, setRenewRequestLoadingId] = useState(null);
   const [renewRequestError, setRenewRequestError] = useState("");
   const [renewRequestSuccess, setRenewRequestSuccess] = useState("");
@@ -301,6 +315,10 @@ export function InstitutionAdminPage() {
       navigate("/super-admin", { replace: true });
     }
   }, [bootstrapping, isAuthenticated, auth?.role, navigate]);
+
+  useEffect(() => {
+    if (isAccountInactive) setShowSubscriptionPanel(true);
+  }, [isAccountInactive]);
 
   useEffect(() => {
     if (bootstrapping || !auth?.token) return;
@@ -366,12 +384,12 @@ export function InstitutionAdminPage() {
                 value: String(item.sell?.margin_value ?? 0),
               },
             };
-            console.log(`[ADMIN-LOAD] ${curr}: buy_margin=${item.buy?.margin_value} (${item.buy?.margin_type}), sell_margin=${item.sell?.margin_value} (${item.sell?.margin_type})`);
+            devLog(`[ADMIN-LOAD] ${curr}: buy_margin=${item.buy?.margin_value} (${item.buy?.margin_type}), sell_margin=${item.sell?.margin_value} (${item.sell?.margin_type})`);
           }
         }
         setCentralBankRates(cbRates);
         setMarginConfig(newMarginConfig);
-        console.log("[ADMIN-LOAD] Marjlar başarıyla yüklendi:", newMarginConfig);
+        devLog("[ADMIN-LOAD] Marjlar başarıyla yüklendi:", newMarginConfig);
 
         // KKTC Merkez Bankası kurlarını çek
         try {
@@ -390,11 +408,11 @@ export function InstitutionAdminPage() {
                 buy_efektif: kur.efektif_alis ?? null,
                 sell_efektif: kur.efektif_satis ?? null,
               };
-              console.log(`[ADMIN-PAGE] ${kur.sembol} KKTC: buy=${kur.alis}, sell=${kur.satis}, buy_efektif=${kur.efektif_alis}, sell_efektif=${kur.efektif_satis}`);
+              devLog(`[ADMIN-PAGE] ${kur.sembol} KKTC: buy=${kur.alis}, sell=${kur.satis}, buy_efektif=${kur.efektif_alis}, sell_efektif=${kur.efektif_satis}`);
             }
           }
           setCentralBankRates(updatedCbRates);
-          console.log("[ADMIN-PAGE] KKTC Kurları başarıyla yüklendi:", updatedCbRates);
+          devLog("[ADMIN-PAGE] KKTC Kurları başarıyla yüklendi:", updatedCbRates);
         } catch (kktcError) {
           console.warn("[ADMIN] KKTC Merkez Bankası kurları alınamadı:", kktcError.message);
         }
@@ -443,6 +461,7 @@ export function InstitutionAdminPage() {
     auth?.subscription_type !== "Test" &&
     kalanAbonelikSuresi != null &&
     kalanAbonelikSuresi <= 0;
+  const ratesLocked = isExpired || isAccountInactive;
 
   const subscriptionWarningDays = useMemo(() => {
     let min = Infinity;
@@ -578,6 +597,11 @@ export function InstitutionAdminPage() {
 
   useEffect(() => {
     if (!showSubscriptionPanel) return undefined;
+    if (auth?.token) {
+      fetchBusinessSubscription(auth.token)
+        .then(setSubInfo)
+        .catch(() => setSubInfo(null));
+    }
     const onDocClick = (event) => {
       if (!subscriptionPanelRef.current) return;
       if (!subscriptionPanelRef.current.contains(event.target)) {
@@ -672,16 +696,36 @@ export function InstitutionAdminPage() {
       lng: branchRequestForm.lng,
     };
     try {
-      // Sarı ünlem (limit altında) olsa bile şube hemen eklenmez;
-      // Super Admin Talepler sekmesinde onay/red bekler.
-      await createBusinessBranchRequest(auth.token, {
-        ...payload,
-        request_type: "new",
-      });
+      /**
+       * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-02): Limit altındayken buton
+       * "Şube Ekle" diyor, modal başlığı "Yeni Şube Ekle" diyordu — ama kod her
+       * durumda ONAY TALEBİ açıyor ve toast "Admin onayı bekleniyor." diyordu.
+       * Buton bir şey vaat ediyor, sonuç başkasını söylüyordu.
+       *
+       * Ayrıca POST /api/business/branches ucu ve onu çağıran
+       * createBusinessBranch tamamen ÖLÜ KODDU — hiçbir yerden import
+       * edilmiyordu, oysa tüm doğrulamaları (ad/telefon/adres/konum) hazırdı.
+       *
+       * Karar: işletme zaten satın aldığı şube kotasının altındaysa şube
+       * DOĞRUDAN eklenir; yalnızca kota dolduğunda onay talebi açılır.
+       */
+      if (canAddBranchDirectly) {
+        await createBusinessBranch(auth.token, payload);
+        setBranchRequestSuccess(t("addBranchDirectSuccess"));
+        try {
+          const rows = await fetchBusinessBranches(auth.token);
+          setSubscriptionBranches(rows);
+        } catch {
+          /* liste tazelenemezse sonraki yüklemede gelir */
+        }
+      } else {
+        await createBusinessBranchRequest(auth.token, {
+          ...payload,
+          request_type: "new",
+        });
+        setBranchRequestSuccess(t("newBranchRequestSuccess"));
+      }
       setShowBranchRequestConfirm(false);
-      setBranchRequestSuccess(
-        canAddBranchDirectly ? t("addBranchAwaitingAdminSuccess") : t("newBranchRequestSuccess")
-      );
       setTimeout(() => {
         setShowBranchRequestModal(false);
         resetBranchRequestForm();
@@ -724,7 +768,7 @@ export function InstitutionAdminPage() {
       try {
         const rows = await fetchBusinessBranches(auth.token);
         setSubscriptionBranches(rows);
-      } catch (_e) {
+      } catch {
         /* ignore */
       }
       setTimeout(() => setRenewRequestSuccess(""), 2500);
@@ -738,8 +782,12 @@ export function InstitutionAdminPage() {
   const handleSave = async (event) => {
     event.preventDefault();
     if (!auth?.token) return;
-    if (isExpired) {
-      setError("Abonelik süreniz dolmuş. Kâr marjları güncellenemez.");
+    if (ratesLocked) {
+      setError(
+        isAccountInactive
+          ? t("accountInactiveNotice")
+          : "Abonelik süreniz dolmuş. Kâr marjları güncellenemez."
+      );
       return;
     }
 
@@ -773,7 +821,7 @@ export function InstitutionAdminPage() {
 
       if (!auth?.token) throw new Error("Token bulunamadı");
       const response = await saveAdminRates(auth.token, payload);
-      console.log("[ADMIN] Kaydetme başarılı:", response);
+      devLog("[ADMIN] Kaydetme başarılı:", response);
       
       // API'den dönen güncellenmiş veriyi state'e kaydet
       if (Array.isArray(response.currencies)) {
@@ -896,6 +944,7 @@ export function InstitutionAdminPage() {
 
   // ✅ Kırpılmış logoyu kaydet → SQLite + Supabase
   const handleSaveCroppedLogo = async () => {
+    if (isAccountInactive) return;
     if (!logoPreviewUrl || !logoCroppedArea || !auth?.token) return;
     setLogoLoading(true);
     try {
@@ -1115,6 +1164,10 @@ export function InstitutionAdminPage() {
 
   // ✅ Telefon kaydı (seçili şube)
   const handlePhoneSubmit = async () => {
+    if (isAccountInactive) {
+      setInfoError(t("accountInactiveNotice"));
+      return;
+    }
     if (!selectedBranchId) {
       setInfoError("Lütfen önce bir şube seçin.");
       return;
@@ -1157,6 +1210,10 @@ export function InstitutionAdminPage() {
   };
 
   const handleSaveBranchLocation = async () => {
+    if (isAccountInactive) {
+      setInfoError(t("accountInactiveNotice"));
+      return;
+    }
     if (!selectedBranchId) {
       setInfoError("Lütfen önce bir şube seçin.");
       return;
@@ -1203,6 +1260,10 @@ export function InstitutionAdminPage() {
   };
 
   const handleSaveBranchName = async () => {
+    if (isAccountInactive) {
+      setInfoError(t("accountInactiveNotice"));
+      return;
+    }
     if (!selectedBranchId) {
       setInfoError("Lütfen önce bir şube seçin.");
       return;
@@ -1253,6 +1314,10 @@ export function InstitutionAdminPage() {
 
   /** Sadece çalışma saatlerini kaydet (telefon değiştirmeden) */
   const handleSaveWorkingHours = async () => {
+    if (isAccountInactive) {
+      setInfoError(t("accountInactiveNotice"));
+      return;
+    }
     if (!selectedBranchId) {
       setInfoError("Lütfen önce bir şube seçin.");
       return;
@@ -1286,7 +1351,7 @@ export function InstitutionAdminPage() {
     [businessBranches]
   );
 
-  const branchFieldsLocked = !selectedBranchId || infoLoading;
+  const branchFieldsLocked = !selectedBranchId || infoLoading || isAccountInactive;
 
   const hasBranchMarker =
     branchLat != null &&
@@ -1311,13 +1376,13 @@ export function InstitutionAdminPage() {
     const raw = field === "whatsapp" ? rawWhatsappPhone : rawBranchPhone;
     const disabled = infoLoading || !selectedBranchId;
     return (
-      <div className="relative h-11 flex items-center rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950 focus-within:border-cyan-400 focus-within:ring-2 focus-within:ring-cyan-500/20 transition">
-        <span className="absolute left-3 z-10 text-sm font-mono font-bold text-slate-800 dark:text-white pointer-events-none">
+      <div className="relative h-11 flex items-center rounded-lg border border-ink-200 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-500/20 transition">
+        <span className="absolute left-3 z-raised text-sm font-mono font-bold text-ink-800 dark:text-white pointer-events-none">
           +90
         </span>
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-slate-400 dark:text-slate-500 select-none"
+          className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-ink-600 dark:text-ink-400 select-none"
         >
           {buildPhoneMaskGhost(raw)}
         </span>
@@ -1333,30 +1398,13 @@ export function InstitutionAdminPage() {
           onClick={handlePhoneFieldClick}
           disabled={disabled}
           placeholder=""
-          className="relative z-10 h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-slate-800 outline-none caret-cyan-500 disabled:opacity-50 dark:text-slate-100"
+          className="relative z-raised h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-ink-800 outline-none caret-brand-500 disabled:opacity-50 dark:text-ink-100"
         />
       </div>
     );
   };
 
   // ✅ Range Slider Handler
-  const handleHourChange = (day, index, value) => {
-    const newValue = Math.min(Math.max(parseInt(value) || 0, 0), 1440);
-    const current = [...businessHours[day]];
-    current[index] = newValue;
-    
-    // Mantık: başlangıç > bitiş ise swap et
-    if (index === 0 && newValue > current[1]) {
-      current[1] = newValue;
-    } else if (index === 1 && newValue < current[0]) {
-      current[0] = newValue;
-    }
-    
-    setBusinessHours((prev) => ({
-      ...prev,
-      [day]: current,
-    }));
-  };
 
   // ✅ Günü Kapalı/Açık yap
   const toggleDayOpen = (day) => {
@@ -1373,7 +1421,7 @@ export function InstitutionAdminPage() {
 
   if (bootstrapping) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500 dark:bg-[#020617] dark:text-slate-400">
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-[#020617] dark:text-ink-400">
         Oturum kontrol ediliyor...
       </div>
     );
@@ -1383,332 +1431,538 @@ export function InstitutionAdminPage() {
 
   if (loading || !auth?.institution_id || !marginConfig) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500 dark:bg-[#020617] dark:text-slate-400">
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-[#020617] dark:text-ink-400">
         Veriler yükleniyor...
       </div>
     );
   }
 
-  console.log("[ADMIN-PAGE] Central Bank Rates:", centralBankRates);
-  console.log("[ADMIN-PAGE] KKTC Tarih:", kktcTarih);
-  console.log("[ADMIN-PAGE] Margin Config:", marginConfig);
+  devLog("[ADMIN-PAGE] Central Bank Rates:", centralBankRates);
+  devLog("[ADMIN-PAGE] KKTC Tarih:", kktcTarih);
+  devLog("[ADMIN-PAGE] Margin Config:", marginConfig);
 
-  try {
-    const days = kalanAbonelikSuresi;
-    const expired = isExpired;
-    const nearExpiry = days != null && days <= 30;
+  /**
+   * ⚠️ KOD SAĞLIĞI DÜZELTMESİ (denetim bulgusu P-03): Buradan aşağısı, 1.400
+   * satırlık JSX'i saran bir `try { return (…) } catch` bloğuydu. React JSX'i
+   * o anda render etmediği için o catch render hatalarını HİÇBİR ZAMAN
+   * yakalamıyordu — ESLint'in 275 `react-hooks/error-boundaries` hatası tam
+   * olarak bunu söylüyordu (338 sorunun 289'u bu tek dosyadaydı).
+   *
+   * Fallback ekranı ayrıca sabit Türkçe metin kullanıyor, temayı yok sayıyor,
+   * `window.location.href` ile tam sayfa yeniliyor ve ham hata mesajını
+   * işletme sahibine gösteriyordu.
+   *
+   * Gerçek hata yakalama artık App.jsx'teki <ErrorBoundary> ile yapılıyor.
+   */
+  const days = kalanAbonelikSuresi;
+  const expired = isExpired;
+  const nearExpiry = days != null && days <= 30;
 
-    return (
-      <div className="min-h-screen bg-slate-50 text-slate-800 dark:bg-[#020617] dark:text-white">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-3 py-6 sm:px-6 sm:py-8">
-        {/* Header: Logo + İşletme Bilgisi */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
-            <button
-              type="button"
-              onClick={() => navigate("/")}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-400"
-            >
-              <ArrowLeft className="size-4 shrink-0" />
-              <span className="truncate">{t("backToDashboard")}</span>
-            </button>
+  return (
+    <div className="min-h-screen bg-ink-50 text-ink-800 dark:bg-[#020617] dark:text-white">
+      {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
+      <Helmet>
+        <title>İşletme Paneli | AdaDöviz</title>
+        <meta name="robots" content="noindex, nofollow" />
+      </Helmet>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-3 py-6 sm:px-6 sm:py-8">
+      {/* Header: Logo + İşletme Bilgisi */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-wrap items-center gap-3 sm:gap-4">
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
+          >
+            <ArrowLeft className="size-4 shrink-0" />
+            <span className="truncate">{t("backToDashboard")}</span>
+          </button>
 
-            {/* İşletme Logosu — Interactive */}
-            <button
-              type="button"
-              onClick={() => setShowLogoModal(true)}
-              className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-white transition-all duration-300 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-slate-950/60 dark:hover:border-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:h-20 sm:w-20"
-            >
-              {profileLogoUrl ? (
-                <img
-                  src={profileLogoUrl}
-                  alt={auth?.institution_name || "Logo"}
-                  className="h-full w-full object-cover group-hover:opacity-70 transition-opacity"
-                />
-              ) : auth?.institution_id ? (
-                <img
-                  src={`/logos/${auth.institution_id}.png`}
-                  alt={auth.institution_name}
-                  className="h-full w-full object-contain p-1 group-hover:opacity-70 transition-opacity"
-                  onError={(e) => {
-                    e.target.style.display = "none";
-                  }}
-                />
-              ) : (
-                <Building2 className="size-8 text-slate-400" />
+          {/* İşletme Logosu — Interactive */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isAccountInactive) return;
+              setShowLogoModal(true);
+            }}
+            className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-200 bg-white transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-ink-950/60 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:h-20 sm:w-20"
+          >
+            {profileLogoUrl ? (
+              <img
+                src={mediaUrl(profileLogoUrl)}
+                alt={auth?.institution_name || "Logo"}
+                className="h-full w-full object-cover group-hover:opacity-70 transition-opacity"
+              />
+            ) : auth?.institution_id ? (
+              <img
+                src={`/logos/${auth.institution_id}.png`}
+                alt={auth.institution_name}
+                className="h-full w-full object-contain p-1 group-hover:opacity-70 transition-opacity"
+                onError={(e) => {
+                  e.target.style.display = "none";
+                }}
+              />
+            ) : (
+              <Building2 className="size-8 text-ink-600 dark:text-ink-400" />
+            )}
+            <Camera className="absolute size-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
+          </button>
+
+          {/* İşletme Bilgisi */}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-base font-bold text-ink-900 dark:text-white sm:text-lg">
+                {institutionName} {t("managementPanel")}
+              </h1>
+              {showTestBadge && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider text-danger-500 bg-danger-500/10 border border-danger-500/30 shadow-[0_0_12px_rgba(244,63,94,0.5)]">
+                  TEST
+                </span>
               )}
-              <Camera className="absolute size-5 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow" />
-            </button>
-
-            {/* İşletme Bilgisi */}
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-base font-bold text-slate-900 dark:text-white sm:text-lg">
-                  {institutionName} {t("managementPanel")}
-                </h1>
-                {showTestBadge && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-extrabold tracking-wider text-rose-500 bg-rose-500/10 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.5)]">
-                    TEST
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {t("lastUpdate")}: {kktcTarih || formatDateTime(centralBankUpdatedAt) || "—"}
-              </p>
             </div>
+            <p className="text-xs text-ink-500 dark:text-ink-400">
+              {/* U-05: bu değer bültenin tarihi, "son güncelleme" değil. */}
+              {t("bulletinDate")}: {kktcTarih || formatDateTime(centralBankUpdatedAt) || "—"}
+            </p>
           </div>
+        </div>
 
-          <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:gap-3 md:gap-4">
-            {subscriptionWarningDays != null ? (
-              <p className="max-w-full text-xs font-semibold text-amber-600 dark:text-amber-400 sm:text-sm">
-                {t("subscriptionExpiringSoon")} : {subscriptionWarningDays} {t("daysUnit")}
-              </p>
-            ) : null}
-            <div className="relative" ref={notifPanelRef}>
-              <button
-                type="button"
-                onClick={openNotifications}
-                className="relative inline-flex size-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-cyan-400 hover:text-cyan-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-cyan-400 dark:hover:text-cyan-300"
-                aria-label={t("notificationsTitle")}
-                title={t("notificationsTitle")}
-              >
-                <Bell className="size-4" />
-                {notifUnread > 0 ? (
-                  <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
-                    {notifUnread > 99 ? "99+" : notifUnread}
-                  </span>
-                ) : null}
-              </button>
-              {showNotifPanel ? (
-                <div className="absolute right-0 z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900">
-                  <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3 py-2.5 dark:border-slate-800">
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {t("notificationsTitle")}
+        <div className="flex w-full flex-wrap items-center justify-start gap-2 sm:w-auto sm:justify-end sm:gap-3 md:gap-4">
+          {subscriptionWarningDays != null ? (
+            <p className="max-w-full text-xs font-semibold text-warning-600 dark:text-warning-400 sm:text-sm">
+              {t("subscriptionExpiringSoon")} : {subscriptionWarningDays} {t("daysUnit")}
+            </p>
+          ) : null}
+          <div className="relative" ref={notifPanelRef}>
+            <button
+              type="button"
+              onClick={openNotifications}
+              className="relative inline-flex size-10 items-center justify-center rounded-full border border-ink-200 bg-white text-ink-600 transition hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-300"
+              aria-label={t("notificationsTitle")}
+              title={t("notificationsTitle")}
+            >
+              <Bell className="size-4" />
+              {notifUnread > 0 ? (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-bold text-white">
+                  {notifUnread > 99 ? "99+" : notifUnread}
+                </span>
+              ) : null}
+            </button>
+            {showNotifPanel ? (
+              <div className="absolute right-0 z-dropdown mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl dark:border-ink-700 dark:bg-ink-900">
+                <div className="flex items-center justify-between gap-2 border-b border-ink-200 px-3 py-2.5 dark:border-ink-800">
+                  <p className="text-sm font-semibold text-ink-900 dark:text-white">
+                    {t("notificationsTitle")}
+                  </p>
+                  {notifUnread > 0 ? (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllNotificationsRead}
+                      className="text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300"
+                    >
+                      {t("notificationsMarkAllRead")}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {notifLoading && notifications.length === 0 ? (
+                    <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+                  ) : notifications.length === 0 ? (
+                    <p className="p-4 text-sm text-ink-500 dark:text-ink-400">
+                      {t("notificationsEmpty")}
                     </p>
-                    {notifUnread > 0 ? (
-                      <button
-                        type="button"
-                        onClick={handleMarkAllNotificationsRead}
-                        className="text-[11px] font-medium text-cyan-700 hover:underline dark:text-cyan-300"
-                      >
-                        {t("notificationsMarkAllRead")}
-                      </button>
+                  ) : (
+                    <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+                      {notifications.map((n) => (
+                        <li
+                          key={n.id}
+                          className={`px-3 py-3 ${
+                            n.is_read ? "" : "bg-brand-500/5 dark:bg-brand-500/10"
+                          }`}
+                        >
+                          <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
+                            {n.title || t("notificationsTitle")}
+                          </p>
+                          <p className="mt-0.5 text-xs text-ink-600 dark:text-ink-300">
+                            {n.message}
+                          </p>
+                          <p className="mt-1 text-[10px] text-ink-600 dark:text-ink-400">
+                            {formatNotifDate(n.created_at)}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <HeaderActions />
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="inline-flex items-center gap-2 rounded-lg border transition-all duration-300 bg-transparent px-3 py-2 text-sm hover:bg-danger-500/5 dark:hover:shadow-[0_0_15px_rgba(255,0,0,0.6)] border-danger-600 text-danger-700 dark:border-[rgb(255,0,0)] dark:text-[rgb(255,0,0)]"
+          >
+            <LogOut className="size-4" />
+            {t("logoutShort")}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex gap-3 flex-wrap items-start">
+        <button
+          type="button"
+          onClick={() => {
+            resetPasswordForm();
+            setShowPasswordModal(true);
+          }}
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+        >
+          <Key className="size-4" />
+          {t("changePassword")}
+        </button>
+        
+        <button
+          type="button"
+          onClick={() => {
+            setInfoError("");
+            setInfoSuccess("");
+            resetPhoneFields();
+            resetLocationFields();
+            setSelectedBranchId("");
+            setShowInfoModal(true);
+          }}
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+        >
+          <Edit2 className="size-4" />
+          İşletme Bilgilerini Güncelle
+        </button>
+
+        <div className="relative" ref={subscriptionPanelRef}>
+          <button
+            type="button"
+            onClick={toggleSubscriptionPanel}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-300 ${
+              expired || nearExpiry
+                ? "border-danger-600/50 bg-danger-500/5 text-danger-700 hover:border-danger-500 dark:border-[rgb(255,0,0)]/50 dark:text-[rgb(255,0,0)]"
+                : "border-brand-600/40 bg-brand-500/5 text-brand-800 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.35)] dark:border-[rgb(0,255,255)]/40 dark:text-brand-200 dark:hover:border-brand-400"
+            }`}
+          >
+            {t("subscriptionStatus")}
+            <ChevronDown
+              className={`size-4 transition ${showSubscriptionPanel ? "rotate-180" : ""}`}
+            />
+          </button>
+
+          {showSubscriptionPanel ? (
+            <div className="absolute left-0 top-full z-overlay mt-2 w-[min(100vw-2rem,28rem)] overflow-hidden rounded-xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900">
+              {/*
+                ⚠️ ÜRÜN HARİTASI İ-01/İ-02/İ-03: Bu ekranın adı "Abonelik Durumu"
+                ama içinde YALNIZCA şube tablosu vardı — işletme kendi paketini,
+                bitişini, kalan gününü, ne ödediğini ve görünürlük karşılığını
+                hiçbir yerde göremiyordu. Aşağıdaki üç blok bunu kapatıyor.
+              */}
+              {subInfo?.subscription ? (
+                <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-700">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold text-ink-900 dark:text-white">
+                      {subInfo.subscription.plan?.ad || subInfo.subscription.subscription_type}
+                    </span>
+                    {subInfo.subscription.plan?.fiyat > 0 ? (
+                      <span className="font-mono text-sm font-semibold text-ink-900 tabular-nums dark:text-white">
+                        {Number(subInfo.subscription.plan.fiyat).toLocaleString("tr-TR")} ₺
+                        <span className="ml-1 text-xs font-normal text-ink-600 dark:text-ink-400">
+                          / {subInfo.subscription.plan.sure_gun} gün
+                        </span>
+                      </span>
                     ) : null}
                   </div>
-                  <div className="max-h-72 overflow-y-auto">
-                    {notifLoading && notifications.length === 0 ? (
-                      <p className="p-4 text-sm text-slate-500 dark:text-slate-400">{t("loadingShort")}</p>
-                    ) : notifications.length === 0 ? (
-                      <p className="p-4 text-sm text-slate-500 dark:text-slate-400">
-                        {t("notificationsEmpty")}
-                      </p>
-                    ) : (
-                      <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {notifications.map((n) => (
-                          <li
-                            key={n.id}
-                            className={`px-3 py-3 ${
-                              n.is_read ? "" : "bg-cyan-500/5 dark:bg-cyan-500/10"
-                            }`}
-                          >
-                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                              {n.title || t("notificationsTitle")}
-                            </p>
-                            <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
-                              {n.message}
-                            </p>
-                            <p className="mt-1 text-[10px] text-slate-400">
-                              {formatNotifDate(n.created_at)}
-                            </p>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="block text-ink-600 dark:text-ink-400">Bitiş</span>
+                      <span className="font-medium text-ink-900 dark:text-ink-100">
+                        {subInfo.subscription.subscription_end_date
+                          ? new Date(subInfo.subscription.subscription_end_date).toLocaleDateString("tr-TR")
+                          : "Süresiz"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-ink-600 dark:text-ink-400">Kalan</span>
+                      <span
+                        className={`font-semibold ${
+                          subInfo.subscription.days_remaining == null
+                            ? "text-ink-700 dark:text-ink-200"
+                            : subInfo.subscription.days_remaining <= 7
+                              ? "text-warning-700 dark:text-warning-400"
+                              : "text-ink-900 dark:text-ink-100"
+                        }`}
+                      >
+                        {subInfo.subscription.days_remaining == null
+                          ? "—"
+                          : `${subInfo.subscription.days_remaining} gün`}
+                      </span>
+                    </div>
                   </div>
                 </div>
               ) : null}
-            </div>
-            <HeaderActions />
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-2 rounded-lg border transition-all duration-300 bg-transparent px-3 py-2 text-sm hover:bg-red-500/5 dark:hover:shadow-[0_0_15px_rgba(255,0,0,0.6)] border-red-600 text-red-600 dark:border-[rgb(255,0,0)] dark:text-[rgb(255,0,0)]"
-            >
-              <LogOut className="size-4" />
-              {t("logoutShort")}
-            </button>
-          </div>
-        </div>
 
-        <div className="flex gap-3 flex-wrap items-start">
-          <button
-            type="button"
-            onClick={() => {
-              resetPasswordForm();
-              setShowPasswordModal(true);
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
-          >
-            <Key className="size-4" />
-            {t("changePassword")}
-          </button>
-          
-          <button
-            type="button"
-            onClick={() => {
-              setInfoError("");
-              setInfoSuccess("");
-              resetPhoneFields();
-              resetLocationFields();
-              setSelectedBranchId("");
-              setShowInfoModal(true);
-            }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
-          >
-            <Edit2 className="size-4" />
-            İşletme Bilgilerini Güncelle
-          </button>
-
-          <div className="relative" ref={subscriptionPanelRef}>
-            <button
-              type="button"
-              onClick={toggleSubscriptionPanel}
-              className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-300 ${
-                expired || nearExpiry
-                  ? "border-red-600/50 bg-red-500/5 text-red-700 hover:border-red-500 dark:border-[rgb(255,0,0)]/50 dark:text-[rgb(255,0,0)]"
-                  : "border-cyan-600/40 bg-cyan-500/5 text-cyan-800 hover:border-cyan-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.35)] dark:border-[rgb(0,255,255)]/40 dark:text-cyan-200 dark:hover:border-cyan-400"
-              }`}
-            >
-              {t("subscriptionStatus")}
-              <ChevronDown
-                className={`size-4 transition ${showSubscriptionPanel ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            {showSubscriptionPanel ? (
-              <div className="absolute left-0 top-full z-50 mt-2 w-[min(100vw-2rem,28rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-                <div className="grid grid-cols-3 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-400">
-                  <span>{t("branchNameLabel")}</span>
-                  <span>{t("subscriptionStartDate")}</span>
-                  <span>{t("remainingSubscription")}</span>
-                </div>
-                <div className="max-h-64 overflow-y-auto">
-                  {subscriptionPanelLoading ? (
-                    <p className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
-                      {t("loadingShort")}
-                    </p>
-                  ) : subscriptionBranches.length === 0 ? (
-                    <p className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
-                      {t("subscriptionListEmpty")}
-                    </p>
-                  ) : (
-                    subscriptionBranches.map((branch) => {
-                      const inactive = isBranchInactive(branch);
-                      return (
-                      <div
-                        key={branch.id}
-                        className="grid grid-cols-3 gap-2 border-b border-slate-100 px-3 py-2.5 text-sm last:border-b-0 dark:border-slate-800"
-                      >
-                        <div className="min-w-0">
-                          <span className="block truncate font-medium text-slate-800 dark:text-slate-100">
-                            {branch.name || "—"}
-                          </span>
-                          {inactive ? (
-                            <button
-                              type="button"
-                              disabled={renewRequestLoadingId === branch.id}
-                              onClick={() => {
-                                setRenewRequestError("");
-                                setRenewConfirmBranch(branch);
-                              }}
-                              className="mt-1 text-[10px] font-semibold text-amber-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-amber-300"
-                            >
-                              {renewRequestLoadingId === branch.id
-                                ? t("sending")
-                                : t("renewBranchRequestBtn")}
-                            </button>
-                          ) : null}
-                        </div>
-                        <span className="text-slate-600 dark:text-slate-300">
-                          {formatDateShort(
-                            branch.subscription_start_date || branch.created_at
-                          )}
-                        </span>
-                        <span
-                          className={`font-semibold ${
-                            inactive
-                              ? "text-rose-700 dark:text-rose-400"
-                              : branch.subscription_type === "Test" ||
-                                  (branchRemainingDays(branch) != null &&
-                                    branchRemainingDays(branch) > 30)
-                                ? "text-cyan-700 dark:text-cyan-300"
-                                : branchRemainingDays(branch) == null
-                                  ? "text-slate-700 dark:text-slate-200"
-                                  : "text-red-700 dark:text-red-400"
-                          }`}
-                        >
-                          {inactive
-                            ? t("branchInactiveLabel")
-                            : formatBranchRemainingLabel(branch, t)}
-                        </span>
-                      </div>
-                    );
-                    })
-                  )}
-                </div>
-                {renewRequestError ? (
-                  <p className="border-t border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-300">
-                    {renewRequestError}
+              {subInfo?.performance ? (
+                <div className="border-b border-ink-200 bg-brand-500/5 px-4 py-3 dark:border-ink-700">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
+                    Bu dönem görünürlüğünüz
                   </p>
-                ) : null}
-                {renewRequestSuccess ? (
-                  <p className="border-t border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
-                    {renewRequestSuccess}
+                  <div className="mt-1.5 flex flex-wrap items-baseline gap-4 text-sm">
+                    <span className="font-mono text-lg font-bold text-ink-900 tabular-nums dark:text-white">
+                      {subInfo.performance.tiklama}
+                      <span className="ml-1 text-xs font-normal text-ink-600 dark:text-ink-400">tıklama</span>
+                    </span>
+                    {subInfo.performance.siralama ? (
+                      <span className="text-xs text-ink-600 dark:text-ink-400">
+                        {subInfo.performance.toplamIsletme} işletme içinde{" "}
+                        <b className="text-ink-900 dark:text-ink-100">
+                          {subInfo.performance.siralama}. sırada
+                        </b>
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {subInfo?.payments?.length ? (
+                <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-700">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                    Ödemelerim
                   </p>
-                ) : null}
+                  <ul className="space-y-1">
+                    {subInfo.payments.slice(0, 5).map((pay) => (
+                      <li key={pay.id} className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="text-ink-700 dark:text-ink-300">
+                          {new Date(pay.odeme_tarihi).toLocaleDateString("tr-TR")} ·{" "}
+                          {pay.plan_adi || pay.plan_code}
+                        </span>
+                        <span className="font-mono font-semibold text-ink-900 tabular-nums dark:text-ink-100">
+                          {(Number(pay.tutar) + Number(pay.kdv || 0)).toLocaleString("tr-TR")} ₺
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div className="grid grid-cols-3 gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-400">
+                <span>{t("branchNameLabel")}</span>
+                <span>{t("subscriptionStartDate")}</span>
+                <span>{t("remainingSubscription")}</span>
               </div>
-            ) : null}
-          </div>
+              <div className="max-h-64 overflow-y-auto">
+                {subscriptionPanelLoading ? (
+                  <p className="px-3 py-4 text-sm text-ink-500 dark:text-ink-400">
+                    {t("loadingShort")}
+                  </p>
+                ) : subscriptionBranches.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-ink-500 dark:text-ink-400">
+                    {t("subscriptionListEmpty")}
+                  </p>
+                ) : (
+                  subscriptionBranches.map((branch) => {
+                    const inactive = isBranchInactive(branch);
+                    return (
+                    <div
+                      key={branch.id}
+                      className="grid grid-cols-3 gap-2 border-b border-ink-100 px-3 py-2.5 text-sm last:border-b-0 dark:border-ink-800"
+                    >
+                      <div className="min-w-0">
+                        <span className="block truncate font-medium text-ink-800 dark:text-ink-100">
+                          {branch.name || "—"}
+                        </span>
+                        {inactive ? (
+                          <button
+                            type="button"
+                            disabled={renewRequestLoadingId === branch.id}
+                            onClick={() => {
+                              setRenewRequestError("");
+                              setRenewConfirmBranch(branch);
+                            }}
+                            className="mt-1 text-[10px] font-semibold text-warning-700 underline-offset-2 hover:underline disabled:opacity-50 dark:text-warning-300"
+                          >
+                            {renewRequestLoadingId === branch.id
+                              ? t("sending")
+                              : t("renewBranchRequestBtn")}
+                          </button>
+                        ) : null}
+                      </div>
+                      <span className="text-ink-600 dark:text-ink-300">
+                        {formatDateShort(
+                          branch.subscription_start_date || branch.created_at
+                        )}
+                      </span>
+                      <span
+                        className={`font-semibold ${
+                          inactive
+                            ? "text-danger-700 dark:text-danger-400"
+                            : branch.subscription_type === "Test" ||
+                                (branchRemainingDays(branch) != null &&
+                                  branchRemainingDays(branch) > 30)
+                              ? "text-brand-700 dark:text-brand-300"
+                              : branchRemainingDays(branch) == null
+                                ? "text-ink-700 dark:text-ink-200"
+                                : "text-danger-700 dark:text-danger-400"
+                        }`}
+                      >
+                        {inactive
+                          ? t("branchInactiveLabel")
+                          : formatBranchRemainingLabel(branch, t)}
+                      </span>
+                    </div>
+                  );
+                  })
+                )}
+              </div>
+              {renewRequestError ? (
+                <p className="border-t border-danger-500/20 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-300">
+                  {renewRequestError}
+                </p>
+              ) : null}
+              {renewRequestSuccess ? (
+                <p className="border-t border-success-500/20 bg-success-500/10 px-3 py-2 text-xs text-success-700 dark:text-success-300">
+                  {renewRequestSuccess}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
 
+        <button
+          type="button"
+          onClick={openBranchRequestModal}
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+        >
+          <Plus className="size-4" />
+          {canAddBranchDirectly ? t("addBranchDirectBtn") : t("newBranchRequestBtn")}
+        </button>
+      </div>
+
+      {/* Merkez Bankası Bilgisi */}
+      <div className="rounded-2xl border border-brand-500/20 bg-brand-500/10 px-4 py-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
+          {t("centralBankRates")}
+        </p>
+        <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
+          {t("centralBankRatesNote")}
+        </p>
+      </div>
+
+      {isAccountInactive ? (
+        <div className="flex flex-col gap-3 rounded-xl border border-warning-500/40 bg-warning-500/10 px-4 py-3 text-sm text-warning-800 dark:text-warning-200 sm:flex-row sm:items-center sm:justify-between">
+          <p>{t("accountInactiveNotice")}</p>
           <button
             type="button"
-            onClick={openBranchRequestModal}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-all duration-300 hover:border-cyan-400 hover:text-cyan-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-400 dark:hover:text-cyan-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+            onClick={() => setShowSubscriptionPanel(true)}
+            className="inline-flex shrink-0 items-center justify-center rounded-lg bg-warning-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-warning-600"
           >
-            <Plus className="size-4" />
-            {canAddBranchDirectly ? t("addBranchDirectBtn") : t("newBranchRequestBtn")}
+            {t("extendSubscriptionBtn")}
           </button>
         </div>
+      ) : isExpired ? (
+        <div className="rounded-xl border border-danger-500/40 bg-danger-500/10 px-4 py-3 text-sm text-danger-700 dark:text-danger-200">
+          {t("subscriptionExpiredNotice")}
+        </div>
+      ) : null}
 
-        {/* Merkez Bankası Bilgisi */}
-        <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/10 px-4 py-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-cyan-700 dark:text-cyan-300">
-            {t("centralBankRates")}
-          </p>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            {t("centralBankRatesNote")}
-          </p>
+      {error ? (
+        <div className="rounded-xl border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-sm text-danger-700 dark:text-danger-200">
+          {error}
+        </div>
+      ) : null}
+
+      {/* Granüler 6-Kalem Tablo */}
+      <form onSubmit={handleSave} className="space-y-6">
+        {/* ALIŞ KURLAR */}
+        <div>
+          <h3 className="mb-3 text-sm font-semibold text-brand-700 dark:text-[rgb(0,255,255)]">{t("buyRates")}</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'buy').map((item) => {
+            const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
+            const kur = centralBankRates?.[item?.currency]?.[item?.type] || null;
+            const final = applyGranularMargin(kur, cfg?.type, cfg?.value);
+            const itemLabel = marginLabels[item.labelKey] || item.labelKey;
+
+            return (
+              <div
+                key={`${item.currency}-${item.type}`}
+                className="rounded-xl border border-ink-200 bg-white p-4 transition hover:border-ink-300 dark:border-white/10 dark:bg-ink-900/60 dark:hover:border-white/20"
+              >
+                <h4 className="mb-3 text-sm font-bold text-brand-700 dark:text-[rgb(0,255,255)]">{itemLabel}</h4>
+
+                {/* Merkez Bankası KUR */}
+                <div className="mb-3">
+                  <p className="text-xs text-ink-500">{t("centralBankRate")}</p>
+                  <input
+                    readOnly
+                    value={formatNum(kur)}
+                    className="h-10 w-full rounded-lg border border-ink-200 bg-ink-50 px-2 font-mono text-xs text-ink-700 outline-none dark:border-ink-700 dark:bg-ink-950/80 dark:text-ink-300"
+                  />
+                  <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                    {t("effectiveRate")}: {formatNum(centralBankRates?.[item?.currency]?.[item?.type === 'buy' ? 'buy_efektif' : 'sell_efektif'] || '0')}
+                  </p>
+                </div>
+
+                {/* Kâr Tipi Selectbox */}
+                <div className="mb-3">
+                  <label className="text-xs text-ink-500 dark:text-ink-400">{t("profitType")}</label>
+                  <SearchableSelect
+                    value={cfg.type}
+                    onChange={(val) =>
+                      handleMarginChange(item.currency, item.type, "type", val)
+                    }
+                    disabled={ratesLocked}
+                    options={[
+                      { value: "fixed", label: t("fixedPrice") },
+                      { value: "percent", label: t("percentPrice") },
+                    ]}
+                    placeholder={t("profitType")}
+                  />
+                </div>
+
+                {/* Kâr Marjı */}
+                <div className="mb-3">
+                  <label className="text-xs text-ink-500 dark:text-ink-400">
+                    {t("profitMargin")} {cfg.type === "percent" ? "(%)" : "(TL)"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={cfg.value}
+                    disabled={ratesLocked}
+                    onChange={(e) =>
+                      handleMarginChange(item.currency, item.type, "value", e.target.value)
+                    }
+                    className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
+                  />
+                </div>
+
+                {/* Final Kur & Kâr */}
+                <div className="rounded-lg border-2 border-brand-600 bg-brand-50 px-3 py-2.5 text-center dark:border-[rgb(0,255,255)]/80 dark:bg-ink-950/50 dark:shadow-[0_0_15px_rgba(0,255,255,0.5)]">
+                  <p className="text-sm font-bold">
+                    <span className="text-brand-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-brand-700 dark:text-[rgb(0,255,255)] text-base">{formatNum(final)}</span>
+                    {(() => {
+                      const kar = final && kur ? final - kur : 0;
+                      return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
+                    })()}
+                  </p>
+                </div>
+              </div>
+            );
+            }) : null}
+          </div>
         </div>
 
-        {isExpired ? (
-          <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
-            {t("subscriptionExpiredNotice")}
-          </div>
-        ) : null}
-
-        {error ? (
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
-            {error}
-          </div>
-        ) : null}
-
-        {/* Granüler 6-Kalem Tablo */}
-        <form onSubmit={handleSave} className="space-y-6">
-          {/* ALIŞ KURLAR */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-cyan-700 dark:text-[rgb(0,255,255)]">{t("buyRates")}</h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'buy').map((item) => {
+        {/* SATIŞ KURLAR */}
+        <div>
+          <h3 className="mb-3 text-sm font-semibold text-danger-700 dark:text-[rgb(255,0,0)]">{t("sellRates")}</h3>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
               const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
               const kur = centralBankRates?.[item?.currency]?.[item?.type] || null;
               const final = applyGranularMargin(kur, cfg?.type, cfg?.value);
@@ -1717,32 +1971,32 @@ export function InstitutionAdminPage() {
               return (
                 <div
                   key={`${item.currency}-${item.type}`}
-                  className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-white/20"
+                  className="rounded-xl border border-ink-200 bg-white p-4 transition hover:border-ink-300 dark:border-white/10 dark:bg-ink-900/60 dark:hover:border-white/20"
                 >
-                  <h4 className="mb-3 text-sm font-bold text-cyan-700 dark:text-[rgb(0,255,255)]">{itemLabel}</h4>
+                  <h4 className="mb-3 text-sm font-bold text-danger-700 dark:text-[rgb(255,0,0)]">{itemLabel}</h4>
 
                   {/* Merkez Bankası KUR */}
                   <div className="mb-3">
-                    <p className="text-xs text-slate-500">{t("centralBankRate")}</p>
+                    <p className="text-xs text-ink-500">{t("centralBankRate")}</p>
                     <input
                       readOnly
                       value={formatNum(kur)}
-                      className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 font-mono text-xs text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-300"
+                      className="h-10 w-full rounded-lg border border-ink-200 bg-ink-50 px-2 font-mono text-xs text-ink-700 outline-none dark:border-ink-700 dark:bg-ink-950/80 dark:text-ink-300"
                     />
-                    <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
+                    <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
                       {t("effectiveRate")}: {formatNum(centralBankRates?.[item?.currency]?.[item?.type === 'buy' ? 'buy_efektif' : 'sell_efektif'] || '0')}
                     </p>
                   </div>
 
                   {/* Kâr Tipi Selectbox */}
                   <div className="mb-3">
-                    <label className="text-xs text-slate-500 dark:text-slate-400">{t("profitType")}</label>
+                    <label className="text-xs text-ink-500 dark:text-ink-400">{t("profitType")}</label>
                     <SearchableSelect
                       value={cfg.type}
                       onChange={(val) =>
                         handleMarginChange(item.currency, item.type, "type", val)
                       }
-                      disabled={isExpired}
+                      disabled={ratesLocked}
                       options={[
                         { value: "fixed", label: t("fixedPrice") },
                         { value: "percent", label: t("percentPrice") },
@@ -1751,1073 +2005,975 @@ export function InstitutionAdminPage() {
                     />
                   </div>
 
-                  {/* Kâr Marjı */}
+                  {/* Kâr Değeri */}
                   <div className="mb-3">
-                    <label className="text-xs text-slate-500 dark:text-slate-400">
-                      {t("profitMargin")} {cfg.type === "percent" ? "(%)" : "(TL)"}
+                    <label className="text-xs text-ink-500 dark:text-ink-400">
+                      {t("profitValue")} {cfg.type === "percent" ? "(%)" : "(TL)"}
                     </label>
                     <input
                       type="number"
                       min="0"
                       step="0.01"
                       value={cfg.value}
-                      disabled={isExpired}
+                      disabled={ratesLocked}
                       onChange={(e) =>
                         handleMarginChange(item.currency, item.type, "value", e.target.value)
                       }
-                      className="h-10 w-full rounded-lg border border-cyan-500/40 bg-white px-2 text-xs text-cyan-800 outline-none transition-all focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-cyan-200"
+                      className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
                     />
                   </div>
 
                   {/* Final Kur & Kâr */}
-                  <div className="rounded-lg border-2 border-cyan-600 bg-cyan-50 px-3 py-2.5 text-center dark:border-[rgb(0,255,255)]/80 dark:bg-slate-950/50 dark:shadow-[0_0_15px_rgba(0,255,255,0.5)]">
+                  <div className="rounded-lg border-2 border-danger-600 bg-danger-50 px-3 py-2.5 text-center dark:border-[rgb(255,0,0)]/80 dark:bg-ink-950/50 dark:shadow-[0_0_15px_rgba(255,0,0,0.5)]">
                     <p className="text-sm font-bold">
-                      <span className="text-cyan-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-cyan-700 dark:text-[rgb(0,255,255)] text-base">{formatNum(final)}</span>
+                      <span className="text-danger-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-danger-700 dark:text-[rgb(255,0,0)] text-base">{formatNum(final)}</span>
                       {(() => {
                         const kar = final && kur ? final - kur : 0;
-                        return kar > 0 ? <span className="ml-2 text-xs font-semibold text-emerald-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
+                        return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
                       })()}
                     </p>
                   </div>
                 </div>
               );
-              }) : null}
-            </div>
+            }) : null}
           </div>
+        </div>
 
-          {/* SATIŞ KURLAR */}
-          <div>
-            <h3 className="mb-3 text-sm font-semibold text-red-700 dark:text-[rgb(255,0,0)]">{t("sellRates")}</h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
-                const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
-                const kur = centralBankRates?.[item?.currency]?.[item?.type] || null;
-                const final = applyGranularMargin(kur, cfg?.type, cfg?.value);
-                const itemLabel = marginLabels[item.labelKey] || item.labelKey;
-
-                return (
-                  <div
-                    key={`${item.currency}-${item.type}`}
-                    className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 dark:border-white/10 dark:bg-slate-900/60 dark:hover:border-white/20"
-                  >
-                    <h4 className="mb-3 text-sm font-bold text-red-700 dark:text-[rgb(255,0,0)]">{itemLabel}</h4>
-
-                    {/* Merkez Bankası KUR */}
-                    <div className="mb-3">
-                      <p className="text-xs text-slate-500">{t("centralBankRate")}</p>
-                      <input
-                        readOnly
-                        value={formatNum(kur)}
-                        className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 font-mono text-xs text-slate-700 outline-none dark:border-slate-700 dark:bg-slate-950/80 dark:text-slate-300"
-                      />
-                      <p className="mt-1 text-xs text-slate-500 dark:text-gray-400">
-                        {t("effectiveRate")}: {formatNum(centralBankRates?.[item?.currency]?.[item?.type === 'buy' ? 'buy_efektif' : 'sell_efektif'] || '0')}
-                      </p>
-                    </div>
-
-                    {/* Kâr Tipi Selectbox */}
-                    <div className="mb-3">
-                      <label className="text-xs text-slate-500 dark:text-slate-400">{t("profitType")}</label>
-                      <SearchableSelect
-                        value={cfg.type}
-                        onChange={(val) =>
-                          handleMarginChange(item.currency, item.type, "type", val)
-                        }
-                        disabled={isExpired}
-                        options={[
-                          { value: "fixed", label: t("fixedPrice") },
-                          { value: "percent", label: t("percentPrice") },
-                        ]}
-                        placeholder={t("profitType")}
-                      />
-                    </div>
-
-                    {/* Kâr Değeri */}
-                    <div className="mb-3">
-                      <label className="text-xs text-slate-500 dark:text-slate-400">
-                        {t("profitValue")} {cfg.type === "percent" ? "(%)" : "(TL)"}
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={cfg.value}
-                        disabled={isExpired}
-                        onChange={(e) =>
-                          handleMarginChange(item.currency, item.type, "value", e.target.value)
-                        }
-                        className="h-10 w-full rounded-lg border border-cyan-500/40 bg-white px-2 text-xs text-cyan-800 outline-none transition-all focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-cyan-200"
-                      />
-                    </div>
-
-                    {/* Final Kur & Kâr */}
-                    <div className="rounded-lg border-2 border-red-600 bg-red-50 px-3 py-2.5 text-center dark:border-[rgb(255,0,0)]/80 dark:bg-slate-950/50 dark:shadow-[0_0_15px_rgba(255,0,0,0.5)]">
-                      <p className="text-sm font-bold">
-                        <span className="text-red-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-red-700 dark:text-[rgb(255,0,0)] text-base">{formatNum(final)}</span>
-                        {(() => {
-                          const kar = final && kur ? final - kur : 0;
-                          return kar > 0 ? <span className="ml-2 text-xs font-semibold text-emerald-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
-                        })()}
-                      </p>
-                    </div>
-                  </div>
-                );
-              }) : null}
-            </div>
-          </div>
-
-          {/* Kaydet Butonu */}
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={saving || loading || isExpired}
-              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-teal-400 to-indigo-500 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-teal-500/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Save className="size-4" />
-              {saving ? t("saving") : t("saveMargins")}
-            </button>
-          </div>
-        </form>
-
-        {/* ✅ FIXED MODAL - BAŞARILI KAYDETME (KAPATILABILIR) */}
-        {showSuccessModal && (
-          <div 
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-md"
-            onClick={() => setShowSuccessModal(false)}  // ✅ Dışarı tıklanınca kapat
+        {/* Kaydet Butonu */}
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={saving || loading || ratesLocked}
+            className="btn-primary"
           >
-            <div 
-              className="relative bg-white border border-slate-200 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all dark:bg-[#1a1f2e] dark:border-gray-700"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <HeaderActions compact />
-                <button
-                  type="button"
-                  onClick={() => setShowSuccessModal(false)}
-                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
-                  aria-label="Kapat"
-                >
-                  <X size={22} />
-                </button>
-              </div>
+            <Save className="size-4" />
+            {saving ? t("saving") : t("saveMargins")}
+          </button>
+        </div>
+      </form>
 
-              <div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
-                <span className="text-emerald-500 text-3xl">✓</span>
-              </div>
-              <h3 className="text-slate-900 text-xl font-bold dark:text-white">Kurlar başarıyla kaydedildi!</h3>
-            </div>
-          </div>
-        )}
-
-        {/* ✅ YÜKLENIYOR MODAL (Spinner) */}
-        {isSaving && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-md">
-            <div className="bg-[#1a1f2e] border border-gray-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all">
-              <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
-                <svg className="w-8 h-8 text-blue-500" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-              <h3 className="text-white text-xl font-bold">Kâr ayarları kaydediliyor...</h3>
-              <p className="text-slate-300 text-sm mt-2">Lütfen bekleyin</p>
-            </div>
-          </div>
-        )}
-
-        {/* ✅ FIXED MODAL - ÇIKIS (ADMIN PANELINDEN) */}
-        {showLogoutPopup && (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 backdrop-blur-md">
-            <div className="bg-[#1a1f2e] border border-gray-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all">
-              <div className="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
-                <svg className="w-8 h-8 text-rose-500" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-              </div>
-              <h3 className="text-white text-xl font-bold">Çıkış Yapılıyor...</h3>
-              <p className="text-slate-300 text-sm mt-2">Dashboard'a dönüyorsunuz</p>
-            </div>
-          </div>
-        )}
-
-        {/* ✅ Logo Modal — File Select ve Crop */}
-        {showLogoModal && (
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onMouseDown={(e) => {
-              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
-            }}
-            onClick={(e) => {
-              if (
-                e.target === e.currentTarget &&
-                e.currentTarget.dataset.backdropDown === "1" &&
-                !logoLoading &&
-                !logoCropStep
-              ) {
-                setShowLogoModal(false);
-              }
-            }}
+      {/* ✅ FIXED MODAL - BAŞARILI KAYDETME (KAPATILABILIR) */}
+      {showSuccessModal && (
+        <div 
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/75 backdrop-blur-md"
+          onClick={() => setShowSuccessModal(false)}  // ✅ Dışarı tıklanınca kapat
+        >
+          <div role="dialog" aria-modal="true" 
+            className="relative bg-white border border-ink-200 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all dark:bg-[#1a1f2e] dark:border-ink-700"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <HeaderActions compact />
-                <button
-                  type="button"
-                  onClick={() => !logoLoading && setShowLogoModal(false)}
-                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
-                  aria-label="Kapat"
-                >
-                  <X size={22} />
-                </button>
-              </div>
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
+              <HeaderActions compact />
+              <button
+                type="button"
+                onClick={() => setShowSuccessModal(false)}
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
+                aria-label="Kapat"
+              >
+                <X size={22} />
+              </button>
+            </div>
 
-              {/* STEP 1: Dosya Seçimi */}
-              {!logoCropStep ? (
-                <div className="p-6">
-                  <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
-                    <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
-                      <Camera className="size-5" />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                      Logo Yönet
-                    </h3>
+            <div className="w-16 h-16 bg-success-500/20 rounded-full flex items-center justify-center mb-4">
+              <span className="text-success-500 text-3xl">✓</span>
+            </div>
+            <h3 className="text-ink-900 text-xl font-bold dark:text-white">Kurlar başarıyla kaydedildi!</h3>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ YÜKLENIYOR MODAL (Spinner) */}
+      {isSaving && (
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/75 backdrop-blur-md">
+          <div role="dialog" aria-modal="true" className="bg-[#1a1f2e] border border-ink-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all">
+            <div className="w-16 h-16 bg-brand-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
+              <svg className="w-8 h-8 text-brand-500" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <h3 className="text-white text-xl font-bold">Kâr ayarları kaydediliyor...</h3>
+            <p className="text-ink-300 text-sm mt-2">Lütfen bekleyin</p>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ FIXED MODAL - ÇIKIS (ADMIN PANELINDEN) */}
+      {showLogoutPopup && (
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/75 backdrop-blur-md">
+          <div role="dialog" aria-modal="true" className="bg-[#1a1f2e] border border-ink-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all">
+            <div className="w-16 h-16 bg-danger-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
+              <svg className="w-8 h-8 text-danger-500" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <h3 className="text-white text-xl font-bold">Çıkış Yapılıyor...</h3>
+            <p className="text-ink-300 text-sm mt-2">Dashboard'a dönüyorsunuz</p>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Logo Modal — File Select ve Crop */}
+      {showLogoModal && (
+        <div
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (
+              e.target === e.currentTarget &&
+              e.currentTarget.dataset.backdropDown === "1" &&
+              !logoLoading &&
+              !logoCropStep
+            ) {
+              setShowLogoModal(false);
+            }
+          }}
+        >
+          <div role="dialog" aria-modal="true"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
+              <HeaderActions compact />
+              <button
+                type="button"
+                onClick={() => !logoLoading && setShowLogoModal(false)}
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
+                aria-label="Kapat"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            {/* STEP 1: Dosya Seçimi */}
+            {!logoCropStep ? (
+              <div className="p-6">
+                <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
+                  <div className="rounded-lg bg-brand-500/10 p-2 text-brand-600 dark:text-brand-400">
+                    <Camera className="size-5" />
                   </div>
-
-                  <div className="space-y-4">
-                    {/* Logo Önizlemesi */}
-                    <div className="flex justify-center">
-                      <div className="flex h-32 w-32 items-center justify-center rounded-full border-2 border-slate-300 bg-slate-50 overflow-hidden dark:border-slate-700 dark:bg-slate-950">
-                        {auth?.institution_id ? (
-                          <img
-                            src={`/logos/${auth.institution_id}.png`}
-                            alt={auth.institution_name}
-                            className="h-full w-full object-cover"
-                            onError={(e) => (e.target.style.display = "none")}
-                          />
-                        ) : (
-                          <Building2 className="size-12 text-slate-300 dark:text-slate-600" />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Drag & Drop Dosya Yükleme */}
-                    <div
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        if (e.dataTransfer.files[0]) {
-                          handleLogoFileSelect(e.dataTransfer.files[0]);
-                        }
-                      }}
-                      className="rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 p-6 text-center transition hover:border-cyan-400 hover:bg-cyan-50 dark:border-slate-700 dark:bg-slate-950 dark:hover:border-cyan-500 dark:hover:bg-cyan-950/20"
-                    >
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => e.target.files[0] && handleLogoFileSelect(e.target.files[0])}
-                        disabled={logoLoading}
-                        className="hidden"
-                        id="logo-input"
-                      />
-                      <label htmlFor="logo-input" className="cursor-pointer">
-                        <Camera className="mx-auto size-6 text-slate-400 mb-2" />
-                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                          Dosya sürükleyin veya seçin
-                        </p>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          PNG, JPG, GIF, WEBP
-                        </p>
-                      </label>
-                    </div>
-
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowLogoModal(false)}
-                        disabled={logoLoading}
-                        className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
-                      >
-                        {t("cancel")}
-                      </button>
-                    </div>
-                  </div>
+                  <h3 className="text-lg font-bold text-ink-800 dark:text-ink-100">
+                    Logo Yönet
+                  </h3>
                 </div>
-              ) : (
-                /* STEP 2: Kırpma */
-                <div className="p-6">
-                  <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
-                    <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
-                      <Camera className="size-5" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                        Logoyu Kırp
-                      </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Zoom ve konumu ayarla</p>
-                    </div>
-                  </div>
 
-                  <div className="space-y-4">
-                    {/* Cropper Container */}
-                    <div className="relative bg-slate-900 rounded-lg overflow-hidden" style={{ height: "300px" }}>
-                      {logoPreviewUrl && (
-                        <Cropper
-                          image={logoPreviewUrl}
-                          crop={logoCrop}
-                          zoom={logoZoom}
-                          aspect={1 / 1}
-                          cropShape="round"
-                          showGrid={false}
-                          onCropChange={setLogoCrop}
-                          onCropComplete={handleCropComplete}
-                          onZoomChange={setLogoZoom}
-                          restrictPosition={true}
+                <div className="space-y-4">
+                  {/* Logo Önizlemesi */}
+                  <div className="flex justify-center">
+                    <div className="flex h-32 w-32 items-center justify-center rounded-full border-2 border-ink-300 bg-ink-50 overflow-hidden dark:border-ink-700 dark:bg-ink-950">
+                      {auth?.institution_id ? (
+                        <img
+                          src={`/logos/${auth.institution_id}.png`}
+                          alt={auth.institution_name}
+                          className="h-full w-full object-cover"
+                          onError={(e) => (e.target.style.display = "none")}
                         />
+                      ) : (
+                        <Building2 className="size-12 text-ink-300 dark:text-ink-600" />
                       )}
                     </div>
-
-                    {/* Zoom Slider */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-400">
-                        Zoom
-                      </label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="3"
-                        step="0.1"
-                        value={logoZoom}
-                        onChange={(e) => setLogoZoom(parseFloat(e.target.value))}
-                        disabled={logoLoading}
-                        className="w-full h-2 bg-slate-300 rounded-lg cursor-pointer dark:bg-slate-700 accent-cyan-500"
-                      />
-                      <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
-                        <span>1x</span>
-                        <span className="font-semibold">{logoZoom.toFixed(1)}x</span>
-                        <span>3x</span>
-                      </div>
-                    </div>
-
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLogoCropStep(false);
-                          setLogoPreviewUrl(null);
-                          setLogoFile(null);
-                        }}
-                        disabled={logoLoading}
-                        className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white"
-                      >
-                        Geri
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSaveCroppedLogo}
-                        disabled={logoLoading}
-                        className="flex-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
-                      >
-                        {logoLoading ? "Kaydediliyor..." : "Logoyu Kaydet"}
-                      </button>
-                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
-        {/* ✅ İşletme Bilgileri Modal — Yeni Versiyon */}
-        {showInfoModal && (
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onMouseDown={(e) => {
-              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
-            }}
-            onClick={(e) => {
-              if (
-                e.target === e.currentTarget &&
-                e.currentTarget.dataset.backdropDown === "1" &&
-                !infoLoading
-              ) {
-                closeInfoModal();
-              }
-            }}
-          >
-            <div
-              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <HeaderActions compact />
-                <button
-                  type="button"
-                  onClick={() => !infoLoading && closeInfoModal()}
-                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
-                  aria-label="Kapat"
-                >
-                  <X size={22} />
-                </button>
-              </div>
-
-              <div className="mb-6 flex items-start justify-between gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
-                    <Edit2 className="size-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                      İşletme Bilgilerini Güncelle
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Şube telefonları ve çalışma saatleri
-                    </p>
-                  </div>
-                </div>
-                <div className="w-44 shrink-0 sm:w-52">
-                  <SearchableSelect
-                    value={selectedBranchId}
-                    onChange={handleBranchSelect}
-                    options={branchSelectOptions}
-                    placeholder={t("selectBranchPlaceholder")}
-                    aria-label={t("selectBranchPlaceholder")}
-                    disabled={infoLoading || businessBranches.length === 0}
-                  />
-                </div>
-              </div>
-
-              {/* Form: şube seç + telefonlar + çalışma saatleri */}
-              <div className="space-y-4">
+                  {/* Drag & Drop Dosya Yükleme */}
                   <div
-                    className={`space-y-1.5 ${
-                      !selectedBranchId ? "pointer-events-none opacity-50" : ""
-                    }`}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files[0]) {
+                        handleLogoFileSelect(e.dataTransfer.files[0]);
+                      }
+                    }}
+                    className="rounded-lg border-2 border-dashed border-ink-300 bg-ink-50 p-6 text-center transition hover:border-brand-400 hover:bg-brand-50 dark:border-ink-700 dark:bg-ink-950 dark:hover:border-brand-500 dark:hover:bg-brand-900/20"
                   >
-                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                      <Building2 className="size-4" />
-                      {t("updateBranchNameHint")}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => e.target.files[0] && handleLogoFileSelect(e.target.files[0])}
+                      disabled={logoLoading}
+                      className="hidden"
+                      id="logo-input"
+                    />
+                    <label htmlFor="logo-input" className="cursor-pointer">
+                      <Camera className="mx-auto size-6 text-ink-600 dark:text-ink-400 mb-2" />
+                      <p className="text-sm font-medium text-ink-700 dark:text-ink-300">
+                        Dosya sürükleyin veya seçin
+                      </p>
+                      <p className="text-xs text-ink-500 dark:text-ink-400 mt-1">
+                        PNG, JPG, GIF, WEBP
+                      </p>
                     </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={branchName}
-                        onChange={(e) => setBranchName(e.target.value)}
-                        disabled={branchFieldsLocked}
-                        placeholder={t("branchNamePlaceholder")}
-                        className="h-11 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSaveBranchName}
-                        disabled={branchFieldsLocked || !String(branchName || "").trim()}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:cursor-not-allowed disabled:opacity-50 dark:text-cyan-300"
-                      >
-                        <Save className="size-4" />
-                        {infoLoading ? "..." : t("saveBranchNameBtn")}
-                      </button>
-                    </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                      <Phone className="size-4" />
-                      {t("branchPhoneLabel")}
-                    </label>
-                    {renderMaskedPhoneInput("branch", branchPhoneInputRef)}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                      <Phone className="size-4" />
-                      {t("whatsappPhoneLabel")}
-                    </label>
-                    {renderMaskedPhoneInput("whatsapp", whatsappPhoneInputRef)}
-                  </div>
-
-                  {!selectedBranchId ? (
-                    <p className="text-xs text-amber-600 dark:text-amber-300">
-                      {t("selectBranchToEditPhones")}
-                    </p>
-                  ) : null}
-
-                  {/* Çalışma Saatleri — Haftanın 7 Günü */}
-                  <div
-                    className={`mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 ${
-                      !selectedBranchId ? "pointer-events-none opacity-50" : ""
-                    }`}
-                  >
-                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
-                      <Clock className="size-4" />
-                      Çalışma Saatleri
-                    </h4>
-
-                    <div className="space-y-4">
-                      {dayLabels.map((day) => {
-                        const [start, end] = businessHours[day];
-                        const isClosed = start === null || end === null;
-                        const displayStart = minutesToTime(start);
-                        const displayEnd = minutesToTime(end);
-                        return (
-                          <div key={day} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/50">
-                            <div className="flex items-center justify-between mb-3">
-                              <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                                {dayDisplayNames[day]}
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => toggleDayOpen(day)}
-                                disabled={branchFieldsLocked}
-                                className={`text-xs px-2.5 py-1.5 rounded font-medium transition disabled:cursor-not-allowed ${
-                                  isClosed
-                                    ? "bg-slate-300 text-slate-700 dark:bg-slate-600 dark:text-slate-200"
-                                    : "bg-cyan-500/20 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300"
-                                }`}
-                              >
-                                {isClosed ? "Kapalı" : "Açık"}
-                              </button>
-                            </div>
-
-                            {!isClosed ? (
-                              <div className="space-y-3">
-                                <DualRangeSlider
-                                  min={0}
-                                  max={1440}
-                                  step={15}
-                                  minValue={start}
-                                  maxValue={end}
-                                  disabled={branchFieldsLocked}
-                                  onRangeChange={(newStart, newEnd) => {
-                                    if (branchFieldsLocked) return;
-                                    setBusinessHours((prev) => ({
-                                      ...prev,
-                                      [day]: [newStart, newEnd],
-                                    }));
-                                  }}
-                                />
-                                
-                                <p className="text-sm font-semibold text-center text-cyan-600 dark:text-cyan-400 pt-1">
-                                  {displayStart} — {displayEnd}
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-slate-500 dark:text-slate-400 text-center py-3 font-medium">
-                                Bu gün kapalıdır.
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Şube Konumu */}
-                  <div
-                    className={`mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 ${
-                      !selectedBranchId ? "pointer-events-none opacity-50" : ""
-                    }`}
-                  >
-                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
-                      <MapPin className="size-4" />
-                      {t("branchLocationTitle")}
-                    </h4>
-
-                    <div className="space-y-3">
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                          {t("branchAddressLabel")}
-                        </label>
-                        <textarea
-                          value={branchAddress}
-                          onChange={(e) => setBranchAddress(e.target.value)}
-                          disabled={branchFieldsLocked}
-                          rows={3}
-                          placeholder={t("branchAddressPlaceholder")}
-                          className="min-h-[88px] w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                        />
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          {t("branchMapHint")}
-                          {locationGeocoding ? " ..." : ""}
-                        </p>
-                        {hasBranchMarker ? (
-                          <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                            {Number(branchLat).toFixed(5)}, {Number(branchLng).toFixed(5)}
-                          </p>
-                        ) : null}
-                      </div>
-
-                      {showInfoModal ? (
-                        <div className="relative h-56 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-                          <MapContainer
-                            key={`branch-map-${selectedBranchId || "none"}-${showInfoModal}`}
-                            center={hasBranchMarker ? [branchLat, branchLng] : KKTC_MAP_CENTER}
-                            zoom={hasBranchMarker ? 14 : 9}
-                            scrollWheelZoom={!branchFieldsLocked}
-                            dragging={!branchFieldsLocked}
-                            className="h-full w-full"
-                          >
-                            <TileLayer
-                              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                            />
-                            <BranchMapClickHandler
-                              disabled={branchFieldsLocked}
-                              onPick={handleBranchMapPick}
-                            />
-                            {hasBranchMarker ? (
-                              <Marker position={[branchLat, branchLng]} />
-                            ) : null}
-                          </MapContainer>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {infoError ? (
-                    <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
-                      {infoError}
-                    </div>
-                  ) : null}
-
-                  {infoSuccess ? (
-                    <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
-                      {infoSuccess}
-                    </div>
-                  ) : null}
-
-                  <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">
+                  <div className="flex gap-3 pt-2">
                     <button
                       type="button"
-                      onClick={closeInfoModal}
-                      disabled={infoLoading}
-                      className="w-full min-w-0 flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:text-white sm:min-w-[8rem]"
+                      onClick={() => setShowLogoModal(false)}
+                      disabled={logoLoading}
+                      className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition hover:border-ink-300 hover:text-ink-900 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:text-white"
                     >
                       {t("cancel")}
                     </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* STEP 2: Kırpma */
+              <div className="p-6">
+                <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
+                  <div className="rounded-lg bg-brand-500/10 p-2 text-brand-600 dark:text-brand-400">
+                    <Camera className="size-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-ink-800 dark:text-ink-100">
+                      Logoyu Kırp
+                    </h3>
+                    <p className="text-xs text-ink-500 dark:text-ink-400">Zoom ve konumu ayarla</p>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {/* Cropper Container */}
+                  <div className="relative bg-ink-900 rounded-lg overflow-hidden" style={{ height: "300px" }}>
+                    {logoPreviewUrl && (
+                      <Cropper
+                        image={logoPreviewUrl}
+                        crop={logoCrop}
+                        zoom={logoZoom}
+                        aspect={1 / 1}
+                        cropShape="round"
+                        showGrid={false}
+                        onCropChange={setLogoCrop}
+                        onCropComplete={handleCropComplete}
+                        onZoomChange={setLogoZoom}
+                        restrictPosition={true}
+                      />
+                    )}
+                  </div>
+
+                  {/* Zoom Slider */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                      Zoom
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="3"
+                      step="0.1"
+                      value={logoZoom}
+                      onChange={(e) => setLogoZoom(parseFloat(e.target.value))}
+                      disabled={logoLoading}
+                      className="w-full h-2 bg-ink-300 rounded-lg cursor-pointer dark:bg-ink-700 accent-brand-500"
+                    />
+                    <div className="flex justify-between text-xs text-ink-500 dark:text-ink-400">
+                      <span>1x</span>
+                      <span className="font-semibold">{logoZoom.toFixed(1)}x</span>
+                      <span>3x</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
                     <button
                       type="button"
-                      onClick={handleSaveWorkingHours}
-                      disabled={branchFieldsLocked}
-                      className="flex-1 min-w-[8rem] rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed dark:text-cyan-300"
+                      onClick={() => {
+                        setLogoCropStep(false);
+                        setLogoPreviewUrl(null);
+                        setLogoFile(null);
+                      }}
+                      disabled={logoLoading}
+                      className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition hover:border-ink-300 hover:text-ink-900 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:text-white"
                     >
-                      {infoLoading ? "Kaydediliyor..." : t("saveWorkingHoursBtn")}
+                      Geri
                     </button>
                     <button
                       type="button"
-                      onClick={handleSaveBranchLocation}
-                      disabled={branchFieldsLocked}
-                      className="flex-1 min-w-[8rem] rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-sm font-semibold text-cyan-700 transition hover:border-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed dark:text-cyan-300"
+                      onClick={handleSaveCroppedLogo}
+                      disabled={logoLoading}
+                      className="flex-1 rounded-lg bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition dark:bg-brand-600 dark:hover:bg-brand-500"
                     >
-                      {infoLoading ? "Kaydediliyor..." : t("saveBranchLocationBtn")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handlePhoneSubmit}
-                      disabled={
-                        branchFieldsLocked ||
-                        rawBranchPhone.length !== 10 ||
-                        rawWhatsappPhone.length !== 10
-                      }
-                      className="flex-1 min-w-[8rem] rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition dark:bg-cyan-600 dark:hover:bg-cyan-500"
-                    >
-                      {infoLoading ? "Kaydediliyor..." : t("saveBranchPhonesBtn")}
+                      {logoLoading ? "Kaydediliyor..." : "Logoyu Kaydet"}
                     </button>
                   </div>
                 </div>
-            </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+      )}
 
-        {showBranchRequestModal && (
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onMouseDown={(e) => {
-              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
-                closeBranchRequestModal();
-              }
-            }}
+      {/* ✅ İşletme Bilgileri Modal — Yeni Versiyon */}
+      {showInfoModal && (
+        <div
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (
+              e.target === e.currentTarget &&
+              e.currentTarget.dataset.backdropDown === "1" &&
+              !infoLoading
+            ) {
+              closeInfoModal();
+            }
+          }}
+        >
+          <div role="dialog" aria-modal="true"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <HeaderActions compact />
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
+              <HeaderActions compact />
+              <button
+                type="button"
+                onClick={() => !infoLoading && closeInfoModal()}
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
+                aria-label="Kapat"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="mb-6 flex items-start justify-between gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="rounded-lg bg-brand-500/10 p-2 text-brand-600 dark:text-brand-400">
+                  <Edit2 className="size-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-ink-800 dark:text-ink-100">
+                    İşletme Bilgilerini Güncelle
+                  </h3>
+                  <p className="text-xs text-ink-500 dark:text-ink-400 mt-0.5">
+                    Şube telefonları ve çalışma saatleri
+                  </p>
+                </div>
+              </div>
+              <div className="w-44 shrink-0 sm:w-52">
+                <SearchableSelect
+                  value={selectedBranchId}
+                  onChange={handleBranchSelect}
+                  options={branchSelectOptions}
+                  placeholder={t("selectBranchPlaceholder")}
+                  aria-label={t("selectBranchPlaceholder")}
+                  disabled={infoLoading || businessBranches.length === 0}
+                />
+              </div>
+            </div>
+
+            {/* Form: şube seç + telefonlar + çalışma saatleri */}
+            <div className="space-y-4">
+                <div
+                  className={`space-y-1.5 ${
+                    !selectedBranchId ? "pointer-events-none opacity-50" : ""
+                  }`}
+                >
+                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                    <Building2 className="size-4" />
+                    {t("updateBranchNameHint")}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={branchName}
+                      onChange={(e) => setBranchName(e.target.value)}
+                      disabled={branchFieldsLocked}
+                      placeholder={t("branchNamePlaceholder")}
+                      className="h-11 flex-1 rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveBranchName}
+                      disabled={branchFieldsLocked || !String(branchName || "").trim()}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 text-sm font-semibold text-brand-700 transition hover:border-brand-400 disabled:cursor-not-allowed disabled:opacity-50 dark:text-brand-300"
+                    >
+                      <Save className="size-4" />
+                      {infoLoading ? "..." : t("saveBranchNameBtn")}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                    <Phone className="size-4" />
+                    {t("branchPhoneLabel")}
+                  </label>
+                  {renderMaskedPhoneInput("branch", branchPhoneInputRef)}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                    <Phone className="size-4" />
+                    {t("whatsappPhoneLabel")}
+                  </label>
+                  {renderMaskedPhoneInput("whatsapp", whatsappPhoneInputRef)}
+                </div>
+
+                {!selectedBranchId ? (
+                  <p className="text-xs text-warning-600 dark:text-warning-300">
+                    {t("selectBranchToEditPhones")}
+                  </p>
+                ) : null}
+
+                {/* Çalışma Saatleri — Haftanın 7 Günü */}
+                <div
+                  className={`mt-6 pt-6 border-t border-ink-200 dark:border-ink-700 ${
+                    !selectedBranchId ? "pointer-events-none opacity-50" : ""
+                  }`}
+                >
+                  <h4 className="text-sm font-semibold text-ink-800 dark:text-ink-100 mb-4 flex items-center gap-2">
+                    <Clock className="size-4" />
+                    Çalışma Saatleri
+                  </h4>
+
+                  <div className="space-y-4">
+                    {dayLabels.map((day) => {
+                      const [start, end] = businessHours[day];
+                      const isClosed = start === null || end === null;
+                      const displayStart = minutesToTime(start);
+                      const displayEnd = minutesToTime(end);
+                      return (
+                        <div key={day} className="rounded-lg border border-ink-200 bg-ink-50 p-4 dark:border-ink-700 dark:bg-ink-950/50">
+                          <div className="flex items-center justify-between mb-3">
+                            <label className="text-sm font-semibold text-ink-700 dark:text-ink-300">
+                              {dayDisplayNames[day]}
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => toggleDayOpen(day)}
+                              disabled={branchFieldsLocked}
+                              className={`text-xs px-2.5 py-1.5 rounded font-medium transition disabled:cursor-not-allowed ${
+                                isClosed
+                                  ? "bg-ink-300 text-ink-700 dark:bg-ink-600 dark:text-ink-200"
+                                  : "bg-brand-500/20 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
+                              }`}
+                            >
+                              {isClosed ? "Kapalı" : "Açık"}
+                            </button>
+                          </div>
+
+                          {!isClosed ? (
+                            <div className="space-y-3">
+                              <DualRangeSlider
+                                min={0}
+                                max={1440}
+                                step={15}
+                                minValue={start}
+                                maxValue={end}
+                                disabled={branchFieldsLocked}
+                                onRangeChange={(newStart, newEnd) => {
+                                  if (branchFieldsLocked) return;
+                                  setBusinessHours((prev) => ({
+                                    ...prev,
+                                    [day]: [newStart, newEnd],
+                                  }));
+                                }}
+                              />
+                              
+                              <p className="text-sm font-semibold text-center text-brand-600 dark:text-brand-400 pt-1">
+                                {displayStart} — {displayEnd}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-ink-500 dark:text-ink-400 text-center py-3 font-medium">
+                              Bu gün kapalıdır.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Şube Konumu */}
+                <div
+                  className={`mt-6 pt-6 border-t border-ink-200 dark:border-ink-700 ${
+                    !selectedBranchId ? "pointer-events-none opacity-50" : ""
+                  }`}
+                >
+                  <h4 className="text-sm font-semibold text-ink-800 dark:text-ink-100 mb-4 flex items-center gap-2">
+                    <MapPin className="size-4" />
+                    {t("branchLocationTitle")}
+                  </h4>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                        {t("branchAddressLabel")}
+                      </label>
+                      <textarea
+                        value={branchAddress}
+                        onChange={(e) => setBranchAddress(e.target.value)}
+                        disabled={branchFieldsLocked}
+                        rows={3}
+                        placeholder={t("branchAddressPlaceholder")}
+                        className="min-h-[88px] w-full resize-y rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                      />
+                      <p className="text-[11px] text-ink-500 dark:text-ink-400">
+                        {t("branchMapHint")}
+                        {locationGeocoding ? " ..." : ""}
+                      </p>
+                      {hasBranchMarker ? (
+                        <p className="font-mono text-[11px] text-ink-500 dark:text-ink-400">
+                          {Number(branchLat).toFixed(5)}, {Number(branchLng).toFixed(5)}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {showInfoModal ? (
+                      <div className="relative h-56 overflow-hidden rounded-lg border border-ink-200 dark:border-ink-700">
+                        <MapContainer
+                          key={`branch-map-${selectedBranchId || "none"}-${showInfoModal}`}
+                          center={hasBranchMarker ? [branchLat, branchLng] : KKTC_MAP_CENTER}
+                          zoom={hasBranchMarker ? 14 : 9}
+                          scrollWheelZoom={!branchFieldsLocked}
+                          dragging={!branchFieldsLocked}
+                          className="h-full w-full"
+                        >
+                          <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          />
+                          <BranchMapClickHandler
+                            disabled={branchFieldsLocked}
+                            onPick={handleBranchMapPick}
+                          />
+                          {hasBranchMarker ? (
+                            <Marker position={[branchLat, branchLng]} />
+                          ) : null}
+                        </MapContainer>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {infoError ? (
+                  <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
+                    {infoError}
+                  </div>
+                ) : null}
+
+                {infoSuccess ? (
+                  <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 dark:text-success-200">
+                    {infoSuccess}
+                  </div>
+                ) : null}
+
+                <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:flex-wrap">
+                  <button
+                    type="button"
+                    onClick={closeInfoModal}
+                    disabled={infoLoading}
+                    className="w-full min-w-0 flex-1 rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition hover:border-ink-300 hover:text-ink-900 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:text-white sm:min-w-[8rem]"
+                  >
+                    {t("cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveWorkingHours}
+                    disabled={branchFieldsLocked}
+                    className="flex-1 min-w-[8rem] rounded-lg border border-brand-500/40 bg-brand-500/10 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:border-brand-400 disabled:opacity-50 disabled:cursor-not-allowed dark:text-brand-300"
+                  >
+                    {infoLoading ? "Kaydediliyor..." : t("saveWorkingHoursBtn")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveBranchLocation}
+                    disabled={branchFieldsLocked}
+                    className="flex-1 min-w-[8rem] rounded-lg border border-brand-500/40 bg-brand-500/10 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:border-brand-400 disabled:opacity-50 disabled:cursor-not-allowed dark:text-brand-300"
+                  >
+                    {infoLoading ? "Kaydediliyor..." : t("saveBranchLocationBtn")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePhoneSubmit}
+                    disabled={
+                      branchFieldsLocked ||
+                      rawBranchPhone.length !== 10 ||
+                      rawWhatsappPhone.length !== 10
+                    }
+                    className="flex-1 min-w-[8rem] rounded-lg bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition dark:bg-brand-600 dark:hover:bg-brand-500"
+                  >
+                    {infoLoading ? "Kaydediliyor..." : t("saveBranchPhonesBtn")}
+                  </button>
+                </div>
+              </div>
+          </div>
+        </div>
+      )}
+
+      {showBranchRequestModal && (
+        <div
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              closeBranchRequestModal();
+            }
+          }}
+        >
+          <div role="dialog" aria-modal="true"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
+              <HeaderActions compact />
+              <button
+                type="button"
+                onClick={closeBranchRequestModal}
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
+                aria-label="Kapat"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
+              <div className="rounded-lg bg-brand-500/10 p-2 text-brand-600 dark:text-brand-400">
+                <Plus className="size-5" />
+              </div>
+              <h3 className="text-lg font-bold text-ink-800 dark:text-ink-100">
+                {canAddBranchDirectly ? t("addBranchDirectTitle") : t("newBranchRequestTitle")}
+              </h3>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                  {t("branchNameLabel")}
+                </label>
+                <input
+                  type="text"
+                  value={branchRequestForm.name}
+                  onChange={(e) =>
+                    setBranchRequestForm((p) => ({ ...p, name: e.target.value }))
+                  }
+                  disabled={branchRequestLoading}
+                  placeholder={t("branchNamePlaceholder")}
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                  <Phone className="size-4" />
+                  {t("phoneLabel")}
+                </label>
+                <input
+                  type="tel"
+                  value={branchRequestForm.phone}
+                  onChange={(e) =>
+                    setBranchRequestForm((p) => ({ ...p, phone: e.target.value }))
+                  }
+                  disabled={branchRequestLoading}
+                  placeholder={t("phonePlaceholder")}
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                  <MapPin className="size-4" />
+                  {t("branchAddressLabel")}
+                </label>
+                <textarea
+                  value={branchRequestForm.address}
+                  onChange={(e) =>
+                    setBranchRequestForm((p) => ({ ...p, address: e.target.value }))
+                  }
+                  disabled={branchRequestLoading}
+                  rows={3}
+                  placeholder={t("branchAddressPlaceholder")}
+                  className="min-h-[88px] w-full resize-y rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                />
+                <p className="text-[11px] text-ink-500 dark:text-ink-400">
+                  {t("branchMapHint")}
+                  {branchRequestGeocoding ? " ..." : ""}
+                </p>
+                {branchRequestForm.lat != null && branchRequestForm.lng != null ? (
+                  <p className="font-mono text-[11px] text-ink-500 dark:text-ink-400">
+                    {Number(branchRequestForm.lat).toFixed(5)},{" "}
+                    {Number(branchRequestForm.lng).toFixed(5)}
+                  </p>
+                ) : null}
+              </div>
+
+              <div className="relative h-52 overflow-hidden rounded-lg border border-ink-200 dark:border-ink-700">
+                <MapContainer
+                  key={`branch-request-map-${showBranchRequestModal}`}
+                  center={
+                    branchRequestForm.lat != null && branchRequestForm.lng != null
+                      ? [branchRequestForm.lat, branchRequestForm.lng]
+                      : KKTC_MAP_CENTER
+                  }
+                  zoom={branchRequestForm.lat != null ? 14 : 9}
+                  scrollWheelZoom
+                  className="h-full w-full"
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <BranchMapClickHandler
+                    disabled={branchRequestLoading}
+                    onPick={handleBranchRequestMapPick}
+                  />
+                  {branchRequestForm.lat != null && branchRequestForm.lng != null ? (
+                    <Marker position={[branchRequestForm.lat, branchRequestForm.lng]} />
+                  ) : null}
+                </MapContainer>
+              </div>
+
+              {branchRequestError ? (
+                <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
+                  {branchRequestError}
+                </div>
+              ) : null}
+              {branchRequestSuccess ? (
+                <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 dark:text-success-200">
+                  {branchRequestSuccess}
+                </div>
+              ) : null}
+
+              <div className="flex gap-3 pt-1">
                 <button
                   type="button"
                   onClick={closeBranchRequestModal}
-                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
-                  aria-label="Kapat"
-                >
-                  <X size={22} />
-                </button>
-              </div>
-
-              <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
-                <div className="rounded-lg bg-cyan-500/10 p-2 text-cyan-600 dark:text-cyan-400">
-                  <Plus className="size-5" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  {canAddBranchDirectly ? t("addBranchDirectTitle") : t("newBranchRequestTitle")}
-                </h3>
-              </div>
-
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                    {t("branchNameLabel")}
-                  </label>
-                  <input
-                    type="text"
-                    value={branchRequestForm.name}
-                    onChange={(e) =>
-                      setBranchRequestForm((p) => ({ ...p, name: e.target.value }))
-                    }
-                    disabled={branchRequestLoading}
-                    placeholder={t("branchNamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <Phone className="size-4" />
-                    {t("phoneLabel")}
-                  </label>
-                  <input
-                    type="tel"
-                    value={branchRequestForm.phone}
-                    onChange={(e) =>
-                      setBranchRequestForm((p) => ({ ...p, phone: e.target.value }))
-                    }
-                    disabled={branchRequestLoading}
-                    placeholder={t("phonePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <MapPin className="size-4" />
-                    {t("branchAddressLabel")}
-                  </label>
-                  <textarea
-                    value={branchRequestForm.address}
-                    onChange={(e) =>
-                      setBranchRequestForm((p) => ({ ...p, address: e.target.value }))
-                    }
-                    disabled={branchRequestLoading}
-                    rows={3}
-                    placeholder={t("branchAddressPlaceholder")}
-                    className="min-h-[88px] w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                  />
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {t("branchMapHint")}
-                    {branchRequestGeocoding ? " ..." : ""}
-                  </p>
-                  {branchRequestForm.lat != null && branchRequestForm.lng != null ? (
-                    <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
-                      {Number(branchRequestForm.lat).toFixed(5)},{" "}
-                      {Number(branchRequestForm.lng).toFixed(5)}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="relative h-52 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
-                  <MapContainer
-                    key={`branch-request-map-${showBranchRequestModal}`}
-                    center={
-                      branchRequestForm.lat != null && branchRequestForm.lng != null
-                        ? [branchRequestForm.lat, branchRequestForm.lng]
-                        : KKTC_MAP_CENTER
-                    }
-                    zoom={branchRequestForm.lat != null ? 14 : 9}
-                    scrollWheelZoom
-                    className="h-full w-full"
-                  >
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
-                    <BranchMapClickHandler
-                      disabled={branchRequestLoading}
-                      onPick={handleBranchRequestMapPick}
-                    />
-                    {branchRequestForm.lat != null && branchRequestForm.lng != null ? (
-                      <Marker position={[branchRequestForm.lat, branchRequestForm.lng]} />
-                    ) : null}
-                  </MapContainer>
-                </div>
-
-                {branchRequestError ? (
-                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
-                    {branchRequestError}
-                  </div>
-                ) : null}
-                {branchRequestSuccess ? (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
-                    {branchRequestSuccess}
-                  </div>
-                ) : null}
-
-                <div className="flex gap-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={closeBranchRequestModal}
-                    disabled={branchRequestLoading}
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:border-slate-300 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                  >
-                    {t("cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleBranchRequestSubmitClick}
-                    disabled={branchRequestLoading}
-                    className="flex-1 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-50"
-                  >
-                    {t("send")}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showBranchRequestConfirm && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <HeaderActions compact />
-              </div>
-              <h4 className="pt-10 sm:pt-0 sm:pr-[6.5rem] text-base font-bold text-slate-800 dark:text-slate-100">
-                {canAddBranchDirectly ? t("addBranchDirectTitle") : t("newBranchRequestTitle")}
-              </h4>
-              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                {canAddBranchDirectly ? t("addBranchDirectConfirm") : t("newBranchRequestConfirm")}
-              </p>
-              <div className="mt-5 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowBranchRequestConfirm(false)}
                   disabled={branchRequestLoading}
-                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                  className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition hover:border-ink-300 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300"
                 >
                   {t("cancel")}
                 </button>
                 <button
                   type="button"
-                  onClick={handleBranchRequestConfirm}
+                  onClick={handleBranchRequestSubmitClick}
                   disabled={branchRequestLoading}
-                  className="flex-1 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-50"
+                  className="flex-1 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-500 disabled:opacity-50"
                 >
-                  {branchRequestLoading
-                    ? t("sending")
-                    : canAddBranchDirectly
-                      ? t("confirmAddBranchBtn")
-                      : t("confirmRequestBtn")}
+                  {t("send")}
                 </button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {renewConfirmBranch && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <HeaderActions compact />
-              </div>
-              <h4 className="pt-10 sm:pt-0 sm:pr-[6.5rem] text-base font-bold text-slate-800 dark:text-slate-100">
-                {t("renewBranchRequestBtn")}
-              </h4>
-              <p className="mt-1 text-sm font-medium text-cyan-700 dark:text-cyan-300">
-                {renewConfirmBranch.name}
-              </p>
-              <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
-                {t("renewBranchRequestConfirm")}
-              </p>
-              {renewRequestError ? (
-                <p className="mt-3 text-xs text-rose-600 dark:text-rose-300">{renewRequestError}</p>
-              ) : null}
-              <div className="mt-5 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRenewConfirmBranch(null);
-                    setRenewRequestError("");
-                  }}
-                  disabled={renewRequestLoadingId != null}
-                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-                >
-                  {t("cancel")}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRenewBranchRequest}
-                  disabled={renewRequestLoadingId != null}
-                  className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
-                >
-                  {renewRequestLoadingId != null ? t("sending") : t("confirmRequestBtn")}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showPasswordModal && (
-          <div
-            className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-            onMouseDown={(e) => {
-              e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
-                closePasswordModal();
-              }
-            }}
-          >
-            <div
-              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
-              onClick={(e) => e.stopPropagation()}
+      {/*
+        Onay adımları alttan açılan Sheet'e taşındı: mobilde başparmakla
+        erişilebilir mesafede duruyor ve yükseklik içeriğe göre uyarlanıyor.
+        Odak tuzağı/Esc/scroll kilidi vaul tarafından yönetiliyor.
+      */}
+      <Sheet
+        open={showBranchRequestConfirm}
+        onOpenChange={(next) => { if (!next) setShowBranchRequestConfirm(false); }}
+        title={canAddBranchDirectly ? t("addBranchDirectTitle") : t("newBranchRequestTitle")}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowBranchRequestConfirm(false)}
+              disabled={branchRequestLoading}
+              className="btn-ghost flex-1"
             >
-              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <HeaderActions compact />
+              {t("cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={handleBranchRequestConfirm}
+              disabled={branchRequestLoading}
+              className="btn-primary flex-1"
+            >
+              {branchRequestLoading
+                ? t("sending")
+                : canAddBranchDirectly
+                  ? t("confirmAddBranchBtn")
+                  : t("confirmRequestBtn")}
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-600 dark:text-ink-300">
+          {canAddBranchDirectly ? t("addBranchDirectConfirm") : t("newBranchRequestConfirm")}
+        </p>
+      </Sheet>
+
+      <Sheet
+        open={Boolean(renewConfirmBranch)}
+        onOpenChange={(next) => {
+          if (!next) {
+            setRenewConfirmBranch(null);
+            setRenewRequestError("");
+          }
+        }}
+        title={t("renewBranchRequestBtn")}
+        description={renewConfirmBranch?.name}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setRenewConfirmBranch(null);
+                setRenewRequestError("");
+              }}
+              disabled={renewRequestLoadingId != null}
+              className="btn-ghost flex-1"
+            >
+              {t("cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={handleRenewBranchRequest}
+              disabled={renewRequestLoadingId != null}
+              className="btn btn-md flex-1 bg-warning-600 text-white hover:bg-warning-700"
+            >
+              {renewRequestLoadingId != null ? t("sending") : t("confirmRequestBtn")}
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-600 dark:text-ink-300">
+          {t("renewBranchRequestConfirm")}
+        </p>
+        {renewRequestError ? (
+          <p className="mt-3 text-xs text-danger-700 dark:text-danger-300">{renewRequestError}</p>
+        ) : null}
+      </Sheet>
+
+      {showPasswordModal && (
+        <div
+          className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onMouseDown={(e) => {
+            e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && e.currentTarget.dataset.backdropDown === "1") {
+              closePasswordModal();
+            }
+          }}
+        >
+          <div role="dialog" aria-modal="true"
+            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
+              <HeaderActions compact />
+              <button
+                type="button"
+                onClick={closePasswordModal}
+                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
+                aria-label="Kapat"
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
+              <div className="rounded-lg bg-brand-500/10 p-2 text-brand-600 dark:text-brand-400">
+                <Key className="size-5" />
+              </div>
+              <h3 className="text-lg font-bold text-ink-800 dark:text-ink-100">
+                {t("changePasswordTitle")}
+              </h3>
+            </div>
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="old-password"
+                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
+                >
+                  {t("oldPassword")}
+                </label>
+                <input
+                  id="old-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  required
+                  disabled={passwordLoading}
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="new-password"
+                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
+                >
+                  {t("newPassword")}
+                </label>
+                <input
+                  id="new-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={4}
+                  disabled={passwordLoading}
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="confirm-password"
+                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
+                >
+                  {t("confirmPassword")}
+                </label>
+                <input
+                  id="confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={4}
+                  disabled={passwordLoading}
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
+                />
+              </div>
+
+              {passwordError ? (
+                <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
+                  {passwordError}
+                </div>
+              ) : null}
+
+              {passwordSuccess ? (
+                <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 dark:text-success-200">
+                  {passwordSuccess}
+                </div>
+              ) : null}
+
+              <div className="flex gap-3 pt-1">
                 <button
                   type="button"
                   onClick={closePasswordModal}
-                  className="rounded-full p-1 text-slate-400 transition hover:text-rose-500"
-                  aria-label="Kapat"
+                  disabled={passwordLoading}
+                  className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition-all duration-300 hover:border-danger-500 hover:text-danger-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
                 >
-                  <X size={22} />
+                  {t("cancel")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={passwordLoading}
+                  className="flex-1 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition-all duration-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:brightness-110 disabled:opacity-50 dark:from-brand-500 dark:to-brand-600"
+                >
+                  {passwordLoading ? t("saving") : t("confirmPasswordAction")}
                 </button>
               </div>
-
-              <div className="mb-5 flex items-center gap-3 pt-10 sm:pt-0 sm:pr-[7.5rem]">
-                <div className="rounded-lg bg-teal-500/10 p-2 text-teal-600 dark:text-teal-400">
-                  <Key className="size-5" />
-                </div>
-                <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  {t("changePasswordTitle")}
-                </h3>
-              </div>
-
-              <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="old-password"
-                    className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                  >
-                    {t("oldPassword")}
-                  </label>
-                  <input
-                    id="old-password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={oldPassword}
-                    onChange={(e) => setOldPassword(e.target.value)}
-                    required
-                    disabled={passwordLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:ring-cyan-500/20"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="new-password"
-                    className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                  >
-                    {t("newPassword")}
-                  </label>
-                  <input
-                    id="new-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    required
-                    minLength={4}
-                    disabled={passwordLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:ring-cyan-500/20"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label
-                    htmlFor="confirm-password"
-                    className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400"
-                  >
-                    {t("confirmPassword")}
-                  </label>
-                  <input
-                    id="confirm-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    minLength={4}
-                    disabled={passwordLoading}
-                    className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none transition-all duration-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-cyan-400 dark:focus:ring-cyan-500/20"
-                  />
-                </div>
-
-                {passwordError ? (
-                  <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
-                    {passwordError}
-                  </div>
-                ) : null}
-
-                {passwordSuccess ? (
-                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-200">
-                    {passwordSuccess}
-                  </div>
-                ) : null}
-
-                <div className="flex gap-3 pt-1">
-                  <button
-                    type="button"
-                    onClick={closePasswordModal}
-                    disabled={passwordLoading}
-                    className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 transition-all duration-300 hover:border-red-500 hover:text-red-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-red-500 dark:hover:text-red-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
-                  >
-                    {t("cancel")}
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={passwordLoading}
-                    className="flex-1 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition-all duration-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:brightness-110 disabled:opacity-50 dark:from-cyan-500 dark:to-blue-600"
-                  >
-                    {passwordLoading ? t("saving") : t("confirmPasswordAction")}
-                  </button>
-                </div>
-              </form>
-            </div>
+            </form>
           </div>
-        )}
-      </div>
-    </div>
-    );
-  } catch (err) {
-    console.error("[ADMIN-PAGE] Render Error:", err);
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#020617] text-white">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-rose-400 mb-2">Hata Oluştu</h1>
-          <p className="text-sm text-slate-400 mb-4">{err?.message || "Bilinmeyen hata"}</p>
-          <button
-            onClick={() => window.location.href = "/"}
-            className="inline-flex items-center gap-2 rounded-lg border border-teal-500/30 bg-teal-500/10 px-4 py-2 text-sm text-teal-200 transition hover:bg-teal-500/20"
-          >
-            Dashboard'a Dön
-          </button>
         </div>
-      </div>
-    );
-  }
+      )}
+    </div>
+  </div>
+  );
 }
