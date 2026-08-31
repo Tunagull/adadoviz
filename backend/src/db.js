@@ -328,6 +328,46 @@ function initDb({ skipBusinessSeed = false } = {}) {
    * (currency, recorded_at) grubu mükerrer → grafikler aynı damgada birden çok
    * nokta çiziyordu). Artık önce dedupe ediliyor, sonra index kuruluyor.
    */
+  /**
+   * ABONELİK VE TAHSİLAT (ürün haritası A-01 / A-02 / A-04)
+   * Abonelik daha önce tek bir alanla temsil ediliyordu
+   * (institutions.subscription_end_date) ve uzatılınca eski değer kayboluyordu —
+   * yani "kim, ne zaman, ne kadar ödedi" sorusu cevaplanamıyordu.
+   * plans: fiyat artık veri (kodda sabit değil). payments: tahsilat hareketi.
+   */
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS plans (
+      code       TEXT PRIMARY KEY,
+      ad         TEXT NOT NULL,
+      sure_gun   INTEGER NOT NULL,
+      fiyat      REAL NOT NULL DEFAULT 0,
+      kdv_orani  REAL NOT NULL DEFAULT 0,
+      aktif      INTEGER NOT NULL DEFAULT 1,
+      sira       INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS payments (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      institution_id  TEXT NOT NULL,
+      plan_code       TEXT NOT NULL,
+      tutar           REAL NOT NULL DEFAULT 0,
+      kdv             REAL NOT NULL DEFAULT 0,
+      para_birimi     TEXT NOT NULL DEFAULT 'TRY',
+      odeme_tarihi    TEXT NOT NULL,
+      donem_baslangic TEXT NOT NULL,
+      donem_bitis     TEXT NOT NULL,
+      yontem          TEXT,
+      durum           TEXT NOT NULL DEFAULT 'odendi',
+      fatura_no       TEXT,
+      aciklama        TEXT,
+      olusturan       TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_inst ON payments(institution_id, odeme_tarihi DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_donem ON payments(donem_bitis)`);
+  seedPlansIfNeeded();
+
   dedupeHistoricalRates();
   try {
     db.exec(`
@@ -3699,6 +3739,318 @@ function updateSeoSettings(payload = {}) {
   return next;
 }
 
+
+/* ==========================================================================
+ * ABONELİK PAKETLERİ VE TAHSİLAT
+ * ========================================================================== */
+
+const DEFAULT_PLANS = [
+  { code: "deneme", ad: "Deneme", sure_gun: 14, fiyat: 0, sira: 1 },
+  { code: "aylik", ad: "Aylık Abonelik", sure_gun: 30, fiyat: 500, sira: 2 },
+  { code: "yillik", ad: "Yıllık Abonelik", sure_gun: 365, fiyat: 5000, sira: 3 },
+  { code: "ucretsiz", ad: "Ücretsiz Listeleme", sure_gun: 0, fiyat: 0, sira: 4 },
+];
+
+/** Eski subscription_type değerlerini plan koduna eşler. */
+function planCodeFromSubscriptionType(type) {
+  const t = String(type || "Test");
+  if (t === "Aylık") return "aylik";
+  if (t === "Yıllık") return "yillik";
+  if (t === "Ücretsiz") return "ucretsiz";
+  if (t === "Manuel") return "aylik";
+  return "deneme";
+}
+
+function seedPlansIfNeeded() {
+  const count = db.prepare(`SELECT COUNT(*) AS c FROM plans`).get()?.c || 0;
+  if (count > 0) return;
+  const ins = db.prepare(
+    `INSERT INTO plans (code, ad, sure_gun, fiyat, kdv_orani, aktif, sira)
+     VALUES (?, ?, ?, ?, 0, 1, ?)`
+  );
+  for (const p of DEFAULT_PLANS) ins.run(p.code, p.ad, p.sure_gun, p.fiyat, p.sira);
+  console.log(`[DB] ✅ ${DEFAULT_PLANS.length} abonelik paketi eklendi (fiyat artık veri).`);
+}
+
+function listPlans({ onlyActive = false } = {}) {
+  const where = onlyActive ? `WHERE aktif = 1` : ``;
+  return db.prepare(`SELECT * FROM plans ${where} ORDER BY sira ASC`).all();
+}
+
+function getPlan(code) {
+  return db.prepare(`SELECT * FROM plans WHERE code = ?`).get(String(code || ""));
+}
+
+function updatePlan(code, { ad, sure_gun, fiyat, kdv_orani, aktif } = {}) {
+  const row = getPlan(code);
+  if (!row) throw new Error("Paket bulunamadı.");
+  const next = {
+    ad: ad !== undefined ? String(ad).trim() : row.ad,
+    sure_gun: sure_gun !== undefined ? Math.max(0, parseInt(sure_gun, 10) || 0) : row.sure_gun,
+    fiyat: fiyat !== undefined ? Math.max(0, Number(fiyat) || 0) : row.fiyat,
+    kdv_orani: kdv_orani !== undefined ? Math.max(0, Number(kdv_orani) || 0) : row.kdv_orani,
+    aktif: aktif !== undefined ? (aktif ? 1 : 0) : row.aktif,
+  };
+  if (!next.ad) throw new Error("Paket adı zorunludur.");
+  db.prepare(
+    `UPDATE plans SET ad = ?, sure_gun = ?, fiyat = ?, kdv_orani = ?, aktif = ? WHERE code = ?`
+  ).run(next.ad, next.sure_gun, next.fiyat, next.kdv_orani, next.aktif, code);
+  return getPlan(code);
+}
+
+function isoDay(d) {
+  return new Date(d).toISOString().slice(0, 10);
+}
+
+/** Tahsilat kaydı. Tutar o günkü fiyatla dondurulur (zam geçmişi bozmasın). */
+function createPayment({
+  institution_id,
+  plan_code,
+  tutar,
+  kdv,
+  odeme_tarihi,
+  donem_baslangic,
+  donem_bitis,
+  yontem,
+  durum = "odendi",
+  fatura_no,
+  aciklama,
+  olusturan,
+}) {
+  const inst = String(institution_id || "").trim();
+  if (!inst) throw new Error("İşletme zorunludur.");
+  const plan = getPlan(plan_code);
+  if (!plan) throw new Error("Geçersiz paket.");
+
+  const odeme = odeme_tarihi ? new Date(odeme_tarihi) : new Date();
+  if (Number.isNaN(odeme.getTime())) throw new Error("Geçersiz ödeme tarihi.");
+
+  const bas = donem_baslangic ? isoDay(donem_baslangic) : isoDay(odeme);
+  const bit = donem_bitis
+    ? isoDay(donem_bitis)
+    : isoDay(new Date(odeme.getTime() + (plan.sure_gun || 30) * 86400000));
+
+  const amount = tutar !== undefined && tutar !== null && tutar !== "" ? Number(tutar) : plan.fiyat;
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("Geçersiz tutar.");
+  const vat = kdv !== undefined && kdv !== null && kdv !== "" ? Number(kdv) : 0;
+
+  const info = db
+    .prepare(
+      `INSERT INTO payments
+         (institution_id, plan_code, tutar, kdv, odeme_tarihi, donem_baslangic,
+          donem_bitis, yontem, durum, fatura_no, aciklama, olusturan)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      inst,
+      plan.code,
+      amount,
+      Number.isFinite(vat) ? vat : 0,
+      odeme.toISOString(),
+      bas,
+      bit,
+      yontem ? String(yontem).trim() : null,
+      String(durum || "odendi"),
+      fatura_no ? String(fatura_no).trim() : null,
+      aciklama ? String(aciklama).trim() : null,
+      olusturan ? String(olusturan).trim() : null
+    );
+  return db.prepare(`SELECT * FROM payments WHERE id = ?`).get(info.lastInsertRowid);
+}
+
+function deletePayment(id) {
+  const n = Number(id);
+  if (!Number.isFinite(n)) throw new Error("Geçersiz ödeme ID.");
+  const row = db.prepare(`SELECT * FROM payments WHERE id = ?`).get(n);
+  if (!row) throw new Error("Ödeme bulunamadı.");
+  db.prepare(`DELETE FROM payments WHERE id = ?`).run(n);
+  return { deleted: true, payment: row };
+}
+
+/** Döküm: işletme adı ve paket adıyla zenginleştirilmiş ödeme listesi. */
+function listPayments({ institution_id, from, to, limit = 500 } = {}) {
+  const args = [];
+  let where = `WHERE 1=1`;
+  if (institution_id) {
+    where += ` AND p.institution_id = ?`;
+    args.push(String(institution_id));
+  }
+  if (from) {
+    where += ` AND date(p.odeme_tarihi) >= date(?)`;
+    args.push(isoDay(from));
+  }
+  if (to) {
+    where += ` AND date(p.odeme_tarihi) <= date(?)`;
+    args.push(isoDay(to));
+  }
+  args.push(Math.max(1, Math.min(2000, Number(limit) || 500)));
+
+  return db
+    .prepare(
+      `SELECT p.*, i.institution_name, pl.ad AS plan_adi
+       FROM payments p
+       LEFT JOIN institutions i ON i.institution_id = p.institution_id
+       LEFT JOIN plans pl ON pl.code = p.plan_code
+       ${where}
+       ORDER BY p.odeme_tarihi DESC, p.id DESC
+       LIMIT ?`
+    )
+    .all(...args);
+}
+
+function getPaymentsForInstitution(institutionId, limit = 100) {
+  return listPayments({ institution_id: institutionId, limit });
+}
+
+/** Gelir özeti: bu ay, bu yıl, toplam + paket dağılımı. */
+function getRevenueSummary() {
+  const sum = (sql, ...a) => Number(db.prepare(sql).get(...a)?.t) || 0;
+  const now = new Date();
+  const ayBas = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  const yilBas = `${now.getUTCFullYear()}-01-01`;
+
+  return {
+    buAy: sum(
+      `SELECT SUM(tutar + kdv) AS t FROM payments WHERE durum = 'odendi' AND date(odeme_tarihi) >= date(?)`,
+      ayBas
+    ),
+    buYil: sum(
+      `SELECT SUM(tutar + kdv) AS t FROM payments WHERE durum = 'odendi' AND date(odeme_tarihi) >= date(?)`,
+      yilBas
+    ),
+    toplam: sum(`SELECT SUM(tutar + kdv) AS t FROM payments WHERE durum = 'odendi'`),
+    bekleyen: sum(`SELECT SUM(tutar + kdv) AS t FROM payments WHERE durum = 'bekliyor'`),
+    odemeSayisi:
+      Number(db.prepare(`SELECT COUNT(*) AS t FROM payments WHERE durum = 'odendi'`).get()?.t) || 0,
+    paketDagilimi: db
+      .prepare(
+        `SELECT p.plan_code, pl.ad AS plan_adi, COUNT(*) AS adet, SUM(p.tutar + p.kdv) AS toplam
+         FROM payments p LEFT JOIN plans pl ON pl.code = p.plan_code
+         WHERE p.durum = 'odendi' GROUP BY p.plan_code ORDER BY toplam DESC`
+      )
+      .all(),
+  };
+}
+
+/** Vade takvimi: önümüzdeki N günde biten abonelikler. */
+function listExpiringSubscriptions(days = 30) {
+  const n = Math.max(1, Math.min(365, Number(days) || 30));
+  return listBusinesses()
+    .filter((b) => b.days_remaining != null && b.days_remaining <= n)
+    .map((b) => ({
+      institution_id: b.institution_id,
+      institution_name: b.institution_name,
+      subscription_type: b.subscription_type,
+      subscription_end_date: b.subscription_end_date,
+      days_remaining: b.days_remaining,
+      is_active: b.is_active,
+    }))
+    .sort((a, b) => (a.days_remaining ?? 9999) - (b.days_remaining ?? 9999));
+}
+
+/**
+ * Geriye dönük tahsilat üretimi: mevcut aboneliklerden birer payments satırı.
+ * Döküm ilk günden boş açılmasın diye. Idempotent — zaten kaydı olan atlanır.
+ */
+function backfillPaymentsFromSubscriptions(olusturan = "sistem") {
+  let eklenen = 0;
+  const rows = listBusinesses();
+  for (const b of rows) {
+    if (!b.subscription_end_date) continue;
+    const varMi = db
+      .prepare(`SELECT COUNT(*) AS c FROM payments WHERE institution_id = ?`)
+      .get(b.institution_id)?.c;
+    if (varMi > 0) continue;
+
+    const code = planCodeFromSubscriptionType(b.subscription_type);
+    const plan = getPlan(code);
+    if (!plan) continue;
+
+    const bit = new Date(b.subscription_end_date);
+    if (Number.isNaN(bit.getTime())) continue;
+    const bas = new Date(bit.getTime() - (plan.sure_gun || 30) * 86400000);
+
+    try {
+      createPayment({
+        institution_id: b.institution_id,
+        plan_code: code,
+        tutar: plan.fiyat,
+        odeme_tarihi: bas.toISOString(),
+        donem_baslangic: bas,
+        donem_bitis: bit,
+        durum: "odendi",
+        aciklama: "Mevcut abonelikten geriye dönük oluşturuldu",
+        olusturan,
+      });
+      eklenen += 1;
+    } catch (err) {
+      console.warn("[DB] backfill payment:", b.institution_id, err.message);
+    }
+  }
+  if (eklenen > 0) {
+    console.log(`[DB] ✅ ${eklenen} abonelik için geriye dönük tahsilat kaydı üretildi.`);
+  }
+  return { eklenen };
+}
+
+/**
+ * İşletme bazında tıklama toplamı. visitor_sessions.clicked_businesses
+ * işletme ADIYLA tutuluyor; institution_id'ye eşliyoruz.
+ */
+function getClicksByBusiness() {
+  const sessions = db.prepare(`SELECT clicked_businesses FROM visitor_sessions`).all();
+  const byName = new Map();
+  for (const row of sessions) {
+    let arr = [];
+    try {
+      arr = JSON.parse(row.clicked_businesses || "[]");
+    } catch (_e) {
+      arr = [];
+    }
+    for (const name of Array.isArray(arr) ? arr : []) {
+      const key = String(name || "").trim();
+      if (!key) continue;
+      byName.set(key, (byName.get(key) || 0) + 1);
+    }
+  }
+  const insts = db
+    .prepare(
+      `SELECT institution_id, institution_name FROM institutions
+       WHERE COALESCE(role,'business') != 'superadmin'`
+    )
+    .all();
+  return insts
+    .map((i) => ({
+      institution_id: i.institution_id,
+      institution_name: i.institution_name,
+      tiklama: byName.get(String(i.institution_name).trim()) || 0,
+    }))
+    .sort((a, b) => b.tiklama - a.tiklama);
+}
+
+function getClicksForInstitution(institutionId) {
+  const all = getClicksByBusiness();
+  const hit = all.find((r) => r.institution_id === institutionId);
+  return {
+    tiklama: hit?.tiklama || 0,
+    siralama: hit ? all.filter((r) => r.tiklama > hit.tiklama).length + 1 : null,
+    toplamIsletme: all.length,
+    toplamZiyaretci:
+      Number(db.prepare(`SELECT COUNT(*) AS c FROM visitor_sessions`).get()?.c) || 0,
+  };
+}
+
+/** Partnerlik başvuruları — public form yazıyordu ama gören ekran yoktu. */
+function listPartnershipApplications(limit = 200) {
+  const n = Math.max(1, Math.min(1000, Number(limit) || 200));
+  try {
+    return db.prepare(`SELECT * FROM partnership_applications ORDER BY id DESC LIMIT ?`).all(n);
+  } catch (err) {
+    console.warn("[DB] partnership list:", err.message);
+    return [];
+  }
+}
+
 module.exports = {
   initDb,
   seedAdminsIfNeeded,
@@ -3753,6 +4105,20 @@ module.exports = {
   getHistoricalRates,
   getHistoricalRatesCount,
   getLatestHistoricalRatesSnapshot,
+  listPlans,
+  getPlan,
+  updatePlan,
+  createPayment,
+  deletePayment,
+  listPayments,
+  getPaymentsForInstitution,
+  getRevenueSummary,
+  listExpiringSubscriptions,
+  backfillPaymentsFromSubscriptions,
+  getClicksByBusiness,
+  getClicksForInstitution,
+  listPartnershipApplications,
+  planCodeFromSubscriptionType,
   getBusinessRateHistory,
   bulkInsertHistoricalRates,
   getVisitorStats,

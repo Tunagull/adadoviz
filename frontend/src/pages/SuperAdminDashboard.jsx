@@ -40,6 +40,12 @@ import {
   fetchAdminBranches,
   updateAdminBranch,
   fetchAdminSystemHealth,
+  fetchAdminPayments,
+  createAdminPayment,
+  backfillAdminPayments,
+  fetchAdminPlans,
+  fetchAdminExpiring,
+  fetchAdminPartnershipApplications,
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
@@ -145,6 +151,35 @@ function formatRemaining(days, t, subscriptionType) {
 }
 
 /** Şube doluluk: eksik sarı, tam yeşil, fazla kırmızı */
+/**
+ * A-03: Kalan abonelik günü. 7 günün altı uyarı, biten kırmızı — yönetici
+ * tabloya bakınca kimin yenilemesi gerektiğini anında görsün.
+ */
+function RemainingBadge({ days }) {
+  if (days == null) {
+    return <span className="text-ink-500 dark:text-ink-400">süresiz</span>;
+  }
+  const n = Number(days);
+  if (!Number.isFinite(n)) return <span className="text-ink-500">—</span>;
+  if (n <= 0) {
+    return (
+      <span className="inline-flex items-center gap-1 font-semibold text-danger-700 dark:text-danger-400">
+        <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+        doldu
+      </span>
+    );
+  }
+  if (n <= 7) {
+    return (
+      <span className="inline-flex items-center gap-1 font-semibold text-warning-700 dark:text-warning-400">
+        <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+        {n} gün
+      </span>
+    );
+  }
+  return <span className="text-ink-700 dark:text-ink-200">{n} gün</span>;
+}
+
 function BranchQuotaBadge({ used, limit }) {
   const u = Number(used) || 0;
   const lim = Math.max(1, Number(limit) || 1);
@@ -384,6 +419,15 @@ export function SuperAdminDashboard() {
   const [branchRequests, setBranchRequests] = useState([]);
   const [branchRequestsLoading, setBranchRequestsLoading] = useState(false);
   const [branchRequestsError, setBranchRequestsError] = useState("");
+  /* Faz 1: gelir görünürlüğü */
+  const [payments, setPayments] = useState([]);
+  const [revenue, setRevenue] = useState(null);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [expiring, setExpiring] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [partnershipApps, setPartnershipApps] = useState([]);
+  const [payLoading, setPayLoading] = useState(false);
+  const [payError, setPayError] = useState("");
   const [branchRequestUnread, setBranchRequestUnread] = useState(0);
   const [branchRequestActingId, setBranchRequestActingId] = useState(null);
   const [showBranchSubModal, setShowBranchSubModal] = useState(false);
@@ -463,6 +507,7 @@ export function SuperAdminDashboard() {
     try {
       const data = await fetchAdminSystemHealth(token);
       setHealthData(data);
+      setAuditLogs(Array.isArray(data?.audit) ? data.audit : []);
     } catch (err) {
       setHealthError(err.message || t("healthDriftUnavailable"));
       setHealthData(null);
@@ -486,6 +531,49 @@ export function SuperAdminDashboard() {
       // sessiz
     }
   }, [token]);
+
+  /** Faz 1: tahsilat, gelir özeti, vade takvimi, paketler, başvurular. */
+  const loadRevenue = useCallback(async () => {
+    if (!token) return;
+    setPayLoading(true);
+    setPayError("");
+    try {
+      const [pay, exp, pl, apps] = await Promise.all([
+        fetchAdminPayments(token),
+        fetchAdminExpiring(token, 30),
+        fetchAdminPlans(token),
+        fetchAdminPartnershipApplications(token),
+      ]);
+      setPayments(pay.payments || []);
+      setRevenue(pay.summary || null);
+      setExpiring(exp.expiring || []);
+      setPlans(pl.plans || []);
+      setPartnershipApps(apps.applications || []);
+    } catch (err) {
+      setPayError(err.message || "Tahsilat verisi alınamadı.");
+    } finally {
+      setPayLoading(false);
+    }
+  }, [token]);
+
+  const handleBackfillPayments = useCallback(async () => {
+    if (!token) return;
+    try {
+      await backfillAdminPayments(token);
+      await loadRevenue();
+    } catch (err) {
+      setPayError(err.message || "Geriye dönük üretim başarısız.");
+    }
+  }, [token, loadRevenue]);
+
+  const handleCreatePayment = useCallback(
+    async (payload) => {
+      if (!token) return;
+      await createAdminPayment(token, payload);
+      await loadRevenue();
+    },
+    [token, loadRevenue]
+  );
 
   const loadBranchRequests = useCallback(async () => {
     if (!token) return;
@@ -590,8 +678,40 @@ export function SuperAdminDashboard() {
 
   const logData = analyticsData?.sessions || [];
 
-  const businessLedger = useMemo(() => [], []);
-  const subscriptionLedger = useMemo(() => [], []);
+  /**
+   * ⚠️ ÜRÜN HARİTASI A-02: Bu iki dizi SABİT BOŞ idi — "Abonelik Dökümü" ve
+   * "Loglar" ekranları eksiksiz yazılmış (filtre, tarih aralığı, para
+   * biçimlendirme) ama kalıcı olarak "Bu dökümde henüz kayıt yok." diyordu.
+   * Artık gerçek tahsilat kayıtlarından besleniyorlar.
+   */
+  const businessLedger = useMemo(
+    () =>
+      auditLogs.map((a) => ({
+        timestamp: a.created_at,
+        businessName: a.institution_name || a.institution_id || "—",
+        actionType: a.action,
+        detail: a.detail,
+        actor: a.actor,
+      })),
+    [auditLogs]
+  );
+
+  const subscriptionLedger = useMemo(
+    () =>
+      payments.map((p) => ({
+        id: p.id,
+        timestamp: p.odeme_tarihi,
+        businessName: p.institution_name || p.institution_id,
+        planName: p.plan_adi || p.plan_code,
+        amount: Number(p.tutar) + Number(p.kdv || 0),
+        method: p.yontem,
+        status: p.durum,
+        periodStart: p.donem_baslangic,
+        periodEnd: p.donem_bitis,
+        note: p.aciklama,
+      })),
+    [payments]
+  );
 
   const ledgerBusinessOptions = useMemo(() => {
     const fromList = businesses.map((b) => b.institution_name).filter(Boolean);
@@ -717,6 +837,12 @@ export function SuperAdminDashboard() {
       loadBusinesses();
     }
   }, [bootstrapping, isSuperAdmin, token, loadBusinesses]);
+
+  useEffect(() => {
+    if (!bootstrapping && isSuperAdmin && token) {
+      loadRevenue();
+    }
+  }, [bootstrapping, isSuperAdmin, token, loadRevenue]);
 
   useEffect(() => {
     if (!showEditModal || editPanelTab !== "subscription" || !editForm.id || !token) return;
@@ -1334,6 +1460,11 @@ export function SuperAdminDashboard() {
                     <th className="px-4 py-3 font-medium">{t("colId")}</th>
                     <th className="px-4 py-3 font-medium">{t("businessName")}</th>
                     <th className="px-4 py-3 font-medium">{t("colLoginId")}</th>
+                    {/* A-03: paket, bitiş ve kalan gün tabloda hiç yoktu — kimin
+                        aboneliğinin bittiğini görmek için 21 pencere açmak gerekiyordu. */}
+                    <th className="px-4 py-3 font-medium">Paket</th>
+                    <th className="px-4 py-3 font-medium">Bitiş</th>
+                    <th className="px-4 py-3 font-medium">Kalan</th>
                     <th className="px-4 py-3 font-medium">{t("colBranchCount")}</th>
                     <th className="px-4 py-3 font-medium">{t("colRegisteredAt")}</th>
                     <th className="px-4 py-3 font-medium">{t("colLastLogin")}</th>
@@ -1371,6 +1502,19 @@ export function SuperAdminDashboard() {
                               /{biz.institution_id}
                             </p>
                           ) : null}
+                        </td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                          <span className="rounded-control bg-ink-100 px-2 py-0.5 font-medium text-ink-700 dark:bg-ink-800 dark:text-ink-200">
+                            {biz.subscription_type || "—"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-ink-600 whitespace-nowrap dark:text-ink-300">
+                          {biz.subscription_end_date
+                            ? formatRegistrationDate(biz.subscription_end_date)
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                          <RemainingBadge days={biz.days_remaining} />
                         </td>
                         <td className="px-4 py-3">
                           <BranchQuotaBadge used={used} limit={limit} />
@@ -1453,7 +1597,7 @@ export function SuperAdminDashboard() {
 
       {showEditModal && editForm.id ? (
         <div
-          className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-modal flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -1778,7 +1922,7 @@ export function SuperAdminDashboard() {
 
       {showBranchSubModal && branchSubBusiness ? (
         <div
-          className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-modal flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}
@@ -2284,7 +2428,7 @@ export function SuperAdminDashboard() {
 
       {ledgerView === "subscription" && (
         <div
-          className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
+          className="fixed inset-0 z-modal flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
           onMouseDown={(e) => {
             e.currentTarget.dataset.backdropDown = e.target === e.currentTarget ? "1" : "0";
           }}

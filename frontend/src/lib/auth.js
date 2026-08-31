@@ -525,3 +525,56 @@ export async function updateAdminSeo(token, payload) {
   }
   return data?.seo || data;
 }
+
+/* ---------- Abonelik, tahsilat ve performans (ürün haritası Faz 1-2) ---------- */
+
+async function getJson(path, token) {
+  const response = await fetch(apiUrl(path), { headers: { ...authHeaders(token) } });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error || "İstek başarısız.");
+  return data;
+}
+
+async function sendJson(path, token, method, payload) {
+  const response = await fetch(apiUrl(path), {
+    method,
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error || "İşlem başarısız.");
+  return data;
+}
+
+/** Super Admin: paketler (fiyat artık veri). */
+export const fetchAdminPlans = (token) => getJson("/api/admin/plans", token);
+export const updateAdminPlan = (token, code, payload) =>
+  sendJson(`/api/admin/plans/${encodeURIComponent(code)}`, token, "PUT", payload);
+
+/** Super Admin: tahsilat dökümü + gelir özeti. */
+export function fetchAdminPayments(token, { institution_id, from, to } = {}) {
+  const q = new URLSearchParams();
+  if (institution_id) q.set("institution_id", institution_id);
+  if (from) q.set("from", from);
+  if (to) q.set("to", to);
+  const qs = q.toString();
+  return getJson(`/api/admin/payments${qs ? `?${qs}` : ""}`, token);
+}
+export const createAdminPayment = (token, payload) =>
+  sendJson("/api/admin/payments", token, "POST", payload);
+export const deleteAdminPayment = (token, id) =>
+  sendJson(`/api/admin/payments/${id}`, token, "DELETE");
+export const backfillAdminPayments = (token) =>
+  sendJson("/api/admin/payments/backfill", token, "POST");
+
+/** Super Admin: vade takvimi, işletme bazlı analitik, partnerlik başvuruları. */
+export const fetchAdminExpiring = (token, days = 30) =>
+  getJson(`/api/admin/expiring?days=${days}`, token);
+export const fetchAdminClicksByBusiness = (token) =>
+  getJson("/api/admin/analytics/by-business", token);
+export const fetchAdminPartnershipApplications = (token) =>
+  getJson("/api/admin/partnership-applications", token);
+
+/** İşletme: kendi aboneliği + ödeme geçmişi + performansı. */
+export const fetchBusinessSubscription = (token) =>
+  getJson("/api/business/subscription", token);

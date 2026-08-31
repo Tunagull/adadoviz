@@ -2640,6 +2640,11 @@ export function V0FinancialDashboard() {
               bank={bank}
               mode={mode}
               bestRates={bestRates}
+              branches={
+                branchesByInstitution[bank.institutionId] ||
+                branchesByInstitution[normalizeText(bank.name)] ||
+                []
+              }
               showNearestBranch={sortBy === "nearest" && Boolean(userLocation)}
               onSelect={(biz) => {
                 const name = String(biz?.name || "")

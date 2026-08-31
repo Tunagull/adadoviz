@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo } from "react";
-import { Award } from "lucide-react";
+import { Award, MapPin, Phone } from "lucide-react";
 import { mediaUrl } from "../lib/api";
 import { useLanguage } from "../context/LanguageContext";
 
@@ -45,7 +45,7 @@ function formatRate(rate) {
  *   "büroları karşılaştır" olduğu halde ekranda hiçbir karşılaştırma
  *   işareti yoktu.
  */
-function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, bestRates = null }) {
+function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, bestRates = null, branches = [] }) {
   const { t } = useLanguage();
   // ✅ ADIM 2: Flash effect durumları
   const [flashColor, setFlashColor] = useState(null); // 'green' | 'red' | null
@@ -138,6 +138,13 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
    * değil — rozet süper admin listesinde kaldı, panodan kaldırıldı.
    */
   const displayName = rawName.replace(/\s*\([Tt]est\)\s*/g, "").trim();
+  /** M-01: karttan doğrudan arama / yol tarifi için en uygun şube. */
+  const contactBranch = bank.nearestBranch || branches?.[0] || null;
+  const contactPhone = contactBranch?.phone || contactBranch?.whatsapp || bank.phone || null;
+  const hasCoords =
+    contactBranch &&
+    Number.isFinite(Number(contactBranch.lat)) &&
+    Number.isFinite(Number(contactBranch.lng));
   const nearest = showNearestBranch ? bank.nearestBranch : null;
   const nearestLabel =
     nearest?.name && Number.isFinite(nearest.distanceKm)
@@ -293,6 +300,38 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
               );
             })}
           </div>
+
+          {/*
+            ⚠️ ÜRÜN HARİTASI M-01: Panoda tek bir tel: bağlantısı veya harita linki
+            yoktu; müşteri önce detay panelini açmak zorundaydı. Oysa bir döviz
+            bürosu ararken asıl eylem "ara" ve "yol tarifi al".
+          */}
+          {contactPhone || hasCoords ? (
+            <div className="flex gap-2 border-t border-ink-200 px-1 pt-3 dark:border-ink-700/60">
+              {contactPhone ? (
+                <a
+                  href={`tel:${String(contactPhone).replace(/[^\d+]/g, "")}`}
+                  onClick={(e) => e.stopPropagation()}
+                  className="btn-subtle btn-sm min-h-[2.5rem] flex-1"
+                >
+                  <Phone size={14} aria-hidden="true" />
+                  {t("callBtn")}
+                </a>
+              ) : null}
+              {hasCoords ? (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${contactBranch.lat},${contactBranch.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="btn-ghost btn-sm min-h-[2.5rem] flex-1"
+                >
+                  <MapPin size={14} aria-hidden="true" />
+                  {t("directionsBtn")}
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : mode === "interest" ? (
         <div className="px-1 pb-1">

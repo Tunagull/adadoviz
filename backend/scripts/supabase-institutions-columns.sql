@@ -98,3 +98,51 @@ alter table public.historical_rates enable row level security;
 --         select currency, recorded_at from public.historical_rates
 --         group by currency, recorded_at having count(*) > 1) t;
 -- ============================================================================
+
+-- ============================================================================
+-- ABONELİK PAKETLERİ VE TAHSİLAT  (ürün haritası A-01 / A-02 / A-04)
+-- ----------------------------------------------------------------------------
+-- Render diski geçici; bu tablolar Supabase'te yoksa her deploy'da tüm
+-- tahsilat geçmişi kaybolur.
+create table if not exists public.plans (
+  code       text primary key,
+  ad         text not null,
+  sure_gun   integer not null,
+  fiyat      numeric(10,2) not null default 0,
+  kdv_orani  numeric(4,2) not null default 0,
+  aktif      boolean not null default true,
+  sira       integer not null default 0
+);
+
+insert into public.plans (code, ad, sure_gun, fiyat, sira) values
+  ('deneme',   'Deneme',             14,    0, 1),
+  ('aylik',    'Aylık Abonelik',     30,  500, 2),
+  ('yillik',   'Yıllık Abonelik',   365, 5000, 3),
+  ('ucretsiz', 'Ücretsiz Listeleme',  0,    0, 4)
+on conflict (code) do nothing;
+
+create table if not exists public.payments (
+  id              bigint primary key generated always as identity,
+  local_id        bigint,
+  institution_id  text not null,
+  plan_code       text not null,
+  tutar           numeric(10,2) not null default 0,
+  kdv             numeric(10,2) not null default 0,
+  para_birimi     text not null default 'TRY',
+  odeme_tarihi    timestamptz not null,
+  donem_baslangic date not null,
+  donem_bitis     date not null,
+  yontem          text,
+  durum           text not null default 'odendi',
+  fatura_no       text,
+  aciklama        text,
+  olusturan       text,
+  created_at      timestamptz default now()
+);
+
+create unique index if not exists payments_local_uidx on public.payments (local_id);
+create index if not exists payments_inst_idx  on public.payments (institution_id, odeme_tarihi desc);
+create index if not exists payments_donem_idx on public.payments (donem_bitis);
+
+alter table public.plans    enable row level security;
+alter table public.payments enable row level security;

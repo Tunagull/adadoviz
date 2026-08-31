@@ -20,6 +20,7 @@ import {
   updateBusinessBranch,
   createBusinessBranch,
   createBusinessBranchRequest,
+  fetchBusinessSubscription,
   fetchBusinessNotifications,
   markBusinessNotificationsRead,
 } from "../lib/auth";
@@ -239,6 +240,8 @@ export function InstitutionAdminPage() {
   const [branchName, setBranchName] = useState("");
   const [locationGeocoding, setLocationGeocoding] = useState(false);
   const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(false);
+  /** İ-01 / İ-02 / İ-03: kendi aboneliği, ödeme geçmişi ve performansı. */
+  const [subInfo, setSubInfo] = useState(null);
   const [subscriptionBranches, setSubscriptionBranches] = useState([]);
   const [subscriptionPanelLoading, setSubscriptionPanelLoading] = useState(false);
   const subscriptionPanelRef = useRef(null);
@@ -594,6 +597,11 @@ export function InstitutionAdminPage() {
 
   useEffect(() => {
     if (!showSubscriptionPanel) return undefined;
+    if (auth?.token) {
+      fetchBusinessSubscription(auth.token)
+        .then(setSubInfo)
+        .catch(() => setSubInfo(null));
+    }
     const onDocClick = (event) => {
       if (!subscriptionPanelRef.current) return;
       if (!subscriptionPanelRef.current.contains(event.target)) {
@@ -1648,6 +1656,99 @@ export function InstitutionAdminPage() {
 
           {showSubscriptionPanel ? (
             <div className="absolute left-0 top-full z-overlay mt-2 w-[min(100vw-2rem,28rem)] overflow-hidden rounded-xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900">
+              {/*
+                ⚠️ ÜRÜN HARİTASI İ-01/İ-02/İ-03: Bu ekranın adı "Abonelik Durumu"
+                ama içinde YALNIZCA şube tablosu vardı — işletme kendi paketini,
+                bitişini, kalan gününü, ne ödediğini ve görünürlük karşılığını
+                hiçbir yerde göremiyordu. Aşağıdaki üç blok bunu kapatıyor.
+              */}
+              {subInfo?.subscription ? (
+                <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-700">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-semibold text-ink-900 dark:text-white">
+                      {subInfo.subscription.plan?.ad || subInfo.subscription.subscription_type}
+                    </span>
+                    {subInfo.subscription.plan?.fiyat > 0 ? (
+                      <span className="font-mono text-sm font-semibold text-ink-900 tabular-nums dark:text-white">
+                        {Number(subInfo.subscription.plan.fiyat).toLocaleString("tr-TR")} ₺
+                        <span className="ml-1 text-xs font-normal text-ink-600 dark:text-ink-400">
+                          / {subInfo.subscription.plan.sure_gun} gün
+                        </span>
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="block text-ink-600 dark:text-ink-400">Bitiş</span>
+                      <span className="font-medium text-ink-900 dark:text-ink-100">
+                        {subInfo.subscription.subscription_end_date
+                          ? new Date(subInfo.subscription.subscription_end_date).toLocaleDateString("tr-TR")
+                          : "Süresiz"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="block text-ink-600 dark:text-ink-400">Kalan</span>
+                      <span
+                        className={`font-semibold ${
+                          subInfo.subscription.days_remaining == null
+                            ? "text-ink-700 dark:text-ink-200"
+                            : subInfo.subscription.days_remaining <= 7
+                              ? "text-warning-700 dark:text-warning-400"
+                              : "text-ink-900 dark:text-ink-100"
+                        }`}
+                      >
+                        {subInfo.subscription.days_remaining == null
+                          ? "—"
+                          : `${subInfo.subscription.days_remaining} gün`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {subInfo?.performance ? (
+                <div className="border-b border-ink-200 bg-brand-500/5 px-4 py-3 dark:border-ink-700">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
+                    Bu dönem görünürlüğünüz
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-baseline gap-4 text-sm">
+                    <span className="font-mono text-lg font-bold text-ink-900 tabular-nums dark:text-white">
+                      {subInfo.performance.tiklama}
+                      <span className="ml-1 text-xs font-normal text-ink-600 dark:text-ink-400">tıklama</span>
+                    </span>
+                    {subInfo.performance.siralama ? (
+                      <span className="text-xs text-ink-600 dark:text-ink-400">
+                        {subInfo.performance.toplamIsletme} işletme içinde{" "}
+                        <b className="text-ink-900 dark:text-ink-100">
+                          {subInfo.performance.siralama}. sırada
+                        </b>
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {subInfo?.payments?.length ? (
+                <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-700">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                    Ödemelerim
+                  </p>
+                  <ul className="space-y-1">
+                    {subInfo.payments.slice(0, 5).map((pay) => (
+                      <li key={pay.id} className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="text-ink-700 dark:text-ink-300">
+                          {new Date(pay.odeme_tarihi).toLocaleDateString("tr-TR")} ·{" "}
+                          {pay.plan_adi || pay.plan_code}
+                        </span>
+                        <span className="font-mono font-semibold text-ink-900 tabular-nums dark:text-ink-100">
+                          {(Number(pay.tutar) + Number(pay.kdv || 0)).toLocaleString("tr-TR")} ₺
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-3 gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-400">
                 <span>{t("branchNameLabel")}</span>
                 <span>{t("subscriptionStartDate")}</span>

@@ -57,6 +57,19 @@ const {
   getHistoricalRates,
   getHistoricalRatesCount,
   getLatestHistoricalRatesSnapshot,
+  listPlans,
+  updatePlan,
+  createPayment,
+  deletePayment,
+  listPayments,
+  getPaymentsForInstitution,
+  getRevenueSummary,
+  listExpiringSubscriptions,
+  backfillPaymentsFromSubscriptions,
+  getClicksByBusiness,
+  getClicksForInstitution,
+  listPartnershipApplications,
+  planCodeFromSubscriptionType,
   listPublicBranches,
   getPublicExchangeOfficeBySlug,
   listPublicExchangeOfficeSlugs,
@@ -2109,6 +2122,177 @@ app.put("/api/admin/rates", requireAuth, requireWritableBusiness, async (req, re
     });
   } catch (error) {
     return res.status(400).json({ error: error.message || "Oranlar kaydedilemedi." });
+  }
+});
+
+
+/* ==========================================================================
+ * ABONELİK, TAHSİLAT VE PERFORMANS
+ * Ürün haritası: A-01, A-02, A-03, A-04, A-05, İ-01, İ-02, İ-03
+ * ========================================================================== */
+
+/** Super Admin: paketler (fiyat artık veri, kodda sabit değil). */
+app.get("/api/admin/plans", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({ plans: listPlans() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Paketler alınamadı." });
+  }
+});
+
+app.put("/api/admin/plans/:code", requireSuperAdmin, async (req, res) => {
+  try {
+    const plan = updatePlan(req.params.code, {
+      ad: req.body?.ad,
+      sure_gun: req.body?.sure_gun,
+      fiyat: req.body?.fiyat,
+      kdv_orani: req.body?.kdv_orani,
+      aktif: req.body?.aktif,
+    });
+    await recordAudit({
+      action: "plan_update",
+      actor: req.user?.username || "superadmin",
+      detail: `Paket güncellendi: ${plan.code} → ${plan.fiyat} ₺ / ${plan.sure_gun} gün`,
+    });
+    return res.json({ plan });
+  } catch (err) {
+    const status = err.message === "Paket bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Paket güncellenemedi." });
+  }
+});
+
+/** Super Admin: tahsilat dökümü. */
+app.get("/api/admin/payments", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      payments: listPayments({
+        institution_id: req.query?.institution_id || undefined,
+        from: req.query?.from || undefined,
+        to: req.query?.to || undefined,
+        limit: req.query?.limit,
+      }),
+      summary: getRevenueSummary(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Tahsilat dökümü alınamadı." });
+  }
+});
+
+/** Super Admin: elle tahsilat kaydı (KKTC gerçeği: havale / nakit). */
+app.post("/api/admin/payments", requireSuperAdmin, async (req, res) => {
+  try {
+    const payment = createPayment({
+      institution_id: req.body?.institution_id,
+      plan_code: req.body?.plan_code,
+      tutar: req.body?.tutar,
+      kdv: req.body?.kdv,
+      odeme_tarihi: req.body?.odeme_tarihi,
+      donem_baslangic: req.body?.donem_baslangic,
+      donem_bitis: req.body?.donem_bitis,
+      yontem: req.body?.yontem,
+      durum: req.body?.durum,
+      fatura_no: req.body?.fatura_no,
+      aciklama: req.body?.aciklama,
+      olusturan: req.user?.username || "superadmin",
+    });
+    await recordAudit({
+      action: "payment_create",
+      actor: req.user?.username || "superadmin",
+      institution_id: payment.institution_id,
+      detail: `Tahsilat kaydedildi: ${payment.tutar} ₺ (${payment.plan_code}), dönem ${payment.donem_baslangic} → ${payment.donem_bitis}`,
+    });
+    return res.status(201).json({ payment });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Tahsilat kaydedilemedi." });
+  }
+});
+
+app.delete("/api/admin/payments/:id", requireSuperAdmin, async (req, res) => {
+  try {
+    const result = deletePayment(req.params.id);
+    await recordAudit({
+      action: "payment_delete",
+      actor: req.user?.username || "superadmin",
+      institution_id: result.payment?.institution_id || null,
+      detail: `Tahsilat silindi (id=${req.params.id}, ${result.payment?.tutar} ₺)`,
+    });
+    return res.json(result);
+  } catch (err) {
+    const status = err.message === "Ödeme bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Tahsilat silinemedi." });
+  }
+});
+
+/** Super Admin: vade takvimi — önümüzdeki N günde biten abonelikler. */
+app.get("/api/admin/expiring", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({ expiring: listExpiringSubscriptions(req.query?.days) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Vade takvimi alınamadı." });
+  }
+});
+
+/** Super Admin: işletme bazında tıklama (ham oturum listesi yerine toplam). */
+app.get("/api/admin/analytics/by-business", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({ businesses: getClicksByBusiness() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Analitik alınamadı." });
+  }
+});
+
+/** Super Admin: partnerlik başvuruları — form yazıyordu, gören ekran yoktu. */
+app.get("/api/admin/partnership-applications", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({ applications: listPartnershipApplications(req.query?.limit) });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Başvurular alınamadı." });
+  }
+});
+
+/** Super Admin: mevcut aboneliklerden geriye dönük tahsilat üret (idempotent). */
+app.post("/api/admin/payments/backfill", requireSuperAdmin, async (req, res) => {
+  try {
+    const result = backfillPaymentsFromSubscriptions(req.user?.username || "superadmin");
+    await recordAudit({
+      action: "payment_backfill",
+      actor: req.user?.username || "superadmin",
+      detail: `${result.eklenen} geriye dönük tahsilat kaydı üretildi`,
+    });
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Geriye dönük üretim başarısız." });
+  }
+});
+
+/**
+ * İşletme: kendi aboneliği + ödeme geçmişi + performansı.
+ * "Abonelik Durumu" ekranı bunları hiç göstermiyordu (İ-01 / İ-02 / İ-03).
+ */
+app.get("/api/business/subscription", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const admin = findAdminByUsername(req.user.username);
+    const instId = req.user.institution_id;
+    const planCode = planCodeFromSubscriptionType(admin?.subscription_type);
+    const plans = listPlans();
+    return res.json({
+      subscription: {
+        institution_id: instId,
+        institution_name: req.user.institution_name,
+        subscription_type: admin?.subscription_type || "Test",
+        plan: plans.find((p) => p.code === planCode) || null,
+        subscription_end_date: admin?.subscription_end_date || null,
+        days_remaining: admin?.days_remaining != null ? admin.days_remaining : null,
+        is_active: !(admin?.is_active === 0 || admin?.is_active === false),
+      },
+      payments: getPaymentsForInstitution(instId, 50),
+      performance: getClicksForInstitution(instId),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Abonelik bilgisi alınamadı." });
   }
 });
 
