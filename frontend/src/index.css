@@ -105,6 +105,28 @@ canvas {
     @apply scale-[0.97] duration-press;
   }
 
+  /**
+   * ⚠️ HAREKET DÜZELTMESİ (M-04): Yönetim panellerindeki 83 butonun (işletme
+   * 34 + süper admin 49) hiçbirinde basma geri bildirimi yoktu. Bu ekranlarda
+   * kullanıcı gün boyu kur giriyor, marj değiştiriyor, abonelik uzatıyor —
+   * yani en çok tıklanan yüzey burası ve hiçbir tıklama karşılık vermiyordu.
+   *
+   * Butonlara tek tek sınıf eklemek yerine varsayılan davranış yapıldı.
+   * `:where()` özgüllüğü sıfırladığı için herhangi bir bileşen sınıfı bunu
+   * ezebilir; özel animasyonu olan bir kontrol `data-no-press` ile çıkabilir.
+   *
+   * Ölçüm: kod tabanındaki hiçbir buton `scale-`/`translate-`/`rotate-`
+   * kullanmıyor, dolayısıyla bu kural mevcut bir dönüşümü bozmuyor.
+   */
+  :where(button, [role="button"]):not([data-no-press]):not(:disabled) {
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  :where(button, [role="button"]):not([data-no-press]):not(:disabled):active {
+    transform: scale(0.97);
+    transition-duration: 100ms;
+  }
+
   .btn-sm {
     @apply gap-1.5 px-3 py-1.5 text-xs;
   }

@@ -116,7 +116,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
 
   // ✅ ADIM 3: Tailwind Flash Effect - Dinamik sınıflar + Smooth Fade
   // Hover glow = Admin Paneli butonuyla birebir aynı:
-  // hover:border-brand-400 + hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]
+  // hover:border-brand-400 +
   const getCardClasses = () => {
     const baseClasses =
       "group overflow-hidden rounded-2xl backdrop-blur-lg transition-all duration-300 cursor-pointer";
@@ -126,7 +126,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
     } else if (flashColor === "red") {
       return `${baseClasses} border-danger-500/80 bg-danger-500/20 shadow-lg shadow-danger-500/30 border`;
     } else {
-      return `${baseClasses} border border-ink-200 bg-white/90 shadow-xl dark:border-white/10 dark:bg-ink-900/60 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]`;
+      return `${baseClasses} border border-ink-200 bg-white/90 shadow-xl dark:border-white/10 dark:bg-ink-900/60 hover:border-brand-400 dark:hover:border-brand-400`;
     }
   };
 

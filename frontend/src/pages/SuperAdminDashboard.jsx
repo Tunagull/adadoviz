@@ -324,7 +324,7 @@ function SubscriptionLedgerButton({ active, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all duration-300 sm:text-sm ${
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong sm:text-sm ${
         active
           ? "border-brand-500/40 bg-brand-500/20 text-brand-700 shadow-[0_0_12px_rgba(47,123,149,0.35)] dark:text-brand-300"
           : "border-ink-200 bg-white text-ink-600 hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
@@ -1252,7 +1252,7 @@ export function SuperAdminDashboard() {
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
         >
           <ArrowLeft className="size-4" />
           {t("backToDashboardLink")}
@@ -1280,7 +1280,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={openSeoModal}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
           >
             <Search size={18} />
             {t("seoButton")}
@@ -1288,7 +1288,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={() => setShowLogModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
           >
             <Activity size={18} />
             {t("logsButton")}
@@ -1296,7 +1296,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-danger-500 hover:text-danger-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-danger-500 hover:text-danger-500 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500"
           >
             <LogOut size={16} />
             {t("logoutShort")}
@@ -1314,10 +1314,10 @@ export function SuperAdminDashboard() {
               setError("");
               setSuccess("");
             }}
-            className={`relative inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-300 ${
+            className={`relative inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong ${
               tab === item.id
                 ? "bg-brand-500/20 text-brand-700 border border-brand-500/40 dark:text-brand-300"
-                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80"
             }`}
           >
             {item.label}
@@ -1342,7 +1342,7 @@ export function SuperAdminDashboard() {
       ) : null}
 
       {tab === "list" && (
-        <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
           <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
             <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
               <Building2 size={18} className="text-brand-600 dark:text-brand-400" />
@@ -1557,30 +1557,47 @@ export function SuperAdminDashboard() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+                          {/*
+                            ⚠️ TASARIM DÜZELTMESİ (D-21): İşlem sütunundaki üç
+                            buton etiketleriyle birlikte yatay sığmıyordu ve
+                            `flex-wrap` her birini ALT SATIRA atıyordu. Sonuç:
+                            satır yüksekliği ~100 px, ekranda aynı anda yalnızca
+                            2,5 işletme görünüyordu. Yönetim tablosunun işi
+                            karşılaştırma yapmak; satırların çoğu ekran dışında
+                            kalınca tablo işlevini kaybediyor.
+
+                            Yoğun tablolarda standart çözüm ikon eylemleridir.
+                            Etiketler `title` ve `aria-label` olarak korunuyor —
+                            ekran okuyucu ve fareyle üzerine gelme için bilgi
+                            kaybı yok, buna karşılık üç katı satır görünüyor.
+                          */}
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => openEdit(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+                              title={t("editBtn")}
+                              aria-label={t("editBtn")}
+                              className="inline-flex size-8 items-center justify-center rounded-control border border-ink-200 bg-white text-ink-600 transition-[background-color,border-color,color] duration-fast ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-300"
                             >
                               <Pencil size={14} />
-                              {t("editBtn")}
                             </button>
                             <button
                               type="button"
                               onClick={() => openBranchSubscriptionModal(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:border-brand-400 dark:text-brand-300"
+                              title={t("addSubscriptionBtn")}
+                              aria-label={t("addSubscriptionBtn")}
+                              className="inline-flex size-8 items-center justify-center rounded-control border border-brand-500/40 bg-brand-500/10 text-brand-700 transition-[background-color,border-color,color] duration-fast ease-out-strong hover:border-brand-400 dark:text-brand-300"
                             >
                               <CreditCard size={14} />
-                              {t("addSubscriptionBtn")}
                             </button>
                             <button
                               type="button"
                               onClick={() => setBusinessToDelete(biz)}
-                              className="btn-danger !px-3 !py-1.5 !text-xs"
+                              title={t("deleteBtn")}
+                              aria-label={t("deleteBtn")}
+                              className="inline-flex size-8 items-center justify-center rounded-control border border-danger-600/40 text-danger-700 transition-[background-color,border-color,color] duration-fast ease-out-strong hover:bg-danger-500/10 dark:border-danger-500/40 dark:text-danger-400"
                             >
                               <Trash2 size={14} />
-                              {t("deleteBtn")}
                             </button>
                           </div>
                         </td>
@@ -1608,7 +1625,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="shrink-0 border-b border-ink-200 px-5 pb-3 pt-5 dark:border-ink-800 md:px-6">
@@ -1834,7 +1851,7 @@ export function SuperAdminDashboard() {
                                 <span className="font-medium text-ink-900 dark:text-white">
                                   {branch.name}
                                   {!active ? (
-                                    <span className="ml-2 rounded bg-danger-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger-700 dark:text-danger-300">
+                                    <span className="ml-2 rounded bg-danger-500/15 px-1.5 py-0.5 text-[10px] font-bold text-danger-700 dark:text-danger-300">
                                       {t("statusInactive")}
                                     </span>
                                   ) : null}
@@ -1933,7 +1950,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="shrink-0 border-b border-ink-200 px-5 py-4 dark:border-ink-800 md:px-6">
@@ -2073,7 +2090,7 @@ export function SuperAdminDashboard() {
       ) : null}
 
       {tab === "create" && (
-        <section className="rounded-2xl border border-ink-200 bg-white p-5 md:p-6 dark:border-ink-800 dark:bg-ink-900/80">
+        <section className="rounded-card border border-ink-200 bg-white p-5 md:p-6 dark:border-ink-800 dark:bg-ink-900/80">
           <div className="mb-4 flex items-center gap-2">
             <Plus size={18} className="text-brand-600 dark:text-brand-400" />
             <h2 className="text-lg font-semibold text-ink-900 dark:text-white">{t("tabCreate")}</h2>
@@ -2158,7 +2175,7 @@ export function SuperAdminDashboard() {
       )}
 
       {tab === "requests" && (
-        <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
           <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
             <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
               <ClipboardList size={18} className="text-brand-600 dark:text-brand-400" />
@@ -2293,7 +2310,7 @@ export function SuperAdminDashboard() {
           ) : healthData ? (
             <>
               <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
                   <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthMbRates")}
                   </p>
@@ -2320,7 +2337,7 @@ export function SuperAdminDashboard() {
                   ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
                   <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthDualWrite")}
                   </p>
@@ -2342,7 +2359,7 @@ export function SuperAdminDashboard() {
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
                   <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthDriftTitle")}
                   </p>
@@ -2384,7 +2401,7 @@ export function SuperAdminDashboard() {
                 </div>
               ) : null}
 
-              <div className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+              <div className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
                 <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-800">
                   <h2 className="font-semibold">{t("auditLogTitle")}</h2>
                 </div>
@@ -2439,7 +2456,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex max-h-[90vh] w-[95%] max-w-3xl flex-col gap-4 overflow-hidden rounded-2xl border border-ink-200 bg-white p-4 shadow-2xl dark:border-ink-700 dark:bg-ink-900 md:w-full md:p-6"
+            className="relative flex max-h-[90vh] w-[95%] max-w-3xl flex-col gap-4 overflow-hidden rounded-card border border-ink-200 bg-white p-4 shadow-2xl dark:border-ink-700 dark:bg-ink-900 md:w-full md:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2531,7 +2548,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="shrink-0 border-b border-ink-200 px-5 py-4 dark:border-ink-800">
@@ -2690,7 +2707,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2938,7 +2955,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -3004,7 +3021,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -3057,7 +3074,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-xs shadow-2xl flex flex-col items-center text-center gap-3 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-xs shadow-2xl flex flex-col items-center text-center gap-3 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">

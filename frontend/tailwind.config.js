@@ -133,9 +133,9 @@ export default {
       },
 
       boxShadow: {
-        card: "0 1px 2px rgba(15,23,42,.06), 0 8px 24px -12px rgba(15,23,42,.18)",
+        card: "0 1px 2px rgba(26,25,23,.06), 0 8px 24px -12px rgba(26,25,23,.16)",
         "card-dark": "0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6)",
-        focus: "0 0 0 3px rgba(6,182,212,.35)",
+        focus: "0 0 0 3px rgba(47,123,149,.35)",
       },
 
       /**

@@ -921,7 +921,7 @@ function PartnershipForm() {
   const PHONE_MASK_TEMPLATE = "0(5XX) XXX XXXX";
 
   const partnershipInputClass =
-    "h-11 rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400";
+    "h-11 rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400";
 
   const formatPhoneDisplay = (rawDigits) => {
     let d = String(rawDigits || "").replace(/\D/g, "").slice(0, 10);
@@ -1166,7 +1166,7 @@ function PartnershipForm() {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("phoneLabel")}</label>
-                <div className="relative h-11 flex items-center rounded-lg border border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:shadow-[0_0_15px_rgba(47,123,149,0.4)] transition-all duration-300">
+                <div className="relative h-11 flex items-center rounded-lg border border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:shadow-focus transition-all duration-300">
                   <span className="absolute left-3 z-raised text-sm font-mono font-bold text-ink-800 dark:text-white pointer-events-none">
                     +90
                   </span>
@@ -1201,7 +1201,7 @@ function PartnershipForm() {
                 placeholder={t("messagePlaceholder")}
                 value={formData.message}
                 onChange={handleChange}
-                className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
+                className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
               />
               {messageIsEmpty ? (
                 <div className="rounded-lg border border-dashed border-brand-500/40 bg-brand-500/5 px-3 py-2.5">
@@ -2125,7 +2125,7 @@ export function V0FinancialDashboard() {
         <BrandLogo className="min-w-0 shrink" compact={headerCompact} />
         <div className={`flex min-w-0 shrink-0 flex-wrap items-center justify-end transition-all duration-300 ${headerCompact ? "gap-1 sm:gap-2" : "gap-1.5 sm:gap-3"}`}>
           <div
-            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 font-medium text-brand-700 transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:text-brand-300 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] ${
+            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 font-medium text-brand-700 transition-all duration-300 hover:border-brand-400 dark:text-brand-300 dark:hover:border-brand-400 ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >
@@ -2143,7 +2143,7 @@ export function V0FinancialDashboard() {
                 ? navigate(isSuperAdmin ? "/super-admin" : "/admin")
                 : setIsBusinessLoginOpen(true)
             }
-            className={`${headerBtnClass} max-w-[9.5rem] truncate border-ink-300 bg-white text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] sm:max-w-none`}
+            className={`${headerBtnClass} max-w-[9.5rem] truncate border-ink-300 bg-white text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 sm:max-w-none`}
           >
             {isAuthenticated
               ? isSuperAdmin
@@ -2169,7 +2169,7 @@ export function V0FinancialDashboard() {
           <button
             type="button"
             onClick={scrollToPartnership}
-            className={`hidden sm:inline-flex items-center min-h-[2.75rem] px-3.5 rounded-full border border-ink-300 bg-white font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] ${
+            className={`hidden sm:inline-flex items-center min-h-[2.75rem] px-3.5 rounded-full border border-ink-300 bg-white font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >
@@ -2399,7 +2399,7 @@ export function V0FinancialDashboard() {
                 disabled={!calculatorBank}
                 value={!calculatorBank ? "" : exchangeAmount === "0" ? "" : exchangeAmount}
                 onChange={(e) => setExchangeAmount(e.target.value === "" ? "0" : e.target.value)}
-                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
+                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
                 placeholder={!calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
               />
             </div>

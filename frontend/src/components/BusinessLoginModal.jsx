@@ -181,7 +181,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder={t("usernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-focus"
                     required
                   />
                 </div>
@@ -203,7 +203,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="••••••••"
-                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-focus"
                     required
                   />
                 </div>
@@ -249,7 +249,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   type="button"
                   onClick={onClose}
                   disabled={loading}
-                  className="flex-1 rounded-lg border border-ink-300 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] disabled:opacity-60 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
+                  className="flex-1 rounded-lg border border-ink-300 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 disabled:opacity-60 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
                 >
                   {t("cancel")}
                 </button>
@@ -313,7 +313,7 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                     value={forgotEmail}
                     onChange={(e) => setForgotEmail(e.target.value)}
                     placeholder={t("emailOrUsernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-ink-200 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
+                    className="h-11 w-full rounded-lg border border-ink-200 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
                     required
                     disabled={forgotLoading}
                   />
