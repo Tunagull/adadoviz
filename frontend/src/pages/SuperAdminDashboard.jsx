@@ -694,7 +694,12 @@ export function SuperAdminDashboard() {
     });
   }
 
-  const logData = analyticsData?.sessions || [];
+  /*
+    ⚠️ OPTİMİZASYON (O-03): aynı sorun — `analyticsData?.sessions || []` her
+    render'da yeni dizi üretiyor ve buna bağlı ÜÇ `useMemo` (satır 806, 816,
+    837) hiç memoize etmiyordu.
+  */
+  const logData = useMemo(() => analyticsData?.sessions || [], [analyticsData]);
 
   /**
    * ⚠️ ÜRÜN HARİTASI A-02: Bu iki dizi SABİT BOŞ idi — "Abonelik Dökümü" ve

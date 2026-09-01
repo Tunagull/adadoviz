@@ -77,7 +77,13 @@ export function ExchangeOfficePage() {
   }, [slug, navigate, t]);
 
   const business = payload?.business || null;
-  const branches = payload?.branches || [];
+  /*
+    ⚠️ OPTİMİZASYON (O-03): `payload?.branches || []` her render'da YENİ bir
+    dizi üretiyordu. Bu değer aşağıdaki iki `useMemo`'nun bağımlılığı olduğu
+    için memoizasyon hiçbir zaman tutmuyor, hesaplama her render tekrarlanıyordu.
+    Referansı sabitlemek memo'yu gerçekten çalışır hâle getirir.
+  */
+  const branches = useMemo(() => payload?.branches || [], [payload]);
   const displayName = String(business?.name || "").trim();
 
   const primaryCity = useMemo(() => {

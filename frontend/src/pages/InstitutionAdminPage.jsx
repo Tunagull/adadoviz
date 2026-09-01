@@ -612,7 +612,12 @@ export function InstitutionAdminPage() {
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [showSubscriptionPanel]);
+    /*
+      `auth?.token` bağımlılığa eklendi: panel AÇIKKEN oturum yenilenirse
+      abonelik bilgisi eski token'la çekilmiş hâlde kalıyordu. Dar bir pencere
+      ama düzeltmesi bedelsiz.
+    */
+  }, [showSubscriptionPanel, auth?.token]);
 
   const resetBranchRequestForm = () => {
     setBranchRequestForm({ name: "", phone: "", address: "", lat: null, lng: null });
