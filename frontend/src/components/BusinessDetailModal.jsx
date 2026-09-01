@@ -189,12 +189,12 @@ export function BusinessDetailModal({
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const localeCode = lang === "en" ? "en-US" : "tr-TR";
-  const chartMuted = isDark ? "#94a3b8" : "#64748b";
-  const chartAxis = isDark ? "#475569" : "#cbd5e1";
-  const chartGrid = isDark ? "#334155" : "#e2e8f0";
-  const tooltipBg = isDark ? "#0f172a" : "#ffffff";
-  const tooltipBorder = isDark ? "#334155" : "#e2e8f0";
-  const tooltipLabel = isDark ? "#e2e8f0" : "#0f172a";
+  const chartMuted = isDark ? "#a5a19a" : "#78746c";
+  const chartAxis = isDark ? "#5b5852" : "#d2cfc9";
+  const chartGrid = isDark ? "#46443f" : "#e6e4e0";
+  const tooltipBg = isDark ? "#1a1917" : "#ffffff";
+  const tooltipBorder = isDark ? "#46443f" : "#e6e4e0";
+  const tooltipLabel = isDark ? "#e6e4e0" : "#1a1917";
   const [activeView, setActiveView] = useState(
     initialView === "konum" ? "konum" : "grafik"
   );
@@ -652,7 +652,7 @@ export function BusinessDetailModal({
                         tickFormatter={(v) => Number(v).toFixed(2)}
                       />
                       <Tooltip
-                        cursor={{ stroke: isDark ? "#94a3b8" : "#64748b", strokeWidth: 1 }}
+                        cursor={{ stroke: isDark ? "#a5a19a" : "#78746c", strokeWidth: 1 }}
                         contentStyle={{
                           background: tooltipBg,
                           border: `1px solid ${tooltipBorder}`,
@@ -700,7 +700,7 @@ export function BusinessDetailModal({
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 sm:gap-4 sm:p-4 md:grid-cols-3 md:overflow-hidden md:min-h-[400px]">
             <div className="col-span-1 flex min-h-0 flex-col gap-3 overflow-y-auto md:max-h-full">
               <div className="shrink-0 rounded-xl border border-ink-200 bg-ink-50 p-3 dark:border-ink-800 dark:bg-ink-950/60">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink-500">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-ink-600">
                   <MapPin size={12} className="shrink-0 text-brand-600 dark:text-brand-400" />
                   {t("branchesLabel")}
                 </p>
@@ -744,7 +744,7 @@ export function BusinessDetailModal({
                   </h3>
                   <dl className="space-y-3 text-sm">
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="text-[10px] tracking-wide text-ink-600">
                         {t("addressLabelShort")}
                       </dt>
                       <dd className="mt-0.5 break-words text-ink-700 dark:text-ink-200">
@@ -752,7 +752,7 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="text-[10px] tracking-wide text-ink-600">
                         {t("phoneLabelShort")}
                       </dt>
                       <dd className="mt-0.5 text-ink-700 dark:text-ink-200">
@@ -769,7 +769,7 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="text-[10px] tracking-wide text-ink-600">
                         {t("whatsappLabelShort")}
                       </dt>
                       <dd className="mt-0.5 text-ink-700 dark:text-ink-200">
@@ -788,7 +788,7 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div ref={hoursPopoverRef} className="relative">
-                      <dt className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="mb-1.5 text-[10px] tracking-wide text-ink-600">
                         {t("workingHoursLabel")}
                       </dt>
                       <dd>
@@ -837,7 +837,7 @@ export function BusinessDetailModal({
 
                             {hoursExpanded && canExpandHours ? (
                               <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-dropdown overflow-hidden rounded-xl border border-ink-200 bg-white p-2 shadow-xl shadow-ink-900/10 ring-1 ring-black/5 dark:border-ink-700 dark:bg-ink-900 dark:shadow-black/40 dark:ring-white/5">
-                                <p className="mb-1.5 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                                <p className="mb-1.5 px-1.5 text-[10px] font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                                   {t("weeklyHoursTitle")}
                                 </p>
                                 <ul className="max-h-52 space-y-0.5 overflow-y-auto">

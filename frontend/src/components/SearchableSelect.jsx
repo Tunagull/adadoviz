@@ -272,7 +272,7 @@ export function SearchableSelect({
         aria-label={ariaLabel || placeholder}
         onClick={() => !disabled && setOpen((o) => !o)}
         onKeyDown={onTriggerKeyDown}
-        className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-ink-300 bg-white px-3 text-left text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
+        className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-ink-300 bg-white px-3 text-left text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
       >
         <span className={`truncate ${selected ? "" : "text-ink-600 dark:text-ink-400"}`}>
           {selected?.label || placeholder}

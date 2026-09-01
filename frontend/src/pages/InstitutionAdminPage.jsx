@@ -1421,7 +1421,7 @@ export function InstitutionAdminPage() {
 
   if (bootstrapping) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-[#020617] dark:text-ink-400">
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-ink-950 dark:text-ink-400">
         Oturum kontrol ediliyor...
       </div>
     );
@@ -1431,7 +1431,7 @@ export function InstitutionAdminPage() {
 
   if (loading || !auth?.institution_id || !marginConfig) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-[#020617] dark:text-ink-400">
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-ink-950 dark:text-ink-400">
         Veriler yükleniyor...
       </div>
     );
@@ -1459,7 +1459,7 @@ export function InstitutionAdminPage() {
   const nearExpiry = days != null && days <= 30;
 
   return (
-    <div className="min-h-screen bg-ink-50 text-ink-800 dark:bg-[#020617] dark:text-white">
+    <div className="min-h-screen bg-ink-50 text-ink-800 dark:bg-ink-950 dark:text-white">
       {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
       <Helmet>
         <title>İşletme Paneli | AdaDöviz</title>
@@ -1472,7 +1472,7 @@ export function InstitutionAdminPage() {
           <button
             type="button"
             onClick={() => navigate("/")}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
           >
             <ArrowLeft className="size-4 shrink-0" />
             <span className="truncate">{t("backToDashboard")}</span>
@@ -1485,7 +1485,7 @@ export function InstitutionAdminPage() {
               if (isAccountInactive) return;
               setShowLogoModal(true);
             }}
-            className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-200 bg-white transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-ink-950/60 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:h-20 sm:w-20"
+            className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-200 bg-white transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] cursor-pointer dark:border-white/10 dark:bg-ink-950/60 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] sm:h-20 sm:w-20"
           >
             {profileLogoUrl ? (
               <img
@@ -1616,7 +1616,7 @@ export function InstitutionAdminPage() {
             resetPasswordForm();
             setShowPasswordModal(true);
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
         >
           <Key className="size-4" />
           {t("changePassword")}
@@ -1632,7 +1632,7 @@ export function InstitutionAdminPage() {
             setSelectedBranchId("");
             setShowInfoModal(true);
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
         >
           <Edit2 className="size-4" />
           İşletme Bilgilerini Güncelle
@@ -1645,7 +1645,7 @@ export function InstitutionAdminPage() {
             className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-300 ${
               expired || nearExpiry
                 ? "border-danger-600/50 bg-danger-500/5 text-danger-700 hover:border-danger-500 dark:border-[rgb(255,0,0)]/50 dark:text-[rgb(255,0,0)]"
-                : "border-brand-600/40 bg-brand-500/5 text-brand-800 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.35)] dark:border-[rgb(0,255,255)]/40 dark:text-brand-200 dark:hover:border-brand-400"
+                : "border-brand-600/40 bg-brand-500/5 text-brand-800 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.35)] dark:border-[rgb(0,255,255)]/40 dark:text-brand-200 dark:hover:border-brand-400"
             }`}
           >
             {t("subscriptionStatus")}
@@ -1730,7 +1730,7 @@ export function InstitutionAdminPage() {
 
               {subInfo?.payments?.length ? (
                 <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-700">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                  <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     Ödemelerim
                   </p>
                   <ul className="space-y-1">
@@ -1749,7 +1749,7 @@ export function InstitutionAdminPage() {
                 </div>
               ) : null}
 
-              <div className="grid grid-cols-3 gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-400">
+              <div className="grid grid-cols-3 gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-semibold tracking-wide text-ink-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-400">
                 <span>{t("branchNameLabel")}</span>
                 <span>{t("subscriptionStartDate")}</span>
                 <span>{t("remainingSubscription")}</span>
@@ -1835,7 +1835,7 @@ export function InstitutionAdminPage() {
         <button
           type="button"
           onClick={openBranchRequestModal}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
         >
           <Plus className="size-4" />
           {canAddBranchDirectly ? t("addBranchDirectBtn") : t("newBranchRequestBtn")}
@@ -1938,7 +1938,7 @@ export function InstitutionAdminPage() {
                     onChange={(e) =>
                       handleMarginChange(item.currency, item.type, "value", e.target.value)
                     }
-                    className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
+                    className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
                   />
                 </div>
 
@@ -2019,7 +2019,7 @@ export function InstitutionAdminPage() {
                       onChange={(e) =>
                         handleMarginChange(item.currency, item.type, "value", e.target.value)
                       }
-                      className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
+                      className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
                     />
                   </div>
 
@@ -2255,7 +2255,7 @@ export function InstitutionAdminPage() {
 
                   {/* Zoom Slider */}
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                    <label className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                       Zoom
                     </label>
                     <input
@@ -2370,7 +2370,7 @@ export function InstitutionAdminPage() {
                     !selectedBranchId ? "pointer-events-none opacity-50" : ""
                   }`}
                 >
-                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                  <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400 flex items-center gap-2">
                     <Building2 className="size-4" />
                     {t("updateBranchNameHint")}
                   </label>
@@ -2396,7 +2396,7 @@ export function InstitutionAdminPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                  <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400 flex items-center gap-2">
                     <Phone className="size-4" />
                     {t("branchPhoneLabel")}
                   </label>
@@ -2404,7 +2404,7 @@ export function InstitutionAdminPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                  <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400 flex items-center gap-2">
                     <Phone className="size-4" />
                     {t("whatsappPhoneLabel")}
                   </label>
@@ -2500,7 +2500,7 @@ export function InstitutionAdminPage() {
 
                   <div className="space-y-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                      <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">
                         {t("branchAddressLabel")}
                       </label>
                       <textarea
@@ -2643,7 +2643,7 @@ export function InstitutionAdminPage() {
 
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">
                   {t("branchNameLabel")}
                 </label>
                 <input
@@ -2659,7 +2659,7 @@ export function InstitutionAdminPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400 flex items-center gap-2">
                   <Phone className="size-4" />
                   {t("phoneLabel")}
                 </label>
@@ -2676,7 +2676,7 @@ export function InstitutionAdminPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
+                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400 flex items-center gap-2">
                   <MapPin className="size-4" />
                   {t("branchAddressLabel")}
                 </label>
@@ -2884,7 +2884,7 @@ export function InstitutionAdminPage() {
               <div className="space-y-1.5">
                 <label
                   htmlFor="old-password"
-                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
+                  className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300"
                 >
                   {t("oldPassword")}
                 </label>
@@ -2896,14 +2896,14 @@ export function InstitutionAdminPage() {
                   onChange={(e) => setOldPassword(e.target.value)}
                   required
                   disabled={passwordLoading}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label
                   htmlFor="new-password"
-                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
+                  className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300"
                 >
                   {t("newPassword")}
                 </label>
@@ -2916,14 +2916,14 @@ export function InstitutionAdminPage() {
                   required
                   minLength={4}
                   disabled={passwordLoading}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
                 />
               </div>
 
               <div className="space-y-1.5">
                 <label
                   htmlFor="confirm-password"
-                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
+                  className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300"
                 >
                   {t("confirmPassword")}
                 </label>
@@ -2936,7 +2936,7 @@ export function InstitutionAdminPage() {
                   required
                   minLength={4}
                   disabled={passwordLoading}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
                 />
               </div>
 
@@ -2964,7 +2964,7 @@ export function InstitutionAdminPage() {
                 <button
                   type="submit"
                   disabled={passwordLoading}
-                  className="flex-1 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition-all duration-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:brightness-110 disabled:opacity-50 dark:from-brand-500 dark:to-brand-600"
+                  className="flex-1 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition-all duration-300 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] hover:brightness-110 disabled:opacity-50 dark:from-brand-500 dark:to-brand-600"
                 >
                   {passwordLoading ? t("saving") : t("confirmPasswordAction")}
                 </button>

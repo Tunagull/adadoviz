@@ -120,7 +120,7 @@ export function ExchangeOfficePage() {
         ) : null}
       </Helmet>
 
-      <header className="sticky top-0 z-sticky border-b border-ink-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-[#020617]/80 sm:px-6">
+      <header className="sticky top-0 z-sticky border-b border-ink-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-ink-950/80 sm:px-6">
         <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <BrandLogo className="min-w-0 shrink" />

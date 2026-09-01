@@ -326,7 +326,7 @@ function SubscriptionLedgerButton({ active, onClick }) {
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all duration-300 sm:text-sm ${
         active
-          ? "border-brand-500/40 bg-brand-500/20 text-brand-700 shadow-[0_0_12px_rgba(34,211,238,0.35)] dark:text-brand-300"
+          ? "border-brand-500/40 bg-brand-500/20 text-brand-700 shadow-[0_0_12px_rgba(47,123,149,0.35)] dark:text-brand-300"
           : "border-ink-200 bg-white text-ink-600 hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
       }`}
       title={t("subscriptionLedgerTitle")}
@@ -1252,7 +1252,7 @@ export function SuperAdminDashboard() {
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
         >
           <ArrowLeft className="size-4" />
           {t("backToDashboardLink")}
@@ -1280,7 +1280,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={openSeoModal}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
           >
             <Search size={18} />
             {t("seoButton")}
@@ -1288,7 +1288,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={() => setShowLogModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
           >
             <Activity size={18} />
             {t("logsButton")}
@@ -1317,7 +1317,7 @@ export function SuperAdminDashboard() {
             className={`relative inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-300 ${
               tab === item.id
                 ? "bg-brand-500/20 text-brand-700 border border-brand-500/40 dark:text-brand-300"
-                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
             }`}
           >
             {item.label}
@@ -1455,7 +1455,7 @@ export function SuperAdminDashboard() {
             </div>
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1000px] text-left text-sm">
-                <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-500 dark:bg-ink-950/80 dark:text-ink-500">
+                <thead className="bg-ink-50 text-xs tracking-wide text-ink-600 dark:bg-ink-950/80 dark:text-ink-500">
                   <tr>
                     <th className="px-4 py-3 font-medium">{t("colId")}</th>
                     <th className="px-4 py-3 font-medium">{t("businessName")}</th>
@@ -1561,7 +1561,7 @@ export function SuperAdminDashboard() {
                             <button
                               type="button"
                               onClick={() => openEdit(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)]"
                             >
                               <Pencil size={14} />
                               {t("editBtn")}
@@ -2212,7 +2212,7 @@ export function SuperAdminDashboard() {
                       <div className="min-w-0 space-y-1">
                         <p className="font-semibold text-ink-900 dark:text-white">
                           {req.branch_name}
-                          <span className="ml-2 rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300">
+                          <span className="ml-2 rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-ink-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300">
                             {req.request_type === "reactivate"
                               ? t("requestTypeRenew")
                               : t("requestTypeNew")}
@@ -2294,7 +2294,7 @@ export function SuperAdminDashboard() {
             <>
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                  <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthMbRates")}
                   </p>
                   <p className="mt-2 text-sm text-ink-800 dark:text-ink-100">
@@ -2321,7 +2321,7 @@ export function SuperAdminDashboard() {
                 </div>
 
                 <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                  <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthDualWrite")}
                   </p>
                   <p className="mt-2 text-2xl font-bold text-ink-900 dark:text-white">
@@ -2343,7 +2343,7 @@ export function SuperAdminDashboard() {
                 </div>
 
                 <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                  <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthDriftTitle")}
                   </p>
                   {healthData.drift?.ok === false ? (
@@ -2745,7 +2745,7 @@ export function SuperAdminDashboard() {
               ) : (
                 <>
                   <div className="rounded-xl bg-ink-800 border border-ink-700/80 px-5 py-6 text-center">
-                    <p className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                    <p className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                       {t("totalUniqueVisitors")}
                     </p>
                     <p className="mt-3 text-4xl font-bold text-success-400">
@@ -3093,7 +3093,7 @@ export function SuperAdminDashboard() {
 function Field({ label, children }) {
   return (
     <label className="block space-y-1.5">
-      <span className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">{label}</span>
+      <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{label}</span>
       {children}
     </label>
   );

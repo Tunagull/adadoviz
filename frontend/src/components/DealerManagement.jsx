@@ -158,7 +158,7 @@ function BranchFormModal({
             className="space-y-4 overflow-y-auto border-b border-ink-200 p-5 lg:border-b-0 lg:border-r dark:border-ink-800"
           >
             <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
+              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                 Şube Adı
               </span>
               <input
@@ -171,7 +171,7 @@ function BranchFormModal({
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
+              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                 Telefon
               </span>
               <input
@@ -183,7 +183,7 @@ function BranchFormModal({
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
+              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                 Abonelik Tipi
               </span>
               <select
@@ -205,7 +205,7 @@ function BranchFormModal({
             </label>
 
             <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
+              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                 {t("subscriptionStartDate")}
               </span>
               <input
@@ -220,7 +220,7 @@ function BranchFormModal({
 
             {formData.subscription_type !== "Test" ? (
               <label className="block space-y-1.5">
-                <span className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                   {t("remainingSubscription")} ({t("daysUnit")})
                 </span>
                 <input
@@ -239,7 +239,7 @@ function BranchFormModal({
             )}
 
             <label className="block space-y-1.5">
-              <span className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
+              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                 Adres
               </span>
               <textarea

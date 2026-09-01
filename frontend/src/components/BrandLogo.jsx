@@ -21,7 +21,7 @@ function Mark({ className = "" }) {
     <svg viewBox="0 0 64 64" className={className} aria-hidden="true" focusable="false">
       <defs>
         <linearGradient id="adaBrandMark" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#22d3ee" />
+          <stop offset="0" stopColor="#5697ae" />
           <stop offset="1" stopColor="#0e7490" />
         </linearGradient>
       </defs>

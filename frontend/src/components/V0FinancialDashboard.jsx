@@ -632,12 +632,12 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const change = Number(displayPercentage).toFixed(2);
   const isPositive = parseFloat(change) >= 0;
 
-  const gridStroke = isDark ? "#1e293b" : "#e2e8f0";
-  const axisStroke = isDark ? "#334155" : "#cbd5e1";
-  const tickFill = isDark ? "#94a3b8" : "#64748b";
-  const tooltipBg = isDark ? "#0f172a" : "#ffffff";
-  const tooltipColor = isDark ? "#fff" : "#0f172a";
-  const tooltipBorder = isDark ? "none" : "1px solid #e2e8f0";
+  const gridStroke = isDark ? "#2c2b28" : "#e6e4e0";
+  const axisStroke = isDark ? "#46443f" : "#d2cfc9";
+  const tickFill = isDark ? "#a5a19a" : "#78746c";
+  const tooltipBg = isDark ? "#1a1917" : "#ffffff";
+  const tooltipColor = isDark ? "#fff" : "#1a1917";
+  const tooltipBorder = isDark ? "none" : "1px solid #e6e4e0";
   const areaOpacity = isDark ? 0.3 : 0.18;
   // ✅ DRY: Aynı grafik hem küçük kartta hem tam ekran modalda kullanılır
   const renderChartContent = (isExpanded = false) => {
@@ -689,7 +689,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           fillOpacity={1}
           fill={`url(#${gradId})`}
           isAnimationActive={false}
-          activeDot={{ r: isExpanded ? 6 : 5, fill: strokeColor, stroke: isDark ? '#fff' : '#0f172a', strokeWidth: 2 }}
+          activeDot={{ r: isExpanded ? 6 : 5, fill: strokeColor, stroke: isDark ? '#fff' : '#1a1917', strokeWidth: 2 }}
         />
       </AreaChart>
     );
@@ -921,7 +921,7 @@ function PartnershipForm() {
   const PHONE_MASK_TEMPLATE = "0(5XX) XXX XXXX";
 
   const partnershipInputClass =
-    "h-11 rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400";
+    "h-11 rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400";
 
   const formatPhoneDisplay = (rawDigits) => {
     let d = String(rawDigits || "").replace(/\D/g, "").slice(0, 10);
@@ -1125,7 +1125,7 @@ function PartnershipForm() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("institutionName")}</label>
+                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("institutionName")}</label>
                 <input
                   type="text"
                   name="institution_name"
@@ -1137,7 +1137,7 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("contactPerson")}</label>
+                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("contactPerson")}</label>
                 <input
                   type="text"
                   name="contact_person"
@@ -1153,7 +1153,7 @@ function PartnershipForm() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("emailLabel")}</label>
+                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("emailLabel")}</label>
                 <input
                   type="email"
                   name="email"
@@ -1165,8 +1165,8 @@ function PartnershipForm() {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("phoneLabel")}</label>
-                <div className="relative h-11 flex items-center rounded-lg border border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all duration-300">
+                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("phoneLabel")}</label>
+                <div className="relative h-11 flex items-center rounded-lg border border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:shadow-[0_0_15px_rgba(47,123,149,0.4)] transition-all duration-300">
                   <span className="absolute left-3 z-raised text-sm font-mono font-bold text-ink-800 dark:text-white pointer-events-none">
                     +90
                   </span>
@@ -1194,14 +1194,14 @@ function PartnershipForm() {
               </div>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-300">{t("messageLabel")}</label>
+              <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("messageLabel")}</label>
               <textarea
                 name="message"
                 rows={4}
                 placeholder={t("messagePlaceholder")}
                 value={formData.message}
                 onChange={handleChange}
-                className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
+                className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
               />
               {messageIsEmpty ? (
                 <div className="rounded-lg border border-dashed border-brand-500/40 bg-brand-500/5 px-3 py-2.5">
@@ -2095,7 +2095,7 @@ export function V0FinancialDashboard() {
   const financialProductLd = useMemo(() => JSON.stringify(buildFinancialProductJsonLd(lang)), [lang]);
 
   return (
-    <div className="min-h-screen bg-ink-50 text-ink-900 relative dark:bg-[#020617] dark:text-white">
+    <div className="min-h-screen bg-ink-50 text-ink-900 relative dark:bg-ink-950 dark:text-white">
       {/*
         ⚠️ SEO DÜZELTMESİ (denetim bulgusu U-09): Bu sayfada DÖRT rakip <Helmet>
         vardı — SeoHead (veritabanından), ana başlık, piyasa özeti bloğu ve
@@ -2113,7 +2113,7 @@ export function V0FinancialDashboard() {
         <script type="application/ld+json">{financialProductLd}</script>
       </Helmet>
       <header
-        className={`sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-[#020617]/80 ${
+        className={`sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-ink-950/80 ${
           headerCompact ? "px-3 py-2 shadow-sm sm:px-6 sm:py-2.5" : "px-3 py-3 sm:px-6 sm:py-4 md:py-5"
         }`}
       >
@@ -2125,7 +2125,7 @@ export function V0FinancialDashboard() {
         <BrandLogo className="min-w-0 shrink" compact={headerCompact} />
         <div className={`flex min-w-0 shrink-0 flex-wrap items-center justify-end transition-all duration-300 ${headerCompact ? "gap-1 sm:gap-2" : "gap-1.5 sm:gap-3"}`}>
           <div
-            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 font-medium text-brand-700 transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:text-brand-300 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
+            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 font-medium text-brand-700 transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:text-brand-300 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >
@@ -2143,7 +2143,7 @@ export function V0FinancialDashboard() {
                 ? navigate(isSuperAdmin ? "/super-admin" : "/admin")
                 : setIsBusinessLoginOpen(true)
             }
-            className={`${headerBtnClass} max-w-[9.5rem] truncate border-ink-300 bg-white text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:max-w-none`}
+            className={`${headerBtnClass} max-w-[9.5rem] truncate border-ink-300 bg-white text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] sm:max-w-none`}
           >
             {isAuthenticated
               ? isSuperAdmin
@@ -2169,7 +2169,7 @@ export function V0FinancialDashboard() {
           <button
             type="button"
             onClick={scrollToPartnership}
-            className={`hidden sm:inline-flex items-center min-h-[2.75rem] px-3.5 rounded-full border border-ink-300 bg-white font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] ${
+            className={`hidden sm:inline-flex items-center min-h-[2.75rem] px-3.5 rounded-full border border-ink-300 bg-white font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] ${
               headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
             }`}
           >
@@ -2399,7 +2399,7 @@ export function V0FinancialDashboard() {
                 disabled={!calculatorBank}
                 value={!calculatorBank ? "" : exchangeAmount === "0" ? "" : exchangeAmount}
                 onChange={(e) => setExchangeAmount(e.target.value === "" ? "0" : e.target.value)}
-                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
+                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(47,123,149,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(47,123,149,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
                 placeholder={!calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
               />
             </div>

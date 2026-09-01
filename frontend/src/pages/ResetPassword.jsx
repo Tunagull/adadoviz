@@ -104,7 +104,7 @@ export function ResetPasswordPage() {
             <div className="space-y-2">
               <label
                 htmlFor="reset-password"
-                className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400"
+                className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400"
               >
                 Yeni Şifre
               </label>
@@ -127,7 +127,7 @@ export function ResetPasswordPage() {
             <div className="space-y-2">
               <label
                 htmlFor="reset-password-confirm"
-                className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400"
+                className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400"
               >
                 Şifre Tekrar
               </label>

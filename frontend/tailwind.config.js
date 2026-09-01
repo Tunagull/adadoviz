@@ -38,32 +38,59 @@ export default {
       },
 
       colors: {
-        /** Marka / vurgu — TEK aile. Eski cyan·teal·indigo·blue karmaşasının yerine. */
+        /**
+         * ⚠️ TASARIM DÜZELTMESİ (D-20): Palet KİMLİKSİZDİ. Roller doğru
+         * ayrılmıştı ama her hex değeri Tailwind'in stok paletinden geliyordu —
+         * cyan-500 vurgu, slate nötr, emerald/amber/red semantik. "Şablondan
+         * çıkmış" hissinin kaynağı buydu: yapı vardı, seçim yoktu.
+         *
+         * Ayrıca ölçülebilir bir erişilebilirlik hatası vardı: birincil buton
+         * `bg-brand-gradient` ile çiziliyor ve gradyan #06b6d4'ten başlıyordu.
+         * Beyaz metin o uçta 2.43 kontrast veriyor — AA sınırı 4.5. Yani
+         * uygulamanın en çok tıklanan öğesinin sol yarısı okunabilirlik
+         * testinden kalıyordu.
+         *
+         * Yeni vurgu: derin deniz mavisi-teal. Elektrik cyan'ın aksine
+         * doygunluğu düşük, kurumsal ve KKTC bağlamına (Akdeniz) bağlı.
+         * brand-600 üzerine beyaz = 6.70, brand-700 beyaz üzerine = 8.61.
+         * Yeşil (success) ile karışmaz çünkü belirgin biçimde mavidir.
+         */
         brand: {
-          50: "#ecfeff",
-          100: "#cffafe",
-          200: "#a5f3fc",
-          300: "#67e8f9",
-          400: "#22d3ee",
-          500: "#06b6d4",
-          600: "#0891b2",
-          700: "#0e7490",
-          800: "#155e75",
-          900: "#164e63",
+          50: "#f0f7f9",
+          100: "#dcebf0",
+          200: "#b9d8e2",
+          300: "#8dbccc",
+          400: "#5697ae",
+          500: "#2f7b95",
+          600: "#22637a",
+          700: "#1d5263",
+          800: "#1b4453",
+          900: "#193a46",
+          950: "#102630",
         },
-        /** Nötr — TEK aile (slate tabanlı). `gray-*` kullanımı kaldırıldı. */
+
+        /**
+         * Nötr — soğuk slate yerine hafif sıcak, düşük kromalı gri. Slate,
+         * mavi yanı yüzünden vurgu rengiyle yarışıyor ve her arayüzde
+         * görüldüğü için tanınmıyordu. Sıcak nötr, mavi vurguyu karşısına
+         * alarak onu daha kasıtlı gösterir.
+         *
+         * Açıklık değerleri bilinçli olarak slate'e yakın tutuldu; böylece
+         * mevcut kontrast ilişkileri korunuyor (ink-900/beyaz 17.57,
+         * ink-600/beyaz 7.09, ink-400/ink-900 6.83 — hepsi AA).
+         */
         ink: {
-          50: "#f8fafc",
-          100: "#f1f5f9",
-          200: "#e2e8f0",
-          300: "#cbd5e1",
-          400: "#94a3b8",
-          500: "#64748b",
-          600: "#475569",
-          700: "#334155",
-          800: "#1e293b",
-          900: "#0f172a",
-          950: "#020617",
+          50: "#faf9f8",
+          100: "#f3f2f0",
+          200: "#e6e4e0",
+          300: "#d2cfc9",
+          400: "#a5a19a",
+          500: "#78746c",
+          600: "#5b5852",
+          700: "#46443f",
+          800: "#2c2b28",
+          900: "#1a1917",
+          950: "#0e0e0c",
         },
         /** Semantik roller — vurgudan bağımsız, rol başına tek renk. */
         success: {
@@ -111,9 +138,17 @@ export default {
         focus: "0 0 0 3px rgba(6,182,212,.35)",
       },
 
-      /** D-01: TEK marka gradyanı (eski 5 varyantın yerine). */
+      /**
+       * D-01: TEK marka gradyanı (eski 5 varyantın yerine).
+       *
+       * D-20: Gradyan #06b6d4'ten başlıyordu ve beyaz metin o uçta AA'da
+       * kalıyordu (2.43). Artık iki uç da yeterince koyu — beyaz metin en
+       * açık noktada bile 6.70 kontrast alıyor. Aralık ayrıca daraltıldı:
+       * geniş açıklık farkı olan gradyan, düz renge göre daha "şablon"
+       * görünüyordu; bu hâli neredeyse düz bir yüzey gibi okunur.
+       */
       backgroundImage: {
-        "brand-gradient": "linear-gradient(90deg, #06b6d4 0%, #0e7490 100%)",
+        "brand-gradient": "linear-gradient(90deg, #22637a 0%, #1b4453 100%)",
       },
 
       /**
