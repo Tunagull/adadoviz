@@ -1,4 +1,5 @@
 import { useLanguage } from "../context/LanguageContext";
+import { useTheme } from "../context/ThemeContext";
 
 /**
  * TR / EN dil anahtarı — ThemeToggle ile birebir aynı kayan pill yapısı.
@@ -6,6 +7,9 @@ import { useLanguage } from "../context/LanguageContext";
  * Aynı ölçüler bilinçli olarak paylaşılıyor (pill h-8 w-16, knob size-6;
  * compact h-7 w-14 / size-5) ki iki kontrol yan yana dururken tek bir
  * kontrol ailesi gibi okunsun.
+ *
+ * Pill zemini TEMAYA bağlıdır, seçili dile değil. (Önceden `isEn` ile
+ * sürülüyordu: TR seçiliyken koyu temada beyaz bir pill kalıyordu.)
  *
  * Erişilebilirlik notu: ThemeToggle `role="switch" aria-checked` kullanıyor
  * çünkü koyu tema açık/kapalı bir durumdur. Dil ise açık/kapalı değil, iki
@@ -15,8 +19,10 @@ import { useLanguage } from "../context/LanguageContext";
  */
 export function LanguageToggle({ className = "", compact = false }) {
   const { lang, toggleLang, t } = useLanguage();
+  const { theme } = useTheme();
 
   const isEn = lang === "en";
+  const isDark = theme === "dark";
   const label = isEn
     ? "Language: English. Switch to Turkish."
     : "Dil: Türkçe. İngilizce'ye geç.";
@@ -40,22 +46,33 @@ export function LanguageToggle({ className = "", compact = false }) {
     >
       <span
         className={`relative flex items-center rounded-full border transition-colors duration-300 ${pill} ${
-          isEn ? "border-ink-700 bg-ink-950" : "border-ink-200 bg-white"
+          isDark ? "border-ink-700 bg-ink-950" : "border-ink-200 bg-white"
         }`}
       >
-        {/* Kayan topuz — aktif dilin altında durur */}
+        {/*
+          Kayan topuz — aktif dilin altında durur.
+
+          (beyaz neon) Topuz `bg-brand-500` idi, yani paletin vurgu rengi.
+          Vurgu artık renk değil parlaklık: karanlık temada beyaz ve ışıyan,
+          aydınlık temada mat siyah bir topuz. `surface-neon` bu kararı tek
+          yerden veriyor.
+        */}
         <span
           aria-hidden="true"
-          className={`absolute left-1 rounded-full bg-brand-500 transition-transform duration-300 ease-out ${knob} ${
+          className={`surface-neon absolute left-1 rounded-full transition-transform duration-300 ease-out ${knob} ${
             isEn ? shift : "translate-x-0"
           }`}
         />
 
-        {/* Etiketler topuzun ÜSTÜNDE: aktif olan beyaz, diğeri sönük */}
+        {/*
+          Etiketler topuzun ÜSTÜNDE. Aktif etiket topuzun rengine göre ters
+          olmak zorunda: aydınlık temada siyah topuz üstünde beyaz, karanlık
+          temada beyaz topuz üstünde siyah.
+        */}
         <span
           aria-hidden="true"
           className={`pointer-events-none absolute left-1 flex items-center justify-center font-bold tracking-wide transition-colors duration-300 ${knob} ${text} ${
-            isEn ? "text-ink-500" : "text-white"
+            isEn ? (isDark ? "text-ink-500" : "text-ink-400") : "text-white dark:text-ink-950"
           }`}
         >
           {t("langTr")}
@@ -63,7 +80,7 @@ export function LanguageToggle({ className = "", compact = false }) {
         <span
           aria-hidden="true"
           className={`pointer-events-none absolute left-1 flex items-center justify-center font-bold tracking-wide transition-colors duration-300 ${knob} ${text} ${shift} ${
-            isEn ? "text-white" : "text-ink-400"
+            isEn ? "text-white dark:text-ink-950" : isDark ? "text-ink-500" : "text-ink-400"
           }`}
         >
           {t("langEn")}

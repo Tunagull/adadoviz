@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, memo } from "react";
 import { Award, MapPin, Phone } from "lucide-react";
 import { mediaUrl } from "../lib/api";
 import { useLanguage } from "../context/LanguageContext";
+import { GlowCard } from "./ui/spotlight-card";
 
 function getCurrencyDisplay(currency) {
   return currency;
@@ -114,19 +115,27 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
     }
   }, [mode, bank.institutionId, bank.exchangeRates]);
 
-  // ✅ ADIM 3: Tailwind Flash Effect - Dinamik sınıflar + Smooth Fade
-  // Hover glow = Admin Paneli butonuyla birebir aynı:
-  // hover:border-brand-400 +
+  /**
+   * ✅ ADIM 3: Tailwind Flash Effect - Dinamik sınıflar + Smooth Fade
+   *
+   * ⚠️ TASARIM DÜZELTMESİ (mat siyah + neon): Kartın hover vurgusu
+   * `hover:border-brand-400` idi — kenarlığın TAMAMI tek renge atlıyordu.
+   * Statik bir vurgu, imleci nereye getirdiğinizi bilmez; kart "seçildi"
+   * demez, sadece renk değiştirir. Yerine `GlowCard`: ışık kaynağı imlecin
+   * kendisi, kenarlığın yalnızca imlece yakın parçası yanıyor.
+   *
+   * `overflow-hidden` de kaldırıldı: ışımanın kartın dışına taşması gerekiyor,
+   * aksi halde saçılma tam kenarda kesiliyor ve neon değil şerit gibi duruyor.
+   */
   const getCardClasses = () => {
-    const baseClasses =
-      "group overflow-hidden rounded-2xl backdrop-blur-lg transition-all duration-300 cursor-pointer";
+    const baseClasses = "group rounded-2xl backdrop-blur-lg transition-all duration-300 cursor-pointer";
 
     if (flashColor === "green") {
       return `${baseClasses} border-success-500/80 bg-success-500/20 shadow-lg shadow-success-500/30 border`;
     } else if (flashColor === "red") {
       return `${baseClasses} border-danger-500/80 bg-danger-500/20 shadow-lg shadow-danger-500/30 border`;
     } else {
-      return `${baseClasses} border border-ink-200 bg-white/90 shadow-xl dark:border-white/10 dark:bg-ink-900/60 hover:border-brand-400 dark:hover:border-brand-400`;
+      return `${baseClasses} border border-ink-200 bg-white/90 shadow-xl dark:border-white/10 dark:bg-ink-900/60 dark:shadow-card-dark`;
     }
   };
 
@@ -167,8 +176,10 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
   };
 
   return (
-    <div
+    <GlowCard
       className={getCardClasses() + " p-4 sm:p-6"}
+      /* Kur değişimi yanıp sönerken ışıma da yönü anlatır: yeşil yükseldi, kırmızı düştü. */
+      glowColor={flashColor === "green" ? "green" : flashColor === "red" ? "red" : "white"}
       onClick={handleCardClick}
       onKeyDown={handleCardKeyDown}
       role="button"
@@ -186,12 +197,12 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
         />
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <h3
-            className={`min-w-0 text-base font-semibold leading-tight transition-all duration-300 ${
+            className={`glow-card-title min-w-0 text-base font-semibold leading-tight transition-all duration-300 ${
               flashColor === "green"
                 ? "text-success-700 dark:text-success-200"
                 : flashColor === "red"
                   ? "text-danger-700 dark:text-danger-200"
-                  : "text-ink-800 dark:text-ink-100 group-hover:text-brand-600 dark:group-hover:text-brand-400"
+                  : "text-ink-800 dark:text-ink-100 group-hover:text-brand-700 dark:group-hover:text-white"
             }`}
           >
             <span className="block truncate">{displayName || bank.name}</span>
@@ -387,7 +398,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
           </div>
         </div>
       )}
-    </div>
+    </GlowCard>
   );
 }
 

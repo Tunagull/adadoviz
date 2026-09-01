@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Area,
-  AreaChart,
   CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
+  ComposedChart,
+  Line,
   XAxis,
   YAxis,
 } from "recharts";
@@ -24,6 +23,8 @@ import { HeaderActions } from "./HeaderActions";
 import { Helmet } from "react-helmet-async";
 import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { buildBusinessSlug, buildBranchSlug } from "../lib/slug";
+import { ChartContainer, ChartHoverCard, ChartSwatch, ChartTooltip } from "./ui/chart";
+import { chartSkin, hollowDot } from "../lib/chartTheme";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -89,6 +90,33 @@ function formatTooltipTime(timeMs, localeCode = "tr-TR") {
   const hh = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${day} ${monthName}, ${hh}:${min}`;
+}
+
+function BusinessRatesTooltip({ active, payload, label, localeCode, buyLabel, sellLabel, buyColor, sellColor }) {
+  if (!active || !payload?.length) return null;
+  const buy = payload.find((entry) => entry.dataKey === "finalBuy" && entry.value != null);
+  const sell = payload.find((entry) => entry.dataKey === "finalSell" && entry.value != null);
+  if (!buy && !sell) return null;
+  return (
+    <ChartHoverCard label={formatTooltipTime(label, localeCode)}>
+      {buy ? (
+        <div className="flex items-center gap-2 text-xs">
+          <ChartSwatch label={`${buyLabel}:`} color={buyColor} />
+          <span className="font-semibold tabular-nums text-ink-900 dark:text-white">
+            {Number(buy.value).toFixed(4)}
+          </span>
+        </div>
+      ) : null}
+      {sell ? (
+        <div className="flex items-center gap-2 text-xs">
+          <ChartSwatch label={`${sellLabel}:`} color={sellColor} />
+          <span className="font-semibold tabular-nums text-ink-900 dark:text-white">
+            {Number(sell.value).toFixed(4)}
+          </span>
+        </div>
+      ) : null}
+    </ChartHoverCard>
+  );
 }
 
 function getFaviconDomain(bankName) {
@@ -189,12 +217,7 @@ export function BusinessDetailModal({
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const localeCode = lang === "en" ? "en-US" : "tr-TR";
-  const chartMuted = isDark ? "#a5a19a" : "#78746c";
-  const chartAxis = isDark ? "#5b5852" : "#d2cfc9";
-  const chartGrid = isDark ? "#46443f" : "#e6e4e0";
-  const tooltipBg = isDark ? "#1a1917" : "#ffffff";
-  const tooltipBorder = isDark ? "#46443f" : "#e6e4e0";
-  const tooltipLabel = isDark ? "#e6e4e0" : "#1a1917";
+  const skin = chartSkin(isDark);
   const [activeView, setActiveView] = useState(
     initialView === "konum" ? "konum" : "grafik"
   );
@@ -437,16 +460,10 @@ export function BusinessDetailModal({
     return ticks;
   }, [yDomain]);
 
-  const chartTrendUp = useMemo(() => {
-    if (finalChartData.length < 2) return true;
-    const first = Number(finalChartData[0].finalBuy);
-    const last = Number(finalChartData[finalChartData.length - 1].finalBuy);
-    if (!(first > 0) || !Number.isFinite(last)) return true;
-    return last >= first;
-  }, [finalChartData]);
-
-  const trendStroke = chartTrendUp ? "#10b981" : "#f43f5e";
-  const trendStrokeAlt = chartTrendUp ? "#34d399" : "#fb7185";
+  const chartConfig = {
+    finalBuy: { label: t("buy"), color: skin.neon },
+    finalSell: { label: t("sell"), color: skin.mutedLine },
+  };
   const xAxisTicks = useMemo(() => {
     if (finalChartData.length < 2) return undefined;
     const min = finalChartData[0].timeMs;
@@ -617,79 +634,101 @@ export function BusinessDetailModal({
                     </span>
                   </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={finalChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                  <ChartContainer
+                    config={chartConfig}
+                    className="aspect-auto h-full min-h-[260px] w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-ink-300 dark:[&_.recharts-curve.recharts-tooltip-cursor]:stroke-white/20"
+                  >
+                    <ComposedChart data={finalChartData} margin={{ top: 8, right: 15, left: 5, bottom: 5 }}>
                       <defs>
                         <linearGradient id="bizBuyFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={trendStrokeAlt} stopOpacity={isDark ? 0.35 : 0.28} />
-                          <stop offset="100%" stopColor={trendStrokeAlt} stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="bizSellFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={trendStroke} stopOpacity={isDark ? 0.28 : 0.2} />
-                          <stop offset="100%" stopColor={trendStroke} stopOpacity={0} />
+                          <stop offset="0%" stopColor={skin.neon} stopOpacity={isDark ? 0.3 : 0.22} />
+                          <stop offset="100%" stopColor={skin.neon} stopOpacity={0.05} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} opacity={0.7} />
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        stroke={skin.grid}
+                        strokeOpacity={1}
+                        horizontal
+                        vertical={false}
+                      />
                       <XAxis
                         dataKey="timeMs"
                         type="number"
                         domain={["dataMin", "dataMax"]}
                         scale="time"
                         ticks={xAxisTicks}
-                        tick={{ fill: chartMuted, fontSize: 11 }}
+                        tick={{ fill: skin.tick, fontSize: 11 }}
                         tickLine={false}
-                        axisLine={{ stroke: chartAxis }}
+                        axisLine={false}
                         minTickGap={40}
+                        tickMargin={8}
                         tickFormatter={(ms) => formatAxisTime(ms, periodId)}
                       />
                       <YAxis
                         domain={yDomain}
                         ticks={yTicks}
-                        tick={{ fill: chartMuted, fontSize: 11 }}
+                        tick={{ fill: skin.tick, fontSize: 11 }}
                         tickLine={false}
-                        axisLine={{ stroke: chartAxis }}
+                        axisLine={false}
                         width={52}
+                        tickMargin={8}
                         tickFormatter={(v) => Number(v).toFixed(2)}
                       />
-                      <Tooltip
-                        cursor={{ stroke: isDark ? "#a5a19a" : "#78746c", strokeWidth: 1 }}
-                        contentStyle={{
-                          background: tooltipBg,
-                          border: `1px solid ${tooltipBorder}`,
-                          borderRadius: 12,
-                          fontSize: 12,
-                          color: tooltipLabel,
+                      <ChartTooltip
+                        content={
+                          <BusinessRatesTooltip
+                            localeCode={localeCode}
+                            buyLabel={t("buy")}
+                            sellLabel={t("sell")}
+                            buyColor={skin.neon}
+                            sellColor={skin.mutedLine}
+                          />
+                        }
+                        cursor={{
+                          stroke: skin.cursor,
+                          strokeWidth: 1,
+                          strokeDasharray: "none",
                         }}
-                        labelStyle={{ color: tooltipLabel }}
-                        formatter={(value, name) => {
-                          const label =
-                            name === "finalBuy" ? t("buy") : name === "finalSell" ? t("sell") : name;
-                          return [Number(value).toFixed(4), label];
-                        }}
-                        labelFormatter={(ms) => formatTooltipTime(ms, localeCode)}
                       />
                       <Area
-                        type="monotone"
+                        type="linear"
                         dataKey="finalBuy"
                         name="finalBuy"
-                        stroke={trendStrokeAlt}
+                        stroke="transparent"
                         fill="url(#bizBuyFill)"
-                        strokeWidth={2}
+                        strokeWidth={0}
                         dot={false}
                         isAnimationActive={false}
+                        legendType="none"
                       />
-                      <Area
-                        type="monotone"
+                      <Line
+                        type="linear"
+                        dataKey="finalBuy"
+                        name="finalBuy"
+                        stroke={skin.neon}
+                        strokeWidth={2}
+                        dot={finalChartData.length <= 16 ? hollowDot(skin.neon, skin.dotFill) : false}
+                        activeDot={hollowDot(skin.neon, skin.dotFill)}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="linear"
                         dataKey="finalSell"
                         name="finalSell"
-                        stroke={trendStroke}
-                        fill="url(#bizSellFill)"
+                        stroke={skin.mutedLine}
                         strokeWidth={2}
-                        dot={false}
+                        strokeDasharray="4 4"
+                        dot={
+                          finalChartData.length <= 16
+                            ? hollowDot(skin.mutedLine, skin.dotFill)
+                            : false
+                        }
+                        activeDot={hollowDot(skin.mutedLine, skin.dotFill)}
                         isAnimationActive={false}
                       />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                    </ComposedChart>
+                  </ChartContainer>
                 )}
               </div>
             </div>

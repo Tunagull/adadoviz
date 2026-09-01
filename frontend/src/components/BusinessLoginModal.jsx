@@ -5,6 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { apiUrl } from "../lib/api";
 import { HeaderActions } from "./HeaderActions";
+import { FloatingInput } from "./ui/floating-label";
 
 export function BusinessLoginModal({ isOpen, onClose }) {
   const navigate = useNavigate();
@@ -165,48 +166,29 @@ export function BusinessLoginModal({ isOpen, onClose }) {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5 px-4 py-6 sm:px-6">
-              <div className="space-y-2">
-                <label
-                  htmlFor="business-username"
-                  className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300"
-                >
-                  {t("usernameLabel")}
-                </label>
-                <div className="relative">
-                  <User className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
-                  <input
-                    id="business-username"
-                    type="text"
-                    autoComplete="username"
-                    value={username}
-                    onChange={(event) => setUsername(event.target.value)}
-                    placeholder={t("usernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-focus"
-                    required
-                  />
-                </div>
-              </div>
+              <FloatingInput
+                id="business-username"
+                label={t("usernameLabel")}
+                icon={User}
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                placeholder={t("usernamePlaceholder")}
+                required
+              />
 
               <div className="space-y-2">
-                <label
-                  htmlFor="business-password"
-                  className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300"
-                >
-                  {t("passwordLabel")}
-                </label>
-                <div className="relative">
-                  <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
-                  <input
-                    id="business-password"
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="••••••••"
-                    className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:shadow-focus"
-                    required
-                  />
-                </div>
+                <FloatingInput
+                  id="business-password"
+                  label={t("passwordLabel")}
+                  icon={Lock}
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <label className="inline-flex cursor-pointer items-center gap-2 select-none">
                     <input
@@ -297,28 +279,18 @@ export function BusinessLoginModal({ isOpen, onClose }) {
             <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">{t("forgotPasswordDesc")}</p>
 
             <form onSubmit={handleForgotSubmit} className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <label
-                  htmlFor="forgot-email"
-                  className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300"
-                >
-                  {t("emailOrUsername")}
-                </label>
-                <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
-                  <input
-                    id="forgot-email"
-                    type="text"
-                    autoComplete="email"
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder={t("emailOrUsernamePlaceholder")}
-                    className="h-11 w-full rounded-lg border border-ink-200 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
-                    required
-                    disabled={forgotLoading}
-                  />
-                </div>
-              </div>
+              <FloatingInput
+                id="forgot-email"
+                label={t("emailOrUsername")}
+                icon={Mail}
+                type="text"
+                autoComplete="email"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                placeholder={t("emailOrUsernamePlaceholder")}
+                required
+                disabled={forgotLoading}
+              />
 
               {forgotError ? (
                 <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">

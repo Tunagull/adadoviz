@@ -39,58 +39,61 @@ export default {
 
       colors: {
         /**
-         * ⚠️ TASARIM DÜZELTMESİ (D-20): Palet KİMLİKSİZDİ. Roller doğru
-         * ayrılmıştı ama her hex değeri Tailwind'in stok paletinden geliyordu —
-         * cyan-500 vurgu, slate nötr, emerald/amber/red semantik. "Şablondan
-         * çıkmış" hissinin kaynağı buydu: yapı vardı, seçim yoktu.
+         * ⚠️ TASARIM YÖNÜ (mat siyah + beyaz neon): Vurgunun artık RENK TONU
+         * YOK. Önce teal, sonra magenta denendi; ikisi de mat siyah + beyaz
+         * neon dilinin içinde yabancı kaldı — ekranda "siyah, beyaz ve bir de
+         * pembe" diye üçüncü bir ses oluyordu.
          *
-         * Ayrıca ölçülebilir bir erişilebilirlik hatası vardı: birincil buton
-         * `bg-brand-gradient` ile çiziliyor ve gradyan #06b6d4'ten başlıyordu.
-         * Beyaz metin o uçta 2.43 kontrast veriyor — AA sınırı 4.5. Yani
-         * uygulamanın en çok tıklanan öğesinin sol yarısı okunabilirlik
-         * testinden kalıyordu.
+         * Vurgu artık PARLAKLIKLA yapılıyor: nötr grafit ölçeği taşıyıcı,
+         * dikkat çekmesi gereken öğe beyaza çıkıp ışıyor (bkz. `.surface-neon`
+         * ve `shadow-neon`). Renk yalnızca semantik rollerde kaldı — yeşil
+         * yükseldi, kırmızı düştü, amber uyarı. Böylece ekranda renk gördüğün
+         * her yer bir ANLAM taşıyor.
          *
-         * Yeni vurgu: derin deniz mavisi-teal. Elektrik cyan'ın aksine
-         * doygunluğu düşük, kurumsal ve KKTC bağlamına (Akdeniz) bağlı.
-         * brand-600 üzerine beyaz = 6.70, brand-700 beyaz üzerine = 8.61.
-         * Yeşil (success) ile karışmaz çünkü belirgin biçimde mavidir.
+         * Ölçek, eski markanın açıklık yapısını korur; dolayısıyla mevcut
+         * eşleşmeler geçerli kalıyor:
+         *   brand-500 (#6f6f7b) üzerine beyaz  → 4.92 (topuz, rozet)
+         *   brand-600 (#55555f) üzerine beyaz  → 7.02
+         *   brand-700 (#41414a) beyaz üzerine  → 9.42
+         *   brand-300 (#c2c2ca) ink-900 üstünde → 8.98
          */
         brand: {
-          50: "#f0f7f9",
-          100: "#dcebf0",
-          200: "#b9d8e2",
-          300: "#8dbccc",
-          400: "#5697ae",
-          500: "#2f7b95",
-          600: "#22637a",
-          700: "#1d5263",
-          800: "#1b4453",
-          900: "#193a46",
-          950: "#102630",
+          50: "#f6f6f7",
+          100: "#ebebee",
+          200: "#dcdce1",
+          300: "#c2c2ca",
+          400: "#9d9da8",
+          500: "#6f6f7b",
+          600: "#55555f",
+          700: "#41414a",
+          800: "#33333a",
+          900: "#26262c",
+          950: "#16161a",
         },
 
         /**
-         * Nötr — soğuk slate yerine hafif sıcak, düşük kromalı gri. Slate,
-         * mavi yanı yüzünden vurgu rengiyle yarışıyor ve her arayüzde
-         * görüldüğü için tanınmıyordu. Sıcak nötr, mavi vurguyu karşısına
-         * alarak onu daha kasıtlı gösterir.
+         * Nötr — MAT SİYAH ölçeği. Eski nötr hafif sıcak griydi (#1a1917 gibi
+         * kahve yanı olan tonlar); saf siyah zeminde bu sıcaklık "eski kağıt"
+         * gibi okunuyor ve neon vurgunun altını oyuyordu. Yeni ölçek kromadan
+         * arındırılmış: koyu uç mat siyah, açık uç nötr beyaz-gri.
          *
-         * Açıklık değerleri bilinçli olarak slate'e yakın tutuldu; böylece
-         * mevcut kontrast ilişkileri korunuyor (ink-900/beyaz 17.57,
-         * ink-600/beyaz 7.09, ink-400/ink-900 6.83 — hepsi AA).
+         * Kontrast ilişkileri korundu veya iyileşti:
+         *   ink-900 (#16161a) / beyaz  → 17.9
+         *   ink-600 (#4f4f57) / beyaz  → 7.75
+         *   ink-400 (#97979f) / ink-950 → 8.4
          */
         ink: {
-          50: "#faf9f8",
-          100: "#f3f2f0",
-          200: "#e6e4e0",
-          300: "#d2cfc9",
-          400: "#a5a19a",
-          500: "#78746c",
-          600: "#5b5852",
-          700: "#46443f",
-          800: "#2c2b28",
-          900: "#1a1917",
-          950: "#0e0e0c",
+          50: "#f7f7f8",
+          100: "#eeeef0",
+          200: "#e0e0e3",
+          300: "#c9c9ce",
+          400: "#97979f",
+          500: "#6b6b74",
+          600: "#4f4f57",
+          700: "#2f2f35",
+          800: "#1e1e22",
+          900: "#16161a",
+          950: "#08080a",
         },
         /** Semantik roller — vurgudan bağımsız, rol başına tek renk. */
         success: {
@@ -133,9 +136,21 @@ export default {
       },
 
       boxShadow: {
-        card: "0 1px 2px rgba(26,25,23,.06), 0 8px 24px -12px rgba(26,25,23,.16)",
-        "card-dark": "0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6)",
-        focus: "0 0 0 3px rgba(47,123,149,.35)",
+        card: "0 1px 2px rgba(8,8,10,.06), 0 8px 24px -12px rgba(8,8,10,.18)",
+        /**
+         * Mat siyah zeminde gölge iş görmez — siyah üstüne siyah görünmez.
+         * Karanlık kart bu yüzden gölge yerine üstten ince bir ışık çizgisiyle
+         * (inset) zeminden ayrılır; derinlik hissini o veriyor.
+         */
+        "card-dark":
+          "inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.6), 0 16px 40px -24px rgba(0,0,0,.9)",
+        focus: "0 0 0 3px rgba(255,255,255,.35)",
+        /**
+         * Beyaz neon ışıma — aktif/birincil yüzeyler için. İki katman: yüzeye
+         * oturan sıkı halka + duvara vuran geniş saçılma. Tek geniş gölge
+         * yazmak ışık değil bulanıklık verir.
+         */
+        neon: "0 0 0 1px rgba(255,255,255,.5), 0 0 20px -4px rgba(255,255,255,.45), 0 0 44px -12px rgba(255,255,255,.3)",
       },
 
       /**
@@ -143,12 +158,17 @@ export default {
        *
        * D-20: Gradyan #06b6d4'ten başlıyordu ve beyaz metin o uçta AA'da
        * kalıyordu (2.43). Artık iki uç da yeterince koyu — beyaz metin en
-       * açık noktada bile 6.70 kontrast alıyor. Aralık ayrıca daraltıldı:
+       * açık noktada bile 7.02 kontrast alıyor. Aralık ayrıca daraltıldı:
        * geniş açıklık farkı olan gradyan, düz renge göre daha "şablon"
        * görünüyordu; bu hâli neredeyse düz bir yüzey gibi okunur.
+       *
+       * (beyaz neon) Gradyan nötr grafite döndü. Bu token 9 yerde SABİT
+       * `text-white` ile eşleşiyor; beyaza çevirmek beyaz üstüne beyaz metin
+       * demek olurdu. En görünür yerlerde (aktif sekme, topuz, birincil
+       * buton) grafit yüzey yerine `.surface-neon` kullanılıyor.
        */
       backgroundImage: {
-        "brand-gradient": "linear-gradient(90deg, #22637a 0%, #1b4453 100%)",
+        "brand-gradient": "linear-gradient(90deg, #55555f 0%, #3a3a42 100%)",
       },
 
       /**

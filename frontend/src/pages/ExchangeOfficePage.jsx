@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, MapPin, Phone } from "lucide-react";
 import { BusinessDetailModal } from "../components/BusinessDetailModal";
 import { HeaderActions } from "../components/HeaderActions";
@@ -14,21 +14,37 @@ const SITE = "https://adadoviz.tunahangul.com";
 
 export function ExchangeOfficePage() {
   const { slug: rawSlug } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { t, lang } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [payload, setPayload] = useState(null);
   /**
-   * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-01): Bu sayfa başlığı, şube listesini ve
-   * JSON-LD'yi render ediyor, sonra KOŞULSUZ olarak üstüne tam ekran modal
-   * açıyordu; modalı kapatan onClose ise navigate("/") yapıyordu. Yani SEO için
-   * yazılmış sayfanın içeriğini görmenin hiçbir yolu yoktu — kapatan kullanıcı
-   * ana sayfaya atılıyordu. Artık kapatınca sayfada kalınıyor.
+   * Ana sayfadan kart tıklanınca modal açılır (state.openDetail).
+   * Doğrudan URL / SEO ziyaretinde modal kapalı kalır; sayfa içeriği görünür.
+   * Modal kapanınca ana sayfadan gelindiyse geri dönülür — boş sayfada kalmayı önler.
    */
-  const [detailOpen, setDetailOpen] = useState(true);
+  const openedFromDashboard = Boolean(location.state?.openDetail);
+  const [detailOpen, setDetailOpen] = useState(openedFromDashboard);
 
   const slug = slugify(rawSlug);
+
+  useEffect(() => {
+    setDetailOpen(openedFromDashboard);
+  }, [slug, openedFromDashboard]);
+
+  const handleCloseDetail = () => {
+    if (openedFromDashboard) {
+      if (window.history.length > 1) {
+        navigate(-1);
+      } else {
+        navigate("/", { replace: true });
+      }
+      return;
+    }
+    setDetailOpen(false);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -214,6 +230,31 @@ export function ExchangeOfficePage() {
                   </li>
                 ))}
               </ul>
+            ) : (
+              <div className="mt-8 rounded-2xl border border-ink-200 bg-white p-6 text-center dark:border-white/10 dark:bg-ink-900/60">
+                <p className="text-sm text-ink-600 dark:text-ink-400">
+                  {lang === "en"
+                    ? "View live rates, charts and branch details for this office."
+                    : "Bu büronun canlı kurlarını, grafiğini ve şube bilgilerini görüntüleyin."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDetailOpen(true)}
+                  className="btn-primary mt-4 min-h-[2.75rem] px-5"
+                >
+                  {lang === "en" ? "Open rates & chart" : "Kurları ve grafiği aç"}
+                </button>
+              </div>
+            )}
+            {!detailOpen ? (
+              <p className="mt-8 text-center">
+                <Link
+                  to="/"
+                  className="text-sm font-semibold text-ink-600 underline-offset-4 hover:underline dark:text-ink-300"
+                >
+                  {lang === "en" ? "← Back to live rates" : "← Canlı kurlara dön"}
+                </Link>
+              </p>
             ) : null}
           </>
         )}
@@ -224,7 +265,7 @@ export function ExchangeOfficePage() {
           business={business}
           initialBranchId={payload?.matchedBranchId ?? null}
           initialView={payload?.matchedVia === "branch" ? "konum" : "grafik"}
-          onClose={() => setDetailOpen(false)}
+          onClose={handleCloseDetail}
         />
       ) : null}
     </div>

@@ -6,7 +6,7 @@ frontend/frontend/
 frontend/.git/
 backend/data/
 backend/.git/
-UI/
+/UI/
 .env
 .env.local
 frontend/.env

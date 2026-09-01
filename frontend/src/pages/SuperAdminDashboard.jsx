@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
+import { ActivityLogPanel } from "../components/ActivityLogPanel";
 import {
   createAdminBusiness,
   fetchAdminBusinesses,
@@ -49,6 +50,7 @@ import {
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
+import { FloatingInput, FloatingTextarea } from "../components/ui/floating-label";
 import { HeaderActions } from "../components/HeaderActions";
 import { SearchableSelect } from "../components/SearchableSelect";
 
@@ -245,8 +247,8 @@ function SubscriptionFields({ form, setForm }) {
   return (
     <>
       <div className="flex flex-col gap-2">
-        <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("subscriptionTypeLabel")}</label>
         <SearchableSelect
+          label={t("subscriptionTypeLabel")}
           value={form.subscriptionType}
           onChange={(subscriptionType) =>
             setForm((prev) => ({
@@ -265,27 +267,23 @@ function SubscriptionFields({ form, setForm }) {
 
       {form.subscriptionType === "Manuel" && (
         <>
-          <div className="flex flex-col gap-2 mt-1">
-            <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("customDaysLabel")}</label>
-            <input
-              type="number"
-              value={form.manualDays}
-              onChange={(e) => setForm((prev) => ({ ...prev, manualDays: e.target.value }))}
-              className="bg-white border border-ink-200 text-ink-800 rounded-lg px-4 py-2 focus:outline-none focus:border-success-500 dark:bg-ink-900 dark:border-ink-700 dark:text-ink-200"
-              placeholder={t("customDaysPlaceholder")}
-            />
-          </div>
-          <div className="flex flex-col gap-2 mt-1">
-            <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("customPriceLabel")}</label>
-            <input
-              type="number"
-              min="0"
-              value={form.price}
-              onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
-              className="bg-white border border-ink-200 text-ink-800 rounded-lg px-4 py-2 focus:outline-none focus:border-success-500 dark:bg-ink-900 dark:border-ink-700 dark:text-ink-200"
-              placeholder={t("customPricePlaceholder")}
-            />
-          </div>
+          <FloatingInput
+            className="mt-1"
+            label={t("customDaysLabel")}
+            type="number"
+            value={form.manualDays}
+            onChange={(e) => setForm((prev) => ({ ...prev, manualDays: e.target.value }))}
+            placeholder={t("customDaysPlaceholder")}
+          />
+          <FloatingInput
+            className="mt-1"
+            label={t("customPriceLabel")}
+            type="number"
+            min="0"
+            value={form.price}
+            onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
+            placeholder={t("customPricePlaceholder")}
+          />
         </>
       )}
     </>
@@ -339,26 +337,25 @@ function SubscriptionLedgerButton({ active, onClick }) {
 
 function DateRangeFilter({ from, to, onFromChange, onToChange, t }) {
   return (
-    <div
-      className="flex h-10 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-950 px-2 text-xs text-ink-100"
-      title={t("dateRangeLabel")}
-    >
-      <input
+    <div className="flex items-center gap-1.5" title={t("dateRangeLabel")}>
+      <FloatingInput
+        label={t("dateFromLabel")}
+        size="sm"
+        className="min-w-0 flex-1"
         type="date"
         value={from}
         max={to || undefined}
         onChange={(e) => onFromChange(e.target.value)}
-        aria-label={t("dateFromLabel")}
-        className="min-w-0 flex-1 bg-transparent text-ink-100 outline-none [color-scheme:dark]"
       />
       <span className="text-ink-500">–</span>
-      <input
+      <FloatingInput
+        label={t("dateToLabel")}
+        size="sm"
+        className="min-w-0 flex-1"
         type="date"
         value={to}
         min={from || undefined}
         onChange={(e) => onToChange(e.target.value)}
-        aria-label={t("dateToLabel")}
-        className="min-w-0 flex-1 bg-transparent text-ink-100 outline-none [color-scheme:dark]"
       />
     </div>
   );
@@ -450,6 +447,7 @@ export function SuperAdminDashboard() {
       { id: "create", label: t("tabCreate") },
       { id: "requests", label: t("tabRequests") },
       { id: "health", label: t("tabHealth") },
+      { id: "logs", label: t("logsTitle") },
     ],
     [t]
   );
@@ -1688,62 +1686,52 @@ export function SuperAdminDashboard() {
                       name={editForm.institution_name}
                       onChange={(logo_url) => setEditForm((p) => ({ ...p, logo_url }))}
                     />
-                    <Field label={t("businessName")}>
-                      <input
-                        value={editForm.institution_name}
-                        onChange={(e) => setEditForm((p) => ({ ...p, institution_name: e.target.value }))}
-                        className={inputClass}
-                        required
-                      />
-                    </Field>
-                    <Field label={t("contactPerson")}>
-                      <input
-                        value={editForm.contact_person}
-                        onChange={(e) =>
-                          setEditForm((p) => ({
-                            ...p,
-                            contact_person: e.target.value.replace(/[0-9]/g, ""),
-                          }))
-                        }
-                        className={inputClass}
-                        placeholder={t("contactPersonPlaceholder")}
-                        required
-                      />
-                    </Field>
-                    <Field label={t("loginIdField")}>
-                      <input
-                        value={editForm.username}
-                        onChange={(e) => setEditForm((p) => ({ ...p, username: e.target.value }))}
-                        className={inputClass}
-                        placeholder={t("loginIdPlaceholder")}
-                        autoComplete="username"
-                        required
-                      />
-                    </Field>
-                    <Field label={t("businessEmailField")}>
-                      <input
-                        type="email"
-                        value={editForm.email}
-                        onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
-                        className={inputClass}
-                        placeholder={t("businessEmailPlaceholder")}
-                        autoComplete="email"
-                        required
-                      />
-                    </Field>
-                    <Field label={t("newPasswordOptionalField")}>
-                      <input
-                        type="password"
-                        value={editForm.password}
-                        onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
-                        className={inputClass}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
-                      />
-                    </Field>
+                    <FloatingInput
+                      label={t("businessName")}
+                      value={editForm.institution_name}
+                      onChange={(e) => setEditForm((p) => ({ ...p, institution_name: e.target.value }))}
+                      required
+                    />
+                    <FloatingInput
+                      label={t("contactPerson")}
+                      value={editForm.contact_person}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          contact_person: e.target.value.replace(/[0-9]/g, ""),
+                        }))
+                      }
+                      placeholder={t("contactPersonPlaceholder")}
+                      required
+                    />
+                    <FloatingInput
+                      label={t("loginIdField")}
+                      value={editForm.username}
+                      onChange={(e) => setEditForm((p) => ({ ...p, username: e.target.value }))}
+                      placeholder={t("loginIdPlaceholder")}
+                      autoComplete="username"
+                      required
+                    />
+                    <FloatingInput
+                      label={t("businessEmailField")}
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+                      placeholder={t("businessEmailPlaceholder")}
+                      autoComplete="email"
+                      required
+                    />
+                    <FloatingInput
+                      label={t("newPasswordOptionalField")}
+                      type="password"
+                      value={editForm.password}
+                      onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
+                      autoComplete="new-password"
+                    />
 
-                    <Field label={t("branchLimitLabel")}>
-                      <input
+                    <div>
+                      <FloatingInput
+                        label={t("branchLimitLabel")}
                         type="number"
                         min="1"
                         step="1"
@@ -1751,7 +1739,6 @@ export function SuperAdminDashboard() {
                         onChange={(e) =>
                           setEditForm((p) => ({ ...p, branchLimit: e.target.value }))
                         }
-                        className={inputClass}
                         required
                       />
                       {/*
@@ -1768,7 +1755,7 @@ export function SuperAdminDashboard() {
                           </span>
                         </p>
                       ) : null}
-                    </Field>
+                    </div>
 
                     <div className="mt-2 flex flex-wrap gap-3">
                       <button type="submit" disabled={saving} className={primaryBtnClass}>
@@ -2101,72 +2088,60 @@ export function SuperAdminDashboard() {
               name={createForm.institution_name}
               onChange={(logo_url) => setCreateForm((p) => ({ ...p, logo_url }))}
             />
-            <Field label={t("businessName")}>
-              <input
-                value={createForm.institution_name}
-                onChange={(e) => setCreateForm((p) => ({ ...p, institution_name: e.target.value }))}
-                className={inputClass}
-                required
-              />
-            </Field>
-            <Field label={t("contactPerson")}>
-              <input
-                value={createForm.contact_person}
-                onChange={(e) =>
-                  setCreateForm((p) => ({
-                    ...p,
-                    contact_person: e.target.value.replace(/[0-9]/g, ""),
-                  }))
-                }
-                className={inputClass}
-                placeholder={t("contactPersonPlaceholder")}
-                required
-              />
-            </Field>
-            <Field label={t("loginIdField")}>
-              <input
-                value={createForm.username}
-                onChange={(e) => setCreateForm((p) => ({ ...p, username: e.target.value }))}
-                className={inputClass}
-                placeholder={t("loginIdPlaceholder")}
-                autoComplete="username"
-                required
-              />
-            </Field>
-            <Field label={t("businessEmailField")}>
-              <input
-                type="email"
-                value={createForm.email}
-                onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
-                className={inputClass}
-                placeholder={t("businessEmailPlaceholder")}
-                autoComplete="email"
-                required
-              />
-            </Field>
-            <Field label={t("passwordLabel")}>
-              <input
-                type="password"
-                value={createForm.password}
-                onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
-                className={inputClass}
-                required
-                autoComplete="new-password"
-              />
-            </Field>
-            <Field label={t("branchLimitLabel")}>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={createForm.branchLimit}
-                onChange={(e) =>
-                  setCreateForm((p) => ({ ...p, branchLimit: e.target.value }))
-                }
-                className={inputClass}
-                required
-              />
-            </Field>
+            <FloatingInput
+              label={t("businessName")}
+              value={createForm.institution_name}
+              onChange={(e) => setCreateForm((p) => ({ ...p, institution_name: e.target.value }))}
+              required
+            />
+            <FloatingInput
+              label={t("contactPerson")}
+              value={createForm.contact_person}
+              onChange={(e) =>
+                setCreateForm((p) => ({
+                  ...p,
+                  contact_person: e.target.value.replace(/[0-9]/g, ""),
+                }))
+              }
+              placeholder={t("contactPersonPlaceholder")}
+              required
+            />
+            <FloatingInput
+              label={t("loginIdField")}
+              value={createForm.username}
+              onChange={(e) => setCreateForm((p) => ({ ...p, username: e.target.value }))}
+              placeholder={t("loginIdPlaceholder")}
+              autoComplete="username"
+              required
+            />
+            <FloatingInput
+              label={t("businessEmailField")}
+              type="email"
+              value={createForm.email}
+              onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
+              placeholder={t("businessEmailPlaceholder")}
+              autoComplete="email"
+              required
+            />
+            <FloatingInput
+              label={t("passwordLabel")}
+              type="password"
+              value={createForm.password}
+              onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
+              required
+              autoComplete="new-password"
+            />
+            <FloatingInput
+              label={t("branchLimitLabel")}
+              type="number"
+              min="1"
+              step="1"
+              value={createForm.branchLimit}
+              onChange={(e) =>
+                setCreateForm((p) => ({ ...p, branchLimit: e.target.value }))
+              }
+              required
+            />
             <button type="submit" disabled={saving} className={primaryBtnClass}>
               {saving ? t("creatingBtn") : t("createBusinessBtn")}
             </button>
@@ -2443,6 +2418,17 @@ export function SuperAdminDashboard() {
         </section>
       )}
 
+      {tab === "logs" && (
+        <ActivityLogPanel
+          token={token}
+          mode="admin"
+          businesses={businesses.map((b) => ({
+            institution_id: b.institution_id,
+            institution_name: b.institution_name,
+          }))}
+        />
+      )}
+
       {ledgerView === "subscription" && (
         <div
           className="fixed inset-0 z-modal flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
@@ -2479,10 +2465,8 @@ export function SuperAdminDashboard() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <label className="sr-only" htmlFor="ledger-business-filter">
-                {t("allBusinesses")}
-              </label>
               <SearchableSelect
+                label={t("selectBusinessFilter")}
                 value={ledgerScopeBusiness || ""}
                 onChange={(value) => setLedgerScopeBusiness(value || null)}
                 options={[
@@ -2491,7 +2475,6 @@ export function SuperAdminDashboard() {
                 ]}
                 placeholder={t("allBusinesses")}
                 className="min-w-[200px] flex-1 sm:flex-none sm:min-w-[260px]"
-                aria-label={t("allBusinesses")}
               />
             </div>
 
@@ -2580,85 +2563,65 @@ export function SuperAdminDashboard() {
                 <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
               ) : seoForm ? (
                 <form onSubmit={handleSeoSave} className="grid gap-4">
-                  <Field label={t("seoSiteName")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.site_name}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, site_name: e.target.value }))}
-                    />
-                  </Field>
-                  <Field label={t("seoTitle")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.title}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, title: e.target.value }))}
-                      required
-                    />
-                  </Field>
-                  <Field label={t("seoDescription")}>
-                    <textarea
-                      rows={3}
-                      className={`${inputClass} min-h-[88px] py-2`}
-                      value={seoForm.description}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, description: e.target.value }))}
-                      required
-                    />
-                  </Field>
-                  <Field label={t("seoKeywords")}>
-                    <textarea
-                      rows={2}
-                      className={`${inputClass} min-h-[64px] py-2`}
-                      value={seoForm.keywords}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, keywords: e.target.value }))}
-                    />
-                  </Field>
-                  <Field label={t("seoFocusQueries")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.focus_queries}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, focus_queries: e.target.value }))}
-                      placeholder="döviz, dolar tl, döviz bürosu, exchange..."
-                    />
-                  </Field>
-                  <Field label={t("seoCanonical")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.canonical_url}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, canonical_url: e.target.value }))}
-                    />
-                  </Field>
-                  <Field label={t("seoOgImage")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.og_image}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, og_image: e.target.value }))}
-                    />
-                  </Field>
+                  <FloatingInput
+                    label={t("seoSiteName")}
+                    value={seoForm.site_name}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, site_name: e.target.value }))}
+                  />
+                  <FloatingInput
+                    label={t("seoTitle")}
+                    value={seoForm.title}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, title: e.target.value }))}
+                    required
+                  />
+                  <FloatingTextarea
+                    label={t("seoDescription")}
+                    rows={3}
+                    value={seoForm.description}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, description: e.target.value }))}
+                    required
+                  />
+                  <FloatingTextarea
+                    label={t("seoKeywords")}
+                    rows={2}
+                    value={seoForm.keywords}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, keywords: e.target.value }))}
+                  />
+                  <FloatingInput
+                    label={t("seoFocusQueries")}
+                    value={seoForm.focus_queries}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, focus_queries: e.target.value }))}
+                    placeholder="döviz, dolar tl, döviz bürosu, exchange..."
+                  />
+                  <FloatingInput
+                    label={t("seoCanonical")}
+                    value={seoForm.canonical_url}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, canonical_url: e.target.value }))}
+                  />
+                  <FloatingInput
+                    label={t("seoOgImage")}
+                    value={seoForm.og_image}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, og_image: e.target.value }))}
+                  />
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label={t("seoGeoRegion")}>
-                      <input
-                        className={inputClass}
-                        value={seoForm.geo_region}
-                        onChange={(e) => setSeoForm((p) => ({ ...p, geo_region: e.target.value }))}
-                      />
-                    </Field>
-                    <Field label={t("seoGeoPlace")}>
-                      <input
-                        className={inputClass}
-                        value={seoForm.geo_placename}
-                        onChange={(e) =>
-                          setSeoForm((p) => ({ ...p, geo_placename: e.target.value }))
-                        }
-                      />
-                    </Field>
-                  </div>
-                  <Field label={t("seoRobots")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.robots}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, robots: e.target.value }))}
+                    <FloatingInput
+                      label={t("seoGeoRegion")}
+                      value={seoForm.geo_region}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, geo_region: e.target.value }))}
                     />
-                  </Field>
+                    <FloatingInput
+                      label={t("seoGeoPlace")}
+                      value={seoForm.geo_placename}
+                      onChange={(e) =>
+                        setSeoForm((p) => ({ ...p, geo_placename: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <FloatingInput
+                    label={t("seoRobots")}
+                    value={seoForm.robots}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, robots: e.target.value }))}
+                  />
                   <label className="flex items-center gap-2 text-sm text-ink-700 dark:text-ink-200">
                     <input
                       type="checkbox"
@@ -2788,6 +2751,7 @@ export function SuperAdminDashboard() {
                         t={t}
                       />
                       <SearchableSelect
+                        label={t("selectBusinessFilter")}
                         value={filterBusiness}
                         onChange={(value) => setFilterBusiness(value)}
                         options={[
@@ -2795,10 +2759,10 @@ export function SuperAdminDashboard() {
                           ...businessFilterOptions.map((name) => ({ value: name, label: name })),
                         ]}
                         placeholder={t("allBusinesses")}
-                        aria-label={t("allBusinesses")}
                       />
 
                       <SearchableSelect
+                        label={t("filterCurrencyLabel")}
                         value={filterCurrency}
                         onChange={(value) => setFilterCurrency(value)}
                         options={[
@@ -2806,10 +2770,10 @@ export function SuperAdminDashboard() {
                           ...currencyFilterOptions.map((cur) => ({ value: cur, label: cur })),
                         ]}
                         placeholder={t("allCurrencies")}
-                        aria-label={t("allCurrencies")}
                       />
 
                       <SearchableSelect
+                        label={t("actionTypeLabel")}
                         value={filterAction}
                         onChange={(value) => setFilterAction(value)}
                         options={[
@@ -2819,7 +2783,6 @@ export function SuperAdminDashboard() {
                           { value: "business", label: t("onlyBusinessViewers") },
                         ]}
                         placeholder={t("allActions")}
-                        aria-label={t("allActions")}
                       />
                     </div>
 
@@ -2880,6 +2843,7 @@ export function SuperAdminDashboard() {
                     t={t}
                   />
                   <SearchableSelect
+                    label={t("selectBusinessFilter")}
                     value={bizLogBusiness}
                     onChange={(value) => setBizLogBusiness(value)}
                     options={[
@@ -2887,10 +2851,10 @@ export function SuperAdminDashboard() {
                       ...bizLogBusinessOptions.map((name) => ({ value: name, label: name })),
                     ]}
                     placeholder={t("allBusinesses")}
-                    aria-label={t("selectBusinessFilter")}
                   />
 
                   <SearchableSelect
+                    label={t("actionTypeLabel")}
                     value={bizLogActionType}
                     onChange={(value) => setBizLogActionType(value)}
                     options={[
@@ -2900,7 +2864,6 @@ export function SuperAdminDashboard() {
                       { value: "branch", label: t("actionTypeBranch") },
                     ]}
                     placeholder={t("allActions")}
-                    aria-label={t("actionTypeLabel")}
                   />
                 </div>
 
@@ -3106,17 +3069,5 @@ export function SuperAdminDashboard() {
     </div>
   );
 }
-
-function Field({ label, children }) {
-  return (
-    <label className="block space-y-1.5">
-      <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100";
 
 const primaryBtnClass = "btn-primary";

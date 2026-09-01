@@ -8,6 +8,7 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { MapPin, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
 import { HeaderActions } from "./HeaderActions";
+import { FloatingInput, FloatingSelect, FloatingTextarea } from "./ui/floating-label";
 import {
   createAdminBranch,
   deleteAdminBranch,
@@ -53,12 +54,6 @@ function fromDateInputValue(dateStr) {
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
-
-const inputClass =
-  "h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100";
-
-const textareaClass =
-  "min-h-[100px] w-full resize-y rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100";
 
 function MapClickHandler({ onPick }) {
   useMapEvents({
@@ -157,95 +152,67 @@ function BranchFormModal({
             onSubmit={onSave}
             className="space-y-4 overflow-y-auto border-b border-ink-200 p-5 lg:border-b-0 lg:border-r dark:border-ink-800"
           >
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                Şube Adı
-              </span>
-              <input
-                value={formData.name}
-                onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
-                className={inputClass}
-                placeholder="Örn: Lefkoşa Şubesi"
-                required
-              />
-            </label>
+            <FloatingInput
+              label="Şube Adı"
+              value={formData.name}
+              onChange={(e) => setFormData((p) => ({ ...p, name: e.target.value }))}
+              placeholder="Örn: Lefkoşa Şubesi"
+              required
+            />
 
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                Telefon
-              </span>
-              <input
-                value={formData.phone}
-                onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))}
-                className={inputClass}
-                placeholder="Örn: +90 392 000 00 00"
-              />
-            </label>
+            <FloatingInput
+              label="Telefon"
+              value={formData.phone}
+              onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))}
+              placeholder="Örn: +90 392 000 00 00"
+            />
 
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                Abonelik Tipi
-              </span>
-              <select
-                value={formData.subscription_type}
-                onChange={(e) =>
-                  setFormData((p) => ({
-                    ...p,
-                    subscription_type: e.target.value,
-                    remaining_days: e.target.value === "Test" ? "" : p.remaining_days,
-                  }))
-                }
-                className={inputClass}
-              >
-                <option value="Test">{t("subTypeTest")}</option>
-                <option value="Aylık">{t("subTypeMonthly")}</option>
-                <option value="Yıllık">{t("subTypeYearly")}</option>
-                <option value="Manuel">{t("subTypeManual")}</option>
-              </select>
-            </label>
+            <FloatingSelect
+              label="Abonelik Tipi"
+              value={formData.subscription_type}
+              onChange={(e) =>
+                setFormData((p) => ({
+                  ...p,
+                  subscription_type: e.target.value,
+                  remaining_days: e.target.value === "Test" ? "" : p.remaining_days,
+                }))
+              }
+            >
+              <option value="Test">{t("subTypeTest")}</option>
+              <option value="Aylık">{t("subTypeMonthly")}</option>
+              <option value="Yıllık">{t("subTypeYearly")}</option>
+              <option value="Manuel">{t("subTypeManual")}</option>
+            </FloatingSelect>
 
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                {t("subscriptionStartDate")}
-              </span>
-              <input
-                type="date"
-                value={formData.subscription_start_date}
-                onChange={(e) =>
-                  setFormData((p) => ({ ...p, subscription_start_date: e.target.value }))
-                }
-                className={inputClass}
-              />
-            </label>
+            <FloatingInput
+              label={t("subscriptionStartDate")}
+              type="date"
+              value={formData.subscription_start_date}
+              onChange={(e) =>
+                setFormData((p) => ({ ...p, subscription_start_date: e.target.value }))
+              }
+            />
 
             {formData.subscription_type !== "Test" ? (
-              <label className="block space-y-1.5">
-                <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                  {t("remainingSubscription")} ({t("daysUnit")})
-                </span>
-                <input
-                  type="number"
-                  min="0"
-                  value={formData.remaining_days}
-                  onChange={(e) =>
-                    setFormData((p) => ({ ...p, remaining_days: e.target.value }))
-                  }
-                  className={inputClass}
-                  placeholder="Örn: 30"
-                />
-              </label>
+              <FloatingInput
+                label={`${t("remainingSubscription")} (${t("daysUnit")})`}
+                type="number"
+                min="0"
+                value={formData.remaining_days}
+                onChange={(e) =>
+                  setFormData((p) => ({ ...p, remaining_days: e.target.value }))
+                }
+                placeholder="Örn: 30"
+              />
             ) : (
               <p className="text-[11px] text-brand-400/90">{t("unlimitedSubscription")}</p>
             )}
 
-            <label className="block space-y-1.5">
-              <span className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                Adres
-              </span>
-              <textarea
+            <div className="space-y-1.5">
+              <FloatingTextarea
+                label="Adres"
                 value={formData.address}
                 onChange={(e) => setFormData((p) => ({ ...p, address: e.target.value }))}
-                className={textareaClass}
                 placeholder="Haritaya tıklayın veya adresi manuel yazın"
               />
               <p className="text-[11px] text-ink-500">
@@ -257,7 +224,7 @@ function BranchFormModal({
                   {Number(formData.lat).toFixed(5)}, {Number(formData.lng).toFixed(5)}
                 </p>
               ) : null}
-            </label>
+            </div>
 
             {error ? (
               <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-sm text-danger-200">

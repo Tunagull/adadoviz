@@ -4,6 +4,7 @@ import { Helmet } from "react-helmet-async";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Lock, KeyRound, CheckCircle2 } from "lucide-react";
 import { apiUrl } from "../lib/api";
+import { FloatingInput } from "../components/ui/floating-label";
 
 export function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -101,51 +102,29 @@ export function ResetPasswordPage() {
               </div>
             ) : null}
 
-            <div className="space-y-2">
-              <label
-                htmlFor="reset-password"
-                className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400"
-              >
-                Yeni Şifre
-              </label>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
-                <input
-                  id="reset-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="h-11 w-full rounded-lg border border-ink-700 bg-ink-950 pl-10 pr-3 text-sm text-ink-100 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20"
-                  required
-                  disabled={!token || loading}
-                />
-              </div>
-            </div>
+            <FloatingInput
+              id="reset-password"
+              label="Yeni Şifre"
+              icon={Lock}
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={!token || loading}
+            />
 
-            <div className="space-y-2">
-              <label
-                htmlFor="reset-password-confirm"
-                className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400"
-              >
-                Şifre Tekrar
-              </label>
-              <div className="relative">
-                <Lock className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-500" />
-                <input
-                  id="reset-password-confirm"
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirm}
-                  onChange={(e) => setConfirm(e.target.value)}
-                  placeholder="••••••••"
-                  className="h-11 w-full rounded-lg border border-ink-700 bg-ink-950 pl-10 pr-3 text-sm text-ink-100 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20"
-                  required
-                  disabled={!token || loading}
-                />
-              </div>
-            </div>
+            <FloatingInput
+              id="reset-password-confirm"
+              label="Şifre Tekrar"
+              icon={Lock}
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              required
+              disabled={!token || loading}
+            />
 
             {error ? (
               <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-200">

@@ -2707,6 +2707,8 @@ function listPublicBranches() {
       ...mapBranchRow(row),
       institution_id: row.institution_id,
       institution_name: row.institution_name,
+      // Şehir filtresi için: adresten türetilir, ayrı bir kolon gerektirmez.
+      city: extractCitySlug(row.address),
     }));
 }
 
@@ -3664,6 +3666,66 @@ function listAuditLogs(limit = 100) {
     .all(n);
 }
 
+/**
+ * Filtrelenebilir + sayfalanabilir audit log listesi.
+ *
+ * Süper admin tüm işletmeleri görür; işletme paneli yalnızca kendi
+ * institution_id'sini geçirerek kendi geçmişini görür. Bu yüzden institutionId
+ * filtresi ÇAĞIRAN TARAFTA zorunlu kılınır (bkz. /api/business/audit-logs).
+ */
+function listAuditLogsFiltered({
+  institutionId = null,
+  action = null,
+  limit = 50,
+  offset = 0,
+} = {}) {
+  const take = Math.min(200, Math.max(1, Number(limit) || 50));
+  const skip = Math.max(0, Number(offset) || 0);
+
+  const where = [];
+  const params = [];
+  if (institutionId) {
+    where.push("institution_id = ?");
+    params.push(String(institutionId));
+  }
+  if (action) {
+    where.push("action = ?");
+    params.push(String(action));
+  }
+  const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+  const rows = db
+    .prepare(
+      `SELECT id, action, actor, institution_id, institution_name, detail, created_at
+       FROM audit_log
+       ${whereSql}
+       ORDER BY datetime(created_at) DESC
+       LIMIT ? OFFSET ?`
+    )
+    .all(...params, take, skip);
+
+  const { total } = db
+    .prepare(`SELECT COUNT(*) AS total FROM audit_log ${whereSql}`)
+    .get(...params);
+
+  return { rows, total: Number(total) || 0 };
+}
+
+/** Filtre çipleri için: kullanılan işlem tipleri ve adetleri. */
+function listAuditActions(institutionId = null) {
+  const whereSql = institutionId ? "WHERE institution_id = ?" : "";
+  const params = institutionId ? [String(institutionId)] : [];
+  return db
+    .prepare(
+      `SELECT action, COUNT(*) AS count
+       FROM audit_log
+       ${whereSql}
+       GROUP BY action
+       ORDER BY count DESC`
+    )
+    .all(...params);
+}
+
 function applySupabaseAuditRow(row) {
   if (!row?.action || !row?.created_at) return;
   const existing = db
@@ -4137,5 +4199,7 @@ module.exports = {
   touchLastLogin,
   insertAuditLog,
   listAuditLogs,
+  listAuditLogsFiltered,
+  listAuditActions,
   applySupabaseAuditRow,
 };

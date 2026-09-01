@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Helmet } from "react-helmet-async";
 import {
-  Search,
   TrendingUp,
   TrendingDown,
   LogOut,
@@ -14,16 +13,24 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
+import { ChartContainer, ChartHoverCard, ChartSwatch, ChartTooltip } from "./ui/chart";
+import { chartSkin, hollowDot } from "../lib/chartTheme";
 import { V0BankCard } from "./V0BankCard";
 import { Sheet } from "./Sheet";
 import { BusinessLoginModal } from "./BusinessLoginModal";
 import { SearchableSelect } from "./SearchableSelect";
+import { FloatingDisplay, FloatingInput, FloatingTextarea } from "./ui/floating-label";
+import { GooeyField, GooeySearchBar, GooeySegment, GooeyToggle } from "./ui/animated-search-bar";
+import { DateField } from "./ui/date-field";
 import { HeaderActions } from "./HeaderActions";
 import { BrandLogo } from "./BrandLogo";
+import { SiteNav } from "./SiteNav";
+import { cityOptionsFromBranches } from "../lib/cities";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
+import { useRegisterOfficeSearch } from "../context/OfficeSearchContext";
 import { trackBusinessClick, trackCurrencyView } from "../lib/analytics";
 import { apiUrl, ratesStreamUrl } from "../lib/api";
 import { buildBranchSlug, buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
@@ -93,6 +100,22 @@ function buildFinancialProductJsonLd(lang) {
 /**
  * ✅ Piyasa Özeti Kartı - Gerçek Geçmiş Veri Grafiği ve SSE Canlı Güncellemeleri
  */
+function RatePointTooltip({ active, payload, label, formatLabel, seriesLabel, color }) {
+  if (!active || !payload?.length) return null;
+  const buy = payload.find((entry) => entry.dataKey === "buy" && entry.value != null);
+  if (!buy) return null;
+  return (
+    <ChartHoverCard label={formatLabel(label)}>
+      <div className="flex items-center gap-2 text-xs">
+        <ChartSwatch label={`${seriesLabel}:`} color={color} />
+        <span className="font-semibold tabular-nums text-ink-900 dark:text-white">
+          {Number(buy.value).toFixed(4)} ₺
+        </span>
+      </div>
+    </ChartHoverCard>
+  );
+}
+
 function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const { theme } = useTheme();
   const { t, lang } = useLanguage();
@@ -527,9 +550,13 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     return ((lastVal - firstVal) / firstVal) * 100;
   }, [displayChartData]);
 
-  // Google Finance stili: pozitif yeşil, negatif kırmızı (+ aynı gradient gölge)
-  const strokeColor = displayPercentage >= 0 ? "#10b981" : "#f43f5e";
+  // Tek seri: renk semantik (yükseliş yeşil, düşüş kırmızı). Çizgi dili neon cilt.
+  const skin = chartSkin(isDark);
+  const strokeColor = displayPercentage >= 0 ? skin.up : skin.down;
   const gradientId = `colorValue-${currency}`;
+  const chartConfig = {
+    buy: { label: t("rateLabel"), color: strokeColor },
+  };
 
   // ✅ Domain: her zaman aktif zaman penceresi
   const chartDomain = useMemo(
@@ -632,78 +659,108 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const change = Number(displayPercentage).toFixed(2);
   const isPositive = parseFloat(change) >= 0;
 
-  const gridStroke = isDark ? "#2c2b28" : "#e6e4e0";
-  const axisStroke = isDark ? "#46443f" : "#d2cfc9";
-  const tickFill = isDark ? "#a5a19a" : "#78746c";
-  const tooltipBg = isDark ? "#1a1917" : "#ffffff";
-  const tooltipColor = isDark ? "#fff" : "#1a1917";
-  const tooltipBorder = isDark ? "none" : "1px solid #e6e4e0";
   const areaOpacity = isDark ? 0.3 : 0.18;
+  const showDots = displayChartData.length <= 16;
   // ✅ DRY: Aynı grafik hem küçük kartta hem tam ekran modalda kullanılır
   const renderChartContent = (isExpanded = false) => {
     const tickFont = isExpanded ? 12 : 11;
-    const gradId = `${gradientId}${isExpanded ? '-modal' : ''}`;
-
-    const chartInner = (
-      <AreaChart
-        data={displayChartData}
-        margin={isExpanded ? { top: 20, bottom: 30, left: 10, right: 20 } : { top: 5, bottom: 5, left: 0, right: 0 }}
-      >
-        <defs>
-          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={strokeColor} stopOpacity={areaOpacity} />
-            <stop offset="95%" stopColor={strokeColor} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
-        <XAxis
-          dataKey="timeMs"
-          type="number"
-          scale="time"
-          domain={chartDomain}
-          ticks={xAxisTicks}
-          tickFormatter={formatXAxis}
-          tick={{ fontSize: tickFont, fill: tickFill }}
-          axisLine={{ stroke: axisStroke }}
-          tickLine={{ stroke: axisStroke }}
-        />
-        <YAxis
-          domain={yAxisConfig.domain}
-          ticks={yAxisConfig.ticks}
-          width={45}
-          tickFormatter={(val) => Number(val).toFixed(2)}
-          tick={{ fontSize: tickFont, fill: tickFill }}
-          axisLine={false}
-          tickLine={false}
-        />
-        <Tooltip
-          labelFormatter={(val) => formatChartTooltipLabel(val)}
-          formatter={(value) => [Number(value).toFixed(4) + ' ₺', t("rateLabel")]}
-          contentStyle={{ backgroundColor: tooltipBg, border: tooltipBorder, borderRadius: '8px', color: tooltipColor }}
-        />
-        <Area
-          type="monotone"
-          dataKey="buy"
-          stroke={strokeColor}
-          strokeWidth={isExpanded ? 2.5 : 2}
-          fillOpacity={1}
-          fill={`url(#${gradId})`}
-          isAnimationActive={false}
-          activeDot={{ r: isExpanded ? 6 : 5, fill: strokeColor, stroke: isDark ? '#fff' : '#1a1917', strokeWidth: 2 }}
-        />
-      </AreaChart>
-    );
+    const gradId = `${gradientId}${isExpanded ? "-modal" : ""}`;
+    const dot = hollowDot(strokeColor, skin.dotFill, isExpanded ? 6 : 5);
 
     return (
-      <div className={`relative w-full ${isExpanded ? 'h-full' : ''}`}>
-        {/* Chart Container: Oklar kartın seviyesinde konumlandırıldığı için minimal padding yeterli */}
+      <div className={`relative w-full ${isExpanded ? "h-full" : ""}`}>
         <div
-          className={`w-full ${isExpanded ? 'h-full' : ''}`}
-          style={isExpanded ? { height: '100%', paddingLeft: '20px', paddingRight: '20px' } : { height: 200, paddingLeft: '20px', paddingRight: '20px' }}
+          className={`w-full ${isExpanded ? "h-full" : ""}`}
+          style={
+            isExpanded
+              ? { height: "100%", paddingLeft: "20px", paddingRight: "20px" }
+              : { height: 200, paddingLeft: "20px", paddingRight: "20px" }
+          }
         >
-          <ResponsiveContainer width="100%" height={isExpanded ? 400 : 200}>
-            {chartInner}
-          </ResponsiveContainer>
+          <ChartContainer
+            config={chartConfig}
+            className={`aspect-auto w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-ink-300 dark:[&_.recharts-curve.recharts-tooltip-cursor]:stroke-white/20 ${
+              isExpanded ? "h-full min-h-[400px]" : "h-[200px]"
+            }`}
+          >
+            <ComposedChart
+              data={displayChartData}
+              margin={
+                isExpanded
+                  ? { top: 20, bottom: 30, left: 10, right: 20 }
+                  : { top: 5, bottom: 5, left: 0, right: 0 }
+              }
+            >
+              <defs>
+                <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={strokeColor} stopOpacity={areaOpacity} />
+                  <stop offset="100%" stopColor={strokeColor} stopOpacity={0.05} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid
+                strokeDasharray="4 4"
+                stroke={skin.grid}
+                strokeOpacity={1}
+                horizontal
+                vertical={false}
+              />
+              <XAxis
+                dataKey="timeMs"
+                type="number"
+                scale="time"
+                domain={chartDomain}
+                ticks={xAxisTicks}
+                tickFormatter={formatXAxis}
+                tick={{ fontSize: tickFont, fill: skin.tick }}
+                axisLine={false}
+                tickLine={false}
+                tickMargin={8}
+              />
+              <YAxis
+                domain={yAxisConfig.domain}
+                ticks={yAxisConfig.ticks}
+                width={45}
+                tickFormatter={(val) => Number(val).toFixed(2)}
+                tick={{ fontSize: tickFont, fill: skin.tick }}
+                axisLine={false}
+                tickLine={false}
+                tickMargin={8}
+              />
+              <ChartTooltip
+                content={
+                  <RatePointTooltip
+                    formatLabel={formatChartTooltipLabel}
+                    seriesLabel={t("rateLabel")}
+                    color={strokeColor}
+                  />
+                }
+                cursor={{
+                  stroke: skin.cursor,
+                  strokeWidth: 1,
+                  strokeDasharray: "none",
+                }}
+              />
+              <Area
+                type="linear"
+                dataKey="buy"
+                stroke="transparent"
+                fill={`url(#${gradId})`}
+                strokeWidth={0}
+                dot={false}
+                isAnimationActive={false}
+                legendType="none"
+              />
+              <Line
+                type="linear"
+                dataKey="buy"
+                stroke={strokeColor}
+                strokeWidth={isExpanded ? 2.5 : 2}
+                dot={showDots ? dot : false}
+                activeDot={dot}
+                isAnimationActive={false}
+              />
+            </ComposedChart>
+          </ChartContainer>
         </div>
       </div>
     );
@@ -826,7 +883,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           onClick={() => setIsModalOpen(false)}
         >
           <div
-            className="relative flex max-h-[min(92dvh,90vh)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-ink-600/60 dark:border-t-slate-400/50 dark:bg-ink-900/70"
+            className="relative flex max-h-[min(92dvh,90vh)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white/95 shadow-2xl backdrop-blur-xl dark:border-white/10 dark:border-t-white/20 dark:bg-ink-900/70"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute right-2 top-2 z-dropdown flex items-center gap-1.5 sm:right-3 sm:top-3 sm:gap-2">
@@ -842,18 +899,19 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             </div>
 
             {/* Özel Tarih Seçici — mobilde üst şerit, masaüstünde sol üst */}
-            <div className="relative z-raised flex flex-wrap items-center gap-2 border-b border-ink-200/80 bg-ink-50/90 px-3 py-2.5 backdrop-blur-sm dark:border-ink-700/50 dark:bg-ink-900/50 sm:absolute sm:left-4 sm:top-4 sm:max-w-[min(100%,22rem)] sm:rounded-lg sm:border sm:border-ink-200 sm:p-1.5 md:left-6 dark:sm:border-ink-700/50">
-              <input
-                type="date"
-                lang={localeCode}
+            <div className="relative z-raised flex flex-wrap items-center gap-2 border-b border-ink-200/80 bg-ink-50/90 px-3 py-2.5 backdrop-blur-sm dark:border-ink-700/50 dark:bg-ink-900/50 sm:absolute sm:left-4 sm:top-4 sm:max-w-[min(100%,28rem)] sm:rounded-lg sm:border sm:border-ink-200 sm:p-1.5 md:left-6 dark:sm:border-ink-700/50">
+              <DateField
+                label={t("dateRangeStart")}
+                className="min-w-0 flex-1 sm:flex-none"
+                locale={localeCode}
                 value={startDateStr}
+                min={formatForInput(oldestDataTime)}
                 max={endDateStr || todayStr}
-                onChange={(e) => {
-                  const newStartMs = parseDateInputToMs(e.target.value);
+                onChange={(next) => {
+                  const newStartMs = parseDateInputToMs(next);
                   if (newStartMs == null) return;
                   setCustomDateRange((prev) => {
                     if (Number.isFinite(prev.end) && newStartMs > prev.end) return prev;
-                    // Arşivden eski tarih seçilmesin
                     const clamped =
                       Number.isFinite(oldestDataTime) && newStartMs < oldestDataTime
                         ? oldestDataTime
@@ -862,24 +920,23 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                   });
                   setTimeOffset(0);
                 }}
-                className="min-w-0 flex-1 cursor-pointer rounded border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 focus:border-success-500 focus:outline-none dark:border-ink-600 dark:bg-ink-800/80 dark:text-ink-200 sm:flex-none md:text-sm"
               />
               <span className="shrink-0 text-sm text-ink-600 dark:text-ink-400">-</span>
-              <input
-                type="date"
-                lang={localeCode}
+              <DateField
+                label={t("dateRangeEnd")}
+                className="min-w-0 flex-1 sm:flex-none"
+                locale={localeCode}
                 value={endDateStr}
                 min={startDateStr}
                 max={todayStr}
-                onChange={(e) => {
-                  const newEndMs = parseDateInputToMs(e.target.value);
+                onChange={(next) => {
+                  const newEndMs = parseDateInputToMs(next);
                   if (newEndMs == null) return;
                   setCustomDateRange((prev) => {
                     if (Number.isFinite(prev.start) && newEndMs < prev.start) return prev;
                     return { ...prev, end: newEndMs };
                   });
                 }}
-                className="min-w-0 flex-1 cursor-pointer rounded border border-ink-300 bg-white px-2 py-1 text-xs text-ink-800 focus:border-success-500 focus:outline-none dark:border-ink-600 dark:bg-ink-800/80 dark:text-ink-200 sm:flex-none md:text-sm"
               />
             </div>
 
@@ -919,9 +976,6 @@ function PartnershipForm() {
   const phoneInputRef = useRef(null);
 
   const PHONE_MASK_TEMPLATE = "0(5XX) XXX XXXX";
-
-  const partnershipInputClass =
-    "h-11 rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400";
 
   const formatPhoneDisplay = (rawDigits) => {
     let d = String(rawDigits || "").replace(/\D/g, "").slice(0, 10);
@@ -1124,84 +1178,82 @@ function PartnershipForm() {
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("institutionName")}</label>
-                <input
-                  type="text"
-                  name="institution_name"
-                  placeholder={t("institutionNamePlaceholder")}
-                  value={formData.institution_name}
-                  onChange={handleChange}
-                  required
-                  className={partnershipInputClass}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("contactPerson")}</label>
-                <input
-                  type="text"
-                  name="contact_person"
-                  placeholder={t("contactPersonPlaceholder")}
-                  value={formData.contact_person}
-                  onChange={handleChange}
-                  inputMode="text"
-                  autoComplete="name"
-                  required
-                  className={partnershipInputClass}
-                />
-              </div>
+              <FloatingInput
+                label={t("institutionName")}
+                type="text"
+                name="institution_name"
+                placeholder={t("institutionNamePlaceholder")}
+                value={formData.institution_name}
+                onChange={handleChange}
+                required
+              />
+              <FloatingInput
+                label={t("contactPerson")}
+                type="text"
+                name="contact_person"
+                placeholder={t("contactPersonPlaceholder")}
+                value={formData.contact_person}
+                onChange={handleChange}
+                inputMode="text"
+                autoComplete="name"
+                required
+              />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("emailLabel")}</label>
-                <input
-                  type="email"
-                  name="email"
-                  placeholder={t("emailPlaceholder")}
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                  className={partnershipInputClass}
-                />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("phoneLabel")}</label>
-                <div className="relative h-11 flex items-center rounded-lg border border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:shadow-focus transition-all duration-300">
-                  <span className="absolute left-3 z-raised text-sm font-mono font-bold text-ink-800 dark:text-white pointer-events-none">
-                    +90
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-ink-600 dark:text-ink-400 select-none"
-                  >
-                    {buildPhoneMaskGhost(rawPhone)}
-                  </span>
-                  <input
-                    ref={phoneInputRef}
-                    type="tel"
-                    name="phone"
-                    value={formatPhoneDisplay(rawPhone)}
-                    onChange={handlePhoneInputChange}
-                    onKeyDown={handlePhoneKeyDown}
-                    onFocus={handlePhoneFocus}
-                    onClick={handlePhoneClick}
-                    inputMode="numeric"
-                    autoComplete="tel-national"
-                    required
-                    className="relative z-raised h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-ink-800 outline-none caret-brand-500 dark:text-ink-100"
-                  />
-                </div>
-              </div>
+              <FloatingInput
+                label={t("emailLabel")}
+                type="email"
+                name="email"
+                placeholder={t("emailPlaceholder")}
+                value={formData.email}
+                onChange={handleChange}
+                required
+              />
+              {/*
+                Telefon alanının etiketi hep yukarıda: içinde her zaman görünen
+                bir maske hayaleti ve +90 öneki var, etiket ortada dursaydı
+                onların üstüne binerdi.
+              */}
+              <FloatingInput
+                ref={phoneInputRef}
+                label={t("phoneLabel")}
+                float="always"
+                type="tel"
+                name="phone"
+                value={formatPhoneDisplay(rawPhone)}
+                onChange={handlePhoneInputChange}
+                onKeyDown={handlePhoneKeyDown}
+                onFocus={handlePhoneFocus}
+                onClick={handlePhoneClick}
+                inputMode="numeric"
+                autoComplete="tel-national"
+                required
+                controlClassName="!pl-14 font-mono caret-brand-500"
+                adornment={
+                  <>
+                    <span className="pointer-events-none absolute left-3 top-1/2 z-raised -translate-y-1/2 font-mono text-sm font-bold text-ink-800 dark:text-white">
+                      +90
+                    </span>
+                    {/* Hayalet maske girdinin ALTINDA kalmalı, yoksa yazılan
+                        rakamların üstüne biner. */}
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 z-base flex select-none items-center pl-14 pr-3 font-mono text-sm text-ink-600 dark:text-ink-400"
+                    >
+                      {buildPhoneMaskGhost(rawPhone)}
+                    </span>
+                  </>
+                }
+              />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-300">{t("messageLabel")}</label>
-              <textarea
+              <FloatingTextarea
+                label={t("messageLabel")}
                 name="message"
                 rows={4}
                 placeholder={t("messagePlaceholder")}
                 value={formData.message}
                 onChange={handleChange}
-                className="rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
               />
               {messageIsEmpty ? (
                 <div className="rounded-lg border border-dashed border-brand-500/40 bg-brand-500/5 px-3 py-2.5">
@@ -1460,6 +1512,8 @@ export function V0FinancialDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("none");
   const [openNowOnly, setOpenNowOnly] = useState(false);
+  /** Şehir filtresi: "" = tüm şehirler. Şube adresinden türetilen slug. */
+  const [cityFilter, setCityFilter] = useState("");
   const [userLocation, setUserLocation] = useState(null);
   const [branchesByInstitution, setBranchesByInstitution] = useState({});
   const [geoToast, setGeoToast] = useState("");
@@ -1477,35 +1531,6 @@ export function V0FinancialDashboard() {
   const [showLogoutPopup, setShowLogoutPopup] = useState(false);  // ✅ YENİ: Çıkış Modal
   const [chartPeriod, setChartPeriod] = useState('Günlük');  // ✅ YENİ: Market Summary filtresi
   const [liveRates, setLiveRates] = useState(null); // ✅ TEK merkezi SSE mesajı - tüm banka kartları bunu paylaşır
-  const [headerCompact, setHeaderCompact] = useState(false);
-
-  // ✅ Histerezis (iki farklı eşik + aradaki "ölü bölge"): scroll pozisyonu tek bir
-  // sınırın (örn. 20px) etrafında gidip gelince header'ın sürekli küçülüp büyüyerek
-  // "titremesini" (jitter) önler. Küçülme ve büyüme için farklı eşikler kullanılır.
-  useEffect(() => {
-    const COMPACT_ABOVE = 72;
-    const EXPAND_BELOW = 24;
-    let raf = 0;
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        const y = window.scrollY;
-        setHeaderCompact((prev) => {
-          if (!prev && y > COMPACT_ABOVE) return true;
-          if (prev && y < EXPAND_BELOW) return false;
-          return prev;
-        });
-      });
-    };
-
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, []);
 
   // ✅ FIX: Her V0BankCard kendi SSE bağlantısını açtığında (16+ kart), tarayıcının
   // host başına bağlantı limiti (~6) tükeniyor ve Market Summary'nin fetch istekleri
@@ -1880,6 +1905,17 @@ export function V0FinancialDashboard() {
       );
     }
 
+    // Şehir filtresi: işletmenin O ŞEHİRDE en az bir şubesi varsa listede kalır.
+    if (cityFilter) {
+      result = result.filter((bank) => {
+        const list =
+          branchesByInstitution[bank.institutionId] ||
+          branchesByInstitution[normalizeText(bank.name)] ||
+          [];
+        return list.some((branch) => branch?.city === cityFilter);
+      });
+    }
+
     if (openNowOnly) {
       result = result.filter((bank) => {
         const hours =
@@ -1939,7 +1975,7 @@ export function V0FinancialDashboard() {
     }
 
     return result;
-  }, [banks, searchQuery, sortBy, openNowOnly, userLocation, branchesByInstitution]);
+  }, [banks, searchQuery, sortBy, openNowOnly, cityFilter, userLocation, branchesByInstitution]);
 
   /**
    * ⚠️ UX DÜZELTMESİ (denetim bulgusu U-10): Panoda beş büronun da kuru
@@ -2038,55 +2074,106 @@ export function V0FinancialDashboard() {
   const loanTotal = Number.isFinite(loanInstallment) ? loanInstallment * months : null;
   const activeLoanRate = Number.isFinite(monthlyRate) ? monthlyRate : null;
   // A-06: üst bar çipleri 26px yükseklikteydi; parmakla isabet ettirilemiyordu.
-  const headerBtnClass = headerCompact
-    ? "inline-flex items-center justify-center min-h-[2.25rem] rounded-full border px-3 text-[11px] font-semibold transition-all duration-300"
-    : "inline-flex items-center justify-center min-h-[2.75rem] rounded-full border px-3.5 text-xs font-semibold transition-all duration-300";
+  const headerBtnClass =
+    "inline-flex items-center justify-center min-h-[2.75rem] rounded-full border px-3.5 text-xs font-semibold transition-all duration-300";
 
+  const sortItems = useMemo(
+    () => currentSortOptions.map((opt) => ({ id: opt.value, label: opt.label })),
+    [currentSortOptions]
+  );
+
+  const cityItems = useMemo(
+    () => [
+      { id: "__all__", label: t("cityFilterAll") },
+      ...cityOptionsFromBranches(branchesByInstitution, lang).map((city) => ({
+        id: city.slug,
+        label: city.label,
+      })),
+    ],
+    [branchesByInstitution, lang, t]
+  );
 
   /** Sıralama ve "Şu An Açık" kontrolleri hem satır içi hem Sheet'te kullanılır. */
   const sortControl = (
-    <SearchableSelect
-      value={sortBy}
-      onChange={handleSortChange}
-      options={currentSortOptions}
+    <GooeySearchBar
+      mode="select"
+      fill
+      items={sortItems}
+      selectedId={sortBy}
+      onSelect={(item) => handleSortChange(item.id)}
+      collapsedLabel={t("sortLabel")}
       placeholder={t("sortLabel")}
+      emptyLabel={t("noResults")}
+      maxResults={16}
+      scrollMax={4}
+      resultIcon={null}
       aria-label={t("sortLabel")}
-      className="w-full"
     />
   );
 
   const openNowControl = (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={openNowOnly}
-      onClick={() => setOpenNowOnly((v) => !v)}
-      className={`inline-flex h-11 w-full items-center justify-between gap-2 rounded-lg border px-3 text-sm font-medium transition-all duration-300 border-ink-300 bg-white dark:border-ink-700 dark:bg-ink-950 hover:border-brand-400 dark:hover:border-brand-400 sm:w-auto sm:justify-start ${
-        openNowOnly ? "text-brand-700 dark:text-brand-300" : "text-ink-600 dark:text-ink-300"
-      }`}
-    >
-      <span className="inline-flex min-w-0 items-center gap-2">
-        <Clock className={`size-4 shrink-0 transition-colors duration-300 ${openNowOnly ? "text-brand-600 dark:text-brand-400" : ""}`} />
-        <span className="truncate">{t("openNow")}</span>
-      </span>
-      <span
-        className={`relative ml-1 inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-all duration-300 ${
-          openNowOnly
-            ? "border-brand-400/60 bg-brand-gradient"
-            : "border-ink-400 bg-ink-300 dark:border-ink-600 dark:bg-ink-700"
-        }`}
-      >
-        <span
-          className={`inline-block size-3.5 rounded-full bg-white shadow transition ${
-            openNowOnly ? "translate-x-4" : "translate-x-0.5"
-          }`}
-        />
-      </span>
-    </button>
+    <GooeyToggle
+      className="w-full sm:w-auto"
+      label={t("openNow")}
+      checked={openNowOnly}
+      onChange={setOpenNowOnly}
+      icon={Clock}
+    />
   );
 
-  /** Mobil filtre düğmesindeki rozet: kaç filtre aktif? */
-  const activeFilterCount = (sortBy !== "none" ? 1 : 0) + (openNowOnly ? 1 : 0);
+  const cityControl =
+    cityItems.length > 1 ? (
+      <GooeySearchBar
+        mode="select"
+        fill
+        items={cityItems}
+        selectedId={cityFilter || "__all__"}
+        onSelect={(item) => setCityFilter(item.id === "__all__" ? "" : item.id)}
+        collapsedLabel={t("cityFilterLabel")}
+        placeholder={t("cityFilterLabel")}
+        emptyLabel={t("noResults")}
+        maxResults={12}
+        scrollMax={4}
+        resultIcon={null}
+        aria-label={t("cityFilterLabel")}
+      />
+    ) : null;
+
+  const officeSearchItems = useMemo(
+    () =>
+      banks.map((bank) => ({
+        id: String(bank.institutionId || bank.id || bank.name),
+        label: bank.name,
+      })),
+    [banks]
+  );
+
+  const onOfficeQuery = useCallback((next) => {
+    setSearchQuery(next);
+  }, []);
+
+  const onOfficePick = useCallback((item) => {
+    setSearchQuery(item.label);
+    document.getElementById("office-grid")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  useRegisterOfficeSearch(officeSearchItems, searchQuery, onOfficeQuery, onOfficePick);
+
+  const officeSearchBar = (
+    <GooeySearchBar
+      items={officeSearchItems}
+      value={searchQuery}
+      onChange={onOfficeQuery}
+      onSelect={onOfficePick}
+      collapsedLabel={t("searchBanks")}
+      placeholder={t("searchBanks")}
+      emptyLabel={t("noResults")}
+      aria-label={t("searchBanks")}
+    />
+  );
+
+  const activeFilterCount =
+    (sortBy !== "none" ? 1 : 0) + (openNowOnly ? 1 : 0) + (cityFilter ? 1 : 0);
 
   const currencyConversionLd = useMemo(
     () => JSON.stringify(buildCurrencyConversionJsonLd({ lang, banksCount: banks.length })),
@@ -2112,30 +2199,12 @@ export function V0FinancialDashboard() {
         <script type="application/ld+json">{currencyConversionLd}</script>
         <script type="application/ld+json">{financialProductLd}</script>
       </Helmet>
-      <header
-        className={`sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-ink-950/80 ${
-          headerCompact ? "px-3 py-2 shadow-sm sm:px-6 sm:py-2.5" : "px-3 py-3 sm:px-6 sm:py-4 md:py-5"
-        }`}
-      >
-        <div
-          className={`mx-auto flex w-full max-w-[1600px] min-w-0 items-center justify-between transition-all duration-300 ${
-            headerCompact ? "gap-2 sm:gap-3" : "gap-2 sm:gap-4"
-          }`}
-        >
-        <BrandLogo className="min-w-0 shrink" compact={headerCompact} />
-        <div className={`flex min-w-0 shrink-0 flex-wrap items-center justify-end transition-all duration-300 ${headerCompact ? "gap-1 sm:gap-2" : "gap-1.5 sm:gap-3"}`}>
-          <div
-            className={`hidden sm:inline-flex items-center gap-2 rounded-full border border-brand-500/30 bg-brand-500/10 font-medium text-brand-700 transition-all duration-300 hover:border-brand-400 dark:text-brand-300 dark:hover:border-brand-400 ${
-              headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
-            }`}
-          >
-            <span className="relative inline-flex size-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success-400 opacity-75"></span>
-              <span className="relative inline-flex size-2 rounded-full bg-success-400"></span>
-            </span>
-            {t("liveMarket")}
-          </div>
-
+      <header className="sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-ink-950/80 sm:px-6 sm:py-4 md:py-5">
+        <div className="mx-auto flex w-full max-w-[1600px] min-w-0 items-center justify-between gap-2 sm:gap-4">
+        <BrandLogo className="min-w-0 shrink" />
+        {/* Ana gezinme: Kurlar / Kıyasla / İşletme (md ve üzeri). */}
+        <SiteNav className="mr-auto ml-2" />
+        <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
           <button
             type="button"
             onClick={() =>
@@ -2156,12 +2225,10 @@ export function V0FinancialDashboard() {
             <button
               type="button"
               onClick={handleLogout}
-              className={`inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 font-semibold text-danger-700 dark:text-danger-400 transition-all duration-300 hover:bg-danger-500/20 hover:border-danger-500/60 dark:text-danger-200 ${
-                headerCompact ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
-              }`}
+              className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-1 text-xs font-semibold text-danger-700 transition-all duration-300 hover:border-danger-500/60 hover:bg-danger-500/20 dark:text-danger-200 dark:text-danger-400"
               title={t("logout")}
             >
-              <LogOut className={headerCompact ? "size-3.5" : "size-4"} />
+              <LogOut className="size-4" />
               <span className="hidden md:inline">{t("logout")}</span>
             </button>
           )}
@@ -2169,22 +2236,29 @@ export function V0FinancialDashboard() {
           <button
             type="button"
             onClick={scrollToPartnership}
-            className={`hidden sm:inline-flex items-center min-h-[2.75rem] px-3.5 rounded-full border border-ink-300 bg-white font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 ${
-              headerCompact ? "px-2.5 py-0.5 text-[11px]" : "px-3 py-1 text-xs"
-            }`}
+            className="hidden min-h-[2.75rem] items-center rounded-full border border-ink-300 bg-white px-3.5 py-1 text-xs font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 sm:inline-flex md:hidden"
           >
             {t("partnership")}
           </button>
 
-          <HeaderActions compact={headerCompact} />
+          <HeaderActions />
         </div>
         </div>
       </header>
       <BusinessLoginModal isOpen={isBusinessLoginOpen} onClose={() => setIsBusinessLoginOpen(false)} />
-      <div className="pointer-events-none fixed -left-60 -top-40 z-0 h-[40rem] w-[40rem] rounded-full bg-brand-500/15 blur-[140px] dark:bg-brand-500/20"></div>
-      <div className="pointer-events-none fixed -right-40 top-10 z-0 h-[45rem] w-[45rem] rounded-full bg-brand-500/15 blur-[140px] dark:bg-brand-500/20"></div>
+      {/*
+        ⚠️ TASARIM DÜZELTMESİ (mat siyah): Bu iki küre %20 opaklıkla duruyordu
+        ve ekranın iki yanını renkli bir yıkamayla kaplıyordu — "mat siyah"
+        zemin böyle olmuyor, renkli bir alacakaranlık oluyor.
+
+        Küreler artık renksiz: karanlık temada mat siyahın üzerine düşen soluk
+        beyaz ışık, aydınlık temada gri bir gölgelenme. Renkli bir yıkama
+        (önce teal, sonra magenta) "mat siyah" olmuyordu.
+      */}
+      <div className="pointer-events-none fixed -left-60 -top-40 z-0 h-[40rem] w-[40rem] rounded-full bg-ink-950/[0.04] blur-[140px] dark:bg-white/[0.05]"></div>
+      <div className="pointer-events-none fixed -right-40 top-10 z-0 h-[45rem] w-[45rem] rounded-full bg-ink-950/[0.04] blur-[140px] dark:bg-white/[0.04]"></div>
       <div
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.05] dark:opacity-[0.08]"
+        className="pointer-events-none fixed inset-0 z-0 text-ink-900 opacity-[0.05] dark:text-white dark:opacity-[0.09]"
         /*
           ⚠️ TASARIM DÜZELTMESİ (D-16): Arka plan ızgarası paletin dışındaydı —
           yatay çizgiler sky-400 (#38bdf8), dikey çizgiler indigo-500 (#6366f1)
@@ -2195,9 +2269,18 @@ export function V0FinancialDashboard() {
           Artık tek marka tonu, üçte bir opaklık ve iki katı aralık: doku hâlâ
           var ama okunacak şey rakamlar.
         */
+        /*
+          (mat siyah) D-16 ızgarayı paletin içine almıştı ama değer hâlâ SABİT
+          bir cyan hex'iydi (#06b6d4). Palet magentaya geçince ekranda tek
+          başına kalan cyan buydu. Doku artık renksiz.
+
+          Çizgi rengi `currentColor`: aynı elemanla iki temaya çalışıyor —
+          karanlıkta beyaz, aydınlıkta mürekkep. Sabit beyaz yazılsaydı doku
+          aydınlık temada tamamen kaybolurdu.
+        */
         style={{
           backgroundImage:
-            "linear-gradient(rgba(6,182,212,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.07) 1px, transparent 1px)",
+            "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)",
           backgroundSize: "72px 72px",
         }}
       />
@@ -2269,9 +2352,9 @@ export function V0FinancialDashboard() {
                 role="tab"
                 aria-selected={chartPeriod === key}
                 onClick={() => setChartPeriod(key)}
-                className={`press min-h-[2.25rem] shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-[background-color,color] duration-fast ease-out-strong ${
+                className={`press min-h-[2.25rem] shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-[background-color,color] duration-fast ease-out-strong ${
                   chartPeriod === key
-                    ? "bg-white text-ink-900 shadow-sm dark:bg-ink-800 dark:text-white"
+                    ? "surface-neon shadow-sm"
                     : "bg-transparent text-ink-600 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
                 }`}
               >
@@ -2294,7 +2377,7 @@ export function V0FinancialDashboard() {
       </section>
 
       {/* D-13 / D-14: piyasa özeti kartıyla aynı yüzey ve aynı başlık dili. */}
-      <section className="surface-card p-4 sm:p-6">
+      <section className="surface-card overflow-visible p-4 sm:p-6">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
             {mode === "exchange"
@@ -2306,137 +2389,125 @@ export function V0FinancialDashboard() {
         </div>
 
         {mode === "exchange" ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-12">
-            {/* 1️⃣ DÖVIZ BİRİMİ (Sol taraf) */}
-            <div className="flex min-w-0 flex-col gap-1 xl:col-span-2">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("currencyUnit")}</label>
-              <SearchableSelect
-                value={exchangeCurrency}
-                onChange={setExchangeCurrency}
+          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2 xl:grid-cols-12">
+            <div className="min-w-0 xl:col-span-2">
+              <GooeySearchBar
+                mode="select"
+                fill
+                items={[
+                  { id: "USD", label: "USD" },
+                  { id: "EUR", label: "EUR" },
+                  { id: "GBP", label: "GBP" },
+                ]}
+                selectedId={exchangeCurrency}
+                onSelect={(item) => setExchangeCurrency(item.id)}
+                collapsedLabel={t("currencyUnit")}
                 placeholder={t("selectCurrency")}
+                emptyLabel={t("noResults")}
+                maxResults={3}
+                resultIcon={null}
                 aria-label={t("currencyUnit")}
+              />
+            </div>
+
+            <div className="min-w-0 xl:col-span-2">
+              <GooeySegment
+                aria-label={t("operationType")}
+                value={exchangeOperation}
+                onChange={setExchangeOperation}
                 options={[
-                  { value: "", label: t("selectCurrency") },
-                  { value: "USD", label: "USD" },
-                  { value: "EUR", label: "EUR" },
-                  { value: "GBP", label: "GBP" },
+                  { value: "buy", label: t("buy") },
+                  { value: "sell", label: t("sell") },
                 ]}
               />
             </div>
 
-            {/* 2️⃣ İŞLEM TÜRÜ (Alış / Satış) */}
-            <div className="flex min-w-0 flex-col gap-1 xl:col-span-2">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("operationType")}</label>
-              <div className="inline-flex w-full rounded-lg border border-ink-200 bg-ink-50/80 p-1 backdrop-blur-md dark:border-white/10 dark:bg-ink-900/80">
-                <button
-                  type="button"
-                  onClick={() => setExchangeOperation("buy")}
-                  className={`min-w-0 flex-1 rounded-md px-2 py-2 text-sm font-bold transition sm:px-3 ${
-                    exchangeOperation === "buy"
-                      ? "bg-brand-gradient text-white shadow-lg shadow-brand-500/20"
-                      : "text-ink-600 dark:text-ink-300"
-                  }`}
-                >
-                  {t("buy")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setExchangeOperation("sell")}
-                  className={`min-w-0 flex-1 rounded-md px-2 py-2 text-sm font-bold transition sm:px-3 ${
-                    exchangeOperation === "sell" ? "bg-success-600 text-white shadow-lg shadow-success-500/20" : "text-ink-600 dark:text-ink-300"
-                  }`}
-                >
-                  {t("sell")}
-                </button>
-              </div>
-            </div>
-
-            {/* 3️⃣ DÖVİZ BÜROSU SEÇİN (Dinamik kur gösterimi) */}
-            <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 xl:col-span-3">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("selectBank")}</label>
-              <SearchableSelect
-                value={calculatorBank}
-                onChange={(value) => {
-                  setCalculatorBank(value);
+            <div className="min-w-0 sm:col-span-2 xl:col-span-3">
+              <GooeySearchBar
+                mode="select"
+                fill
+                disabled={!exchangeCurrency}
+                items={
+                  exchangeCurrency
+                    ? [...banks]
+                        .sort((a, b) => a.name.localeCompare(b.name, localeCode))
+                        .map((bank) => {
+                          const rate = bank.exchangeRates?.find((r) => r.currency === exchangeCurrency);
+                          const price = exchangeOperation === "buy"
+                            ? (Number.isFinite(rate?.buy) ? rate.buy.toFixed(2) : "—")
+                            : (Number.isFinite(rate?.sell) ? rate.sell.toFixed(2) : "—");
+                          const operationType = exchangeOperation === "buy" ? t("buy") : t("sell");
+                          return {
+                            id: bank.name,
+                            label: `${bank.name} | ${operationType}: ${price}`,
+                          };
+                        })
+                    : []
+                }
+                selectedId={calculatorBank}
+                onSelect={(item) => {
+                  setCalculatorBank(item.id);
                   setExchangeAmount("0");
                 }}
+                collapsedLabel={!exchangeCurrency ? t("selectCurrencyFirst") : t("selectBank")}
                 placeholder={!exchangeCurrency ? t("selectCurrencyFirst") : t("selectExchangeOffice")}
-                disabled={!exchangeCurrency}
+                emptyLabel={t("noResults")}
+                maxResults={8}
+                scrollMax={4}
                 aria-label={t("selectBank")}
-                options={[
-                  { value: "", label: !exchangeCurrency ? t("selectCurrencyFirst") : t("selectExchangeOffice") },
-                  ...(exchangeCurrency ? [...banks]
-                    .sort((a, b) => a.name.localeCompare(b.name, localeCode))
-                    .map((bank) => {
-                      const rate = bank.exchangeRates?.find((r) => r.currency === exchangeCurrency);
-                      // Seçilen işlem türü = tabeladaki kur (Alış→buy, Satış→sell)
-                      const price = exchangeOperation === "buy"
-                        ? (Number.isFinite(rate?.buy) ? rate.buy.toFixed(2) : "—")
-                        : (Number.isFinite(rate?.sell) ? rate.sell.toFixed(2) : "—");
-                      const operationType = exchangeOperation === "buy" ? t("buy") : t("sell");
-                      return {
-                        value: bank.name,
-                        label: `${bank.name} | ${operationType}: ${price}`,
-                      };
-                    }) : []),
-                ]}
               />
             </div>
 
-            {/* 4️⃣ ÇEVRİLECEK TUTAR — büro seçilince açılır */}
-            <div className="flex min-w-0 flex-col gap-1 xl:col-span-2">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">
-                {exchangeOperation === "buy"
-                  ? // Para birimi henüz seçilmediyse boş parantez gösterme.
-                    exchangeCurrency
-                    ? `${t("amountCurrency")} (${exchangeCurrency})`
-                    : t("amountCurrency")
-                  : t("amountTl")}
-              </label>
-              <input
+            <div className="min-w-0 xl:col-span-2">
+              <GooeyField
+                label={
+                  exchangeOperation === "buy"
+                    ? exchangeCurrency
+                      ? `${t("amountCurrency")} (${exchangeCurrency})`
+                      : t("amountCurrency")
+                    : t("amountTl")
+                }
                 type="number"
                 min="0"
                 disabled={!calculatorBank}
                 value={!calculatorBank ? "" : exchangeAmount === "0" ? "" : exchangeAmount}
-                onChange={(e) => setExchangeAmount(e.target.value === "" ? "0" : e.target.value)}
-                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 focus:shadow-focus dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
+                onChange={(next) => setExchangeAmount(next === "" ? "0" : next)}
                 placeholder={!calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
               />
             </div>
 
-            {/* 5️⃣ SONUÇ — tutar girilince açılır */}
-            <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 xl:col-span-3">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">
-                {exchangeOperation === "buy"
-                  ? t("resultSell")
-                  : `${t("resultBuy")} ${exchangeCurrency || ""}`.trim()}
-              </label>
-              <div
-                className={`flex h-11 w-full items-center overflow-hidden rounded-lg border px-3 text-sm outline-none transition-all duration-300 dark:border-ink-700 dark:bg-ink-950 ${
-                  Number.isFinite(exchangeResult) && calculatorBank && Number(exchangeAmount) > 0
-                    ? "border-ink-300 bg-white font-semibold text-ink-900 dark:text-ink-100"
-                    : "cursor-not-allowed border-ink-300 bg-white text-ink-600 dark:text-ink-400 opacity-60 dark:text-ink-500"
-                }`}
-              >
-                <span className="truncate">
-                {Number.isFinite(exchangeResult) && calculatorBank && Number(exchangeAmount) > 0
-                  ? `${exchangeResult.toLocaleString(localeCode, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })} ${exchangeOperation === "buy" ? "TL" : exchangeCurrency}`
-                  : !calculatorBank
-                    ? t("selectOfficePrompt")
-                    : t("enterAmountPrompt")}
-                </span>
-              </div>
-            </div>
-
+            {(() => {
+              const hasResult =
+                Number.isFinite(exchangeResult) && calculatorBank && Number(exchangeAmount) > 0;
+              return (
+                <GooeyField
+                  className="min-w-0 sm:col-span-2 xl:col-span-3"
+                  label={
+                    exchangeOperation === "buy"
+                      ? t("resultSell")
+                      : `${t("resultBuy")} ${exchangeCurrency || ""}`.trim()
+                  }
+                  readOnly
+                  muted={!hasResult}
+                  value={
+                    hasResult
+                      ? `${exchangeResult.toLocaleString(localeCode, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })} ${exchangeOperation === "buy" ? "TL" : exchangeCurrency}`
+                      : !calculatorBank
+                        ? t("selectOfficePrompt")
+                        : t("enterAmountPrompt")
+                  }
+                />
+              );
+            })()}
           </div>
         ) : mode === "interest" ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("selectBank")}</label>
               <SearchableSelect
+                label={t("selectBank")}
                 value={calculatorBank}
                 onChange={setCalculatorBank}
                 placeholder={t("selectBankPlaceholder")}
@@ -2445,20 +2516,17 @@ export function V0FinancialDashboard() {
                   .map((bank) => ({ value: bank.name, label: bank.name }))}
               />
             </div>
+            <FloatingInput
+              className="min-w-0"
+              label="Anapara Tutarı (TL)"
+              type="number"
+              min="0"
+              value={depositAmount}
+              onChange={(e) => setDepositAmount(e.target.value)}
+            />
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Anapara Tutarı (TL)</label>
-              <input
-                type="number"
-                min="0"
-                value={depositAmount}
-                onChange={(e) => setDepositAmount(e.target.value)}
-                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
-                placeholder="Anapara (TL)"
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade Türü</label>
               <SearchableSelect
+                label="Vade Türü"
                 value={depositType}
                 onChange={setDepositType}
                 options={[
@@ -2468,43 +2536,40 @@ export function V0FinancialDashboard() {
                 ]}
               />
             </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade Süresi (Gün)</label>
-              <input
-                type="number"
-                min="1"
-                value={depositDays}
-                onChange={(e) => setDepositDays(e.target.value)}
-                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
-                placeholder="Vade (Gün)"
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Net Getiri</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
-                <span className="truncate">
-                {Number.isFinite(depositProfit)
-                  ? `${depositProfit.toLocaleString(localeCode, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })} TL`
-                  : "Net getiri hesaplanamadı"}
-                </span>
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade Sonu Toplam</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
-                <span className="truncate">
-                {Number.isFinite(depositTotal)
-                  ? `${depositTotal.toLocaleString(localeCode, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })} TL`
-                  : "Vade sonu bekleniyor"}
-                </span>
-              </div>
-            </div>
+            <FloatingInput
+              className="min-w-0"
+              label="Vade Süresi (Gün)"
+              type="number"
+              min="1"
+              value={depositDays}
+              onChange={(e) => setDepositDays(e.target.value)}
+            />
+            <FloatingDisplay
+              className="min-w-0"
+              label="Net Getiri"
+              muted={!Number.isFinite(depositProfit)}
+              valueClassName={Number.isFinite(depositProfit) ? "font-semibold" : ""}
+            >
+              {Number.isFinite(depositProfit)
+                ? `${depositProfit.toLocaleString(localeCode, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })} TL`
+                : "Net getiri hesaplanamadı"}
+            </FloatingDisplay>
+            <FloatingDisplay
+              className="min-w-0"
+              label="Vade Sonu Toplam"
+              muted={!Number.isFinite(depositTotal)}
+              valueClassName={Number.isFinite(depositTotal) ? "font-semibold" : ""}
+            >
+              {Number.isFinite(depositTotal)
+                ? `${depositTotal.toLocaleString(localeCode, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })} TL`
+                : "Vade sonu bekleniyor"}
+            </FloatingDisplay>
             <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-300">
               {Number.isFinite(selectedDepositRate)
                 ? `Kullanılan Faiz Oranı: %${selectedDepositRate.toFixed(2)} (${depositType === "daily" ? "Günlük" : depositType === "monthly" ? "Aylık" : "Yıllık"} baz)`
@@ -2514,8 +2579,8 @@ export function V0FinancialDashboard() {
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">{t("selectBank")}</label>
               <SearchableSelect
+                label={t("selectBank")}
                 value={calculatorBank}
                 onChange={setCalculatorBank}
                 placeholder={t("selectBankPlaceholder")}
@@ -2525,8 +2590,8 @@ export function V0FinancialDashboard() {
               />
             </div>
             <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Kredi Türü</label>
               <SearchableSelect
+                label="Kredi Türü"
                 value={loanType}
                 onChange={setLoanType}
                 options={[
@@ -2536,54 +2601,48 @@ export function V0FinancialDashboard() {
                 ]}
               />
             </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Kredi Tutarı (TL)</label>
-              <input
-                type="number"
-                min="0"
-                value={loanAmount}
-                onChange={(e) => setLoanAmount(e.target.value)}
-                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
-                placeholder="Kredi Tutarı (TL)"
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Vade (Ay)</label>
-              <input
-                type="number"
-                min="1"
-                value={loanMonths}
-                onChange={(e) => setLoanMonths(e.target.value)}
-                className="h-11 w-full rounded-lg border border-ink-300 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-100"
-                placeholder="Vade (Ay)"
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Aylık Taksit Tutarı</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
-                <span className="truncate">
-                {Number.isFinite(loanInstallment)
-                  ? `${loanInstallment.toLocaleString(localeCode, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })} TL`
-                  : "Taksit hesaplanamadı"}
-                </span>
-              </div>
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <label className="text-xs font-medium text-brand-700 dark:text-brand-300">Toplam Geri Ödeme</label>
-              <div className="flex h-11 items-center overflow-hidden rounded-lg border border-brand-300/60 bg-brand-50 px-3 text-sm text-ink-900 dark:border-brand-700/60 dark:bg-brand-900/50 dark:text-ink-100">
-                <span className="truncate">
-                {Number.isFinite(loanTotal)
-                  ? `${loanTotal.toLocaleString(localeCode, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })} TL`
-                  : "Toplam ödeme bekleniyor"}
-                </span>
-              </div>
-            </div>
+            <FloatingInput
+              className="min-w-0"
+              label="Kredi Tutarı (TL)"
+              type="number"
+              min="0"
+              value={loanAmount}
+              onChange={(e) => setLoanAmount(e.target.value)}
+            />
+            <FloatingInput
+              className="min-w-0"
+              label="Vade (Ay)"
+              type="number"
+              min="1"
+              value={loanMonths}
+              onChange={(e) => setLoanMonths(e.target.value)}
+            />
+            <FloatingDisplay
+              className="min-w-0"
+              label="Aylık Taksit Tutarı"
+              muted={!Number.isFinite(loanInstallment)}
+              valueClassName={Number.isFinite(loanInstallment) ? "font-semibold" : ""}
+            >
+              {Number.isFinite(loanInstallment)
+                ? `${loanInstallment.toLocaleString(localeCode, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })} TL`
+                : "Taksit hesaplanamadı"}
+            </FloatingDisplay>
+            <FloatingDisplay
+              className="min-w-0"
+              label="Toplam Geri Ödeme"
+              muted={!Number.isFinite(loanTotal)}
+              valueClassName={Number.isFinite(loanTotal) ? "font-semibold" : ""}
+            >
+              {Number.isFinite(loanTotal)
+                ? `${loanTotal.toLocaleString(localeCode, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })} TL`
+                : "Toplam ödeme bekleniyor"}
+            </FloatingDisplay>
             <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-700 dark:text-brand-300">
               {Number.isFinite(activeLoanRate) && selectedCalculatorBank
                 ? `💡 Uygulanan Aylık Faiz: %${activeLoanRate.toFixed(2)} (${selectedCalculatorBank.name} ${
@@ -2605,17 +2664,10 @@ export function V0FinancialDashboard() {
         dar alana sıkışıyordu. Mobilde arama görünür kalır, sıralama ve filtre
         alttan açılan Sheet'e taşınır; sm+ ekranlarda hepsi eskisi gibi satır içi.
       */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex w-full min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-          <div className="relative w-full min-w-0 sm:max-w-xs sm:flex-1 lg:w-64 lg:flex-none">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
-            <input
-              type="search"
-              placeholder={t("searchBanks")}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-11 w-full rounded-lg border border-ink-300 bg-white pl-10 pr-3 text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 focus:border-brand-400 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400"
-            />
+      <div className="flex flex-col gap-4 overflow-visible pt-2 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex w-full min-w-0 flex-col gap-4 overflow-visible sm:flex-row sm:flex-wrap sm:items-start sm:gap-8">
+          <div className="hidden min-w-[16.75rem] justify-start pr-12 sm:flex sm:flex-none">
+            {officeSearchBar}
           </div>
 
           {/* Mobil: tek düğme → Sheet */}
@@ -2636,10 +2688,15 @@ export function V0FinancialDashboard() {
           </button>
 
           {/* sm+ : satır içi kontroller */}
-          <div className="hidden w-full min-w-0 sm:block sm:max-w-[14rem] sm:flex-1 lg:w-56 lg:flex-none">
+          <div className="hidden min-w-[15rem] sm:block sm:flex-none lg:w-56">
             {sortControl}
           </div>
-          <div className="hidden sm:block">{openNowControl}</div>
+          {cityControl ? (
+            <div className="hidden min-w-[12rem] sm:block sm:flex-none lg:w-44">
+              {cityControl}
+            </div>
+          ) : null}
+          <div className="hidden sm:block sm:flex-none">{openNowControl}</div>
         </div>
       </div>
 
@@ -2655,6 +2712,7 @@ export function V0FinancialDashboard() {
               onClick={() => {
                 setSortBy("none");
                 setOpenNowOnly(false);
+                setCityFilter("");
               }}
             >
               {t("clearFilters")}
@@ -2671,6 +2729,7 @@ export function V0FinancialDashboard() {
       >
         <div className="flex flex-col gap-4 pt-1">
           {sortControl}
+          {cityControl}
           {openNowControl}
         </div>
       </Sheet>
@@ -2722,7 +2781,7 @@ export function V0FinancialDashboard() {
           {t("banksLoading")}
         </div>
       ) : filteredAndSortedBanks.length > 0 ? (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-3 md:gap-10">
+        <div id="office-grid" className="grid scroll-mt-28 grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-3 md:gap-10">
           {filteredAndSortedBanks.map((bank) => (
             <V0BankCard
               key={bank.institutionId || bank.id}
@@ -2748,7 +2807,7 @@ export function V0FinancialDashboard() {
                       institutionId: biz?.institutionId,
                       name: name || biz?.name,
                     });
-                navigate(exchangeOfficePath(slug));
+                navigate(exchangeOfficePath(slug), { state: { openDetail: true } });
               }}
             />
           ))}
