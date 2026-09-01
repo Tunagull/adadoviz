@@ -4,7 +4,44 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  
+
+  /**
+   * ⚠️ OPTİMİZASYON (O-01): Ana paket 993 kB / 297 kB gzip'e çıkmıştı ve Vite
+   * açıkça uyarıyordu ("Some chunks are larger than 500 kB"). Satıcı
+   * kütüphaneleri tek bir dosyada toplanıyordu; bu hem ilk yüklemeyi tek büyük
+   * indirmeye bağlıyor hem de uygulama kodundaki her küçük değişiklikte
+   * kullanıcının TÜM satıcı kodunu yeniden indirmesine yol açıyordu.
+   *
+   * Satıcılar rol bazında ayrıldı: React çekirdeği neredeyse hiç değişmez,
+   * grafik/harita/takvim kütüphaneleri ise yalnızca ilgili ekranlarda gerekir.
+   * Böylece paralel indirme ve uzun ömürlü önbellek elde edilir.
+   */
+  build: {
+    rollupOptions: {
+      output: {
+        /*
+          NOT: Vite 8 rolldown kullanıyor ve `manualChunks`'ı nesne değil
+          FONKSİYON olarak bekliyor ("Expected Function but received Object").
+        */
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id))
+            return "vendor-react";
+          if (/[\\/]node_modules[\\/](recharts|d3-|victory-|internmap|delaunator|robust-predicates)/.test(id))
+            return "vendor-charts";
+          if (/[\\/]node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/.test(id))
+            return "vendor-motion";
+          if (/[\\/]node_modules[\\/](react-day-picker|date-fns)[\\/]/.test(id))
+            return "vendor-datepicker";
+          if (/[\\/]node_modules[\\/](leaflet|react-leaflet)[\\/]/.test(id))
+            return "vendor-map";
+          return undefined;
+        },
+      },
+    },
+  },
+
+
   /**
    * ✅ ADIM 1: Vite Proxy Configuration
    * 

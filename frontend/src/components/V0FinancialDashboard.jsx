@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Helmet } from "react-helmet-async";
 import {
@@ -22,7 +22,15 @@ import { BusinessLoginModal } from "./BusinessLoginModal";
 import { SearchableSelect } from "./SearchableSelect";
 import { FloatingDisplay, FloatingInput, FloatingTextarea } from "./ui/floating-label";
 import { GooeyField, GooeySearchBar, GooeySegment, GooeyToggle } from "./ui/animated-search-bar";
-import { DateField } from "./ui/date-field";
+/*
+  ⚠️ OPTİMİZASYON (O-02): `DateField`, `react-day-picker`'ı (21 kB gzip) paket
+  grafiğine çekiyordu ve bu kütüphane ANA SAYFANIN ilk yüklemesine giriyordu —
+  oysa alan yalnızca grafik büyütme modalının içinde kullanılıyor, yani
+  kullanıcı bir grafiği açana kadar hiç gerekmiyor. Artık tembel yükleniyor.
+*/
+const DateField = lazy(() =>
+  import("./ui/date-field").then((m) => ({ default: m.DateField }))
+);
 import { HeaderActions } from "./HeaderActions";
 import { BrandLogo } from "./BrandLogo";
 import { SiteNav } from "./SiteNav";
@@ -900,6 +908,8 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
             {/* Özel Tarih Seçici — mobilde üst şerit, masaüstünde sol üst */}
             <div className="relative z-raised flex flex-wrap items-center gap-2 border-b border-ink-200/80 bg-ink-50/90 px-3 py-2.5 backdrop-blur-sm dark:border-ink-700/50 dark:bg-ink-900/50 sm:absolute sm:left-4 sm:top-4 sm:max-w-[min(100%,28rem)] sm:rounded-lg sm:border sm:border-ink-200 sm:p-1.5 md:left-6 dark:sm:border-ink-700/50">
+              {/* O-02: takvim kütüphanesi modal açılınca yüklenir. */}
+              <Suspense fallback={null}>
               <DateField
                 label={t("dateRangeStart")}
                 className="min-w-0 flex-1 sm:flex-none"
@@ -938,6 +948,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                   });
                 }}
               />
+              </Suspense>
             </div>
 
             <div className="flex flex-shrink-0 flex-col items-center px-3 pb-0 pt-3 sm:p-4 sm:pb-0 md:p-6 md:pb-0 md:pt-14">
