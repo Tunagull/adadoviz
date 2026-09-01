@@ -109,8 +109,17 @@ export function PricingPage() {
 
   return (
     <div className="min-h-screen">
+      {/*
+        ⚠️ HATA DÜZELTMESİ (S-04): Başlık `{t("pricingTitle")} | AdaDöviz`
+        biçimindeydi — yani JSX'te İKİ ayrı çocuk düğüm (bir ifade + bir dize).
+        react-helmet-async `<title>` içinde TEK bir dize çocuğu bekler; birden
+        fazla olduğunda başlığı boş bırakıyordu. Ölçüm: /paketler sayfasında
+        `document.title === ""` ve tarayıcı sekmesinde başlık yerine URL
+        görünüyordu. Şablon dizesi tek çocuk ürettiği için sorunu çözer.
+      */}
       <Helmet>
-        <title>{t("pricingTitle")} | AdaDöviz</title>
+        <title>{`${t("pricingTitle")} | AdaDöviz`}</title>
+        {/* canonical'ı SeoHead rota bazında üretir; burada tekrar edilmez. */}
         <meta name="description" content={t("pricingLead")} />
       </Helmet>
 

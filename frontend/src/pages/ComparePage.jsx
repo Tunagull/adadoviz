@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import {
   CartesianGrid,
   ComposedChart,
@@ -329,6 +330,22 @@ export function ComparePage() {
 
   return (
     <div className="min-h-screen">
+      {/*
+        ⚠️ HATA DÜZELTMESİ (S-02): Bu sayfada hiç Helmet yoktu. Global SeoHead
+        site geneli değerleri bastığı için /kiyasla, ana sayfanın başlığını,
+        açıklamasını VE canonical adresini miras alıyordu — yani arama
+        motoruna kendini ana sayfa olarak bildiriyordu. Ölçüm:
+          title     → "AdaDöviz | KKTC Döviz Kurları…"
+          canonical → https://adadoviz.tunahangul.com/
+        Kanonik adresin başka bir sayfayı göstermesi, bu sayfanın indeksten
+        düşmesi anlamına gelir.
+      */}
+      {/* canonical'ı SeoHead rota bazında üretir; burada tekrar edilmez. */}
+      <Helmet>
+        <title>{`${t("compareTitle")} | AdaDöviz`}</title>
+        <meta name="description" content={t("compareLead")} />
+      </Helmet>
+
       <header className="sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-ink-950/80 sm:px-6 sm:py-4 md:py-5">
         <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3 sm:gap-4">
           <BrandLogo className="min-w-0 shrink" />
