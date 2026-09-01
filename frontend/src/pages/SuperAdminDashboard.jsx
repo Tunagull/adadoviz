@@ -425,6 +425,17 @@ export function SuperAdminDashboard() {
   const [partnershipApps, setPartnershipApps] = useState([]);
   const [payLoading, setPayLoading] = useState(false);
   const [payError, setPayError] = useState("");
+  /* R-01: tahsilat kaydı formu — handleCreatePayment tanımlıydı ama onu
+     çağıran hiçbir arayüz yoktu, yani ödeme girme yolu kapalıydı. */
+  const [payForm, setPayForm] = useState({
+    institution_id: "",
+    plan_code: "",
+    tutar: "",
+    kdv: "",
+    yontem: "",
+  });
+  const [paySaving, setPaySaving] = useState(false);
+  const [paySaved, setPaySaved] = useState(false);
   const [branchRequestUnread, setBranchRequestUnread] = useState(0);
   const [branchRequestActingId, setBranchRequestActingId] = useState(null);
   const [showBranchSubModal, setShowBranchSubModal] = useState(false);
@@ -446,6 +457,15 @@ export function SuperAdminDashboard() {
       { id: "list", label: t("tabList") },
       { id: "create", label: t("tabCreate") },
       { id: "requests", label: t("tabRequests") },
+      /*
+        ⚠️ HATA DÜZELTMESİ (R-01): `revenue`, `expiring`, `plans` ve
+        `partnershipApps` her panel açılışında `loadRevenue` ile çekiliyor ama
+        HİÇBİRİ ekrana çizilmiyordu — dört istekten üçü tamamen boşa gidiyor,
+        dört özellik de arayüzden düşmüş durumdaydı. En ağırı ortaklık
+        başvuruları: ana sayfadaki form hâlâ /api/partnership-apply'a
+        gönderiyor, yani başvurular veritabanına düşüp görünmez oluyordu.
+      */
+      { id: "revenue", label: t("tabRevenue") },
       { id: "health", label: t("tabHealth") },
       { id: "logs", label: t("logsTitle") },
     ],
@@ -2261,6 +2281,315 @@ export function SuperAdminDashboard() {
               })}
             </ul>
           )}
+        </section>
+      )}
+
+      {/*
+        R-01: kopmuş dört özelliğin geri bağlandığı sekme. Buradaki tüm veri
+        zaten `loadRevenue` tarafından çekiliyordu; tek eksik onu ekrana
+        çizmekti. `handleBackfillPayments` de burada yeniden bağlandı.
+      */}
+      {tab === "revenue" && (
+        <section className="space-y-4">
+          {payError ? (
+            <p className="rounded-control border border-danger-600/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-700 dark:text-danger-300">
+              {payError}
+            </p>
+          ) : null}
+
+          {/* Gelir özeti */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            {[
+              { label: t("revThisMonth"), value: revenue?.buAy },
+              { label: t("revThisYear"), value: revenue?.buYil },
+              { label: t("revTotal"), value: revenue?.toplam },
+              { label: t("revPending"), value: revenue?.bekleyen },
+              { label: t("revCount"), value: revenue?.odemeSayisi, plain: true },
+            ].map((card) => (
+              <div key={card.label} className="surface-card p-4">
+                <p className="text-xs font-medium text-ink-600 dark:text-ink-400">{card.label}</p>
+                <p className="mt-1 font-mono text-xl font-bold tabular-nums text-ink-900 dark:text-white">
+                  {payLoading
+                    ? "—"
+                    : card.plain
+                      ? Number(card.value || 0)
+                      : `${Number(card.value || 0).toLocaleString("tr-TR")} ₺`}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/*
+            R-01: `handleCreatePayment` tanımlıydı ama hiçbir yerden
+            çağrılmıyordu — süper adminin ödeme kaydetme yolu yoktu.
+            Tutar boş bırakılırsa seçilen paketin fiyatı sunucuda uygulanır.
+          */}
+          <form
+            className="surface-card space-y-3 p-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!payForm.institution_id || !payForm.plan_code) return;
+              setPaySaving(true);
+              setPayError("");
+              setPaySaved(false);
+              try {
+                const today = new Date().toISOString().slice(0, 10);
+                await handleCreatePayment({
+                  ...payForm,
+                  tutar: payForm.tutar === "" ? undefined : Number(payForm.tutar),
+                  kdv: payForm.kdv === "" ? undefined : Number(payForm.kdv),
+                  odeme_tarihi: new Date().toISOString(),
+                  donem_baslangic: today,
+                });
+                setPayForm({
+                  institution_id: "",
+                  plan_code: "",
+                  tutar: "",
+                  kdv: "",
+                  yontem: "",
+                });
+                setPaySaved(true);
+              } catch (err) {
+                setPayError(err.message || "Tahsilat kaydedilemedi.");
+              } finally {
+                setPaySaving(false);
+              }
+            }}
+          >
+            <h3 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+              {t("revNewPayment")}
+            </h3>
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <label className="block">
+                <span className="field-label">{t("revBusiness")}</span>
+                <select
+                  className="field"
+                  required
+                  value={payForm.institution_id}
+                  onChange={(e) =>
+                    setPayForm((f) => ({ ...f, institution_id: e.target.value }))
+                  }
+                >
+                  <option value="">{t("revPickBusiness")}</option>
+                  {businesses.map((b) => (
+                    <option key={b.institution_id} value={b.institution_id}>
+                      {b.institution_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="field-label">{t("revPlan")}</span>
+                <select
+                  className="field"
+                  required
+                  value={payForm.plan_code}
+                  onChange={(e) => setPayForm((f) => ({ ...f, plan_code: e.target.value }))}
+                >
+                  <option value="">{t("revPickPlan")}</option>
+                  {plans.map((p) => (
+                    <option key={p.code} value={p.code}>
+                      {p.ad}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="field-label">{t("revAmount")}</span>
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={payForm.tutar}
+                  onChange={(e) => setPayForm((f) => ({ ...f, tutar: e.target.value }))}
+                />
+              </label>
+
+              <label className="block">
+                <span className="field-label">{t("revVat")}</span>
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={payForm.kdv}
+                  onChange={(e) => setPayForm((f) => ({ ...f, kdv: e.target.value }))}
+                />
+              </label>
+
+              <label className="block">
+                <span className="field-label">{t("revMethod")}</span>
+                <input
+                  className="field"
+                  type="text"
+                  value={payForm.yontem}
+                  onChange={(e) => setPayForm((f) => ({ ...f, yontem: e.target.value }))}
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button type="submit" className="btn-primary btn-sm" disabled={paySaving}>
+                {t("revSave")}
+              </button>
+              {paySaved ? (
+                <span className="text-sm text-success-700 dark:text-success-400">
+                  {t("revSaved")}
+                </span>
+              ) : null}
+            </div>
+          </form>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {/* Pakete göre dağılım */}
+            <div className="surface-card p-4">
+              <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                {t("revByPlan")}
+              </h3>
+              {revenue?.paketDagilimi?.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {revenue.paketDagilimi.map((row) => (
+                    <li key={row.plan_code} className="flex items-center justify-between gap-3 py-2">
+                      <span className="min-w-0 truncate text-ink-800 dark:text-ink-200">
+                        {row.plan_adi || row.plan_code}
+                        <span className="ml-2 text-xs text-ink-500 dark:text-ink-400">
+                          × {row.adet}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-mono tabular-nums text-ink-900 dark:text-white">
+                        {Number(row.toplam || 0).toLocaleString("tr-TR")} ₺
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+              <button
+                type="button"
+                onClick={handleBackfillPayments}
+                className="btn-ghost btn-sm mt-4"
+              >
+                {t("revBackfill")}
+              </button>
+            </div>
+
+            {/* Süresi yaklaşanlar */}
+            <div className="surface-card p-4">
+              <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                {t("revExpiring")}
+              </h3>
+              {expiring.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {expiring.map((row) => (
+                    <li
+                      key={row.institution_id}
+                      className="flex items-center justify-between gap-3 py-2"
+                    >
+                      <span className="min-w-0 truncate text-ink-800 dark:text-ink-200">
+                        {row.institution_name}
+                        <span className="ml-2 text-xs text-ink-500 dark:text-ink-400">
+                          {row.subscription_type}
+                        </span>
+                      </span>
+                      {/*
+                        Backend `days_remaining <= n` filtresi uyguladığı için
+                        süresi ÇOKTAN DOLMUŞ abonelikler de bu listeye giriyor
+                        ve negatif değer taşıyor. "-25 gün kaldı" anlamsız bir
+                        cümle; bu durumda kalan gün değil, dolmuş olduğu
+                        yazılır.
+                      */}
+                      <span
+                        className={`shrink-0 font-mono text-xs tabular-nums ${
+                          Number(row.days_remaining) <= 7
+                            ? "text-danger-700 dark:text-danger-400"
+                            : "text-warning-700 dark:text-warning-400"
+                        }`}
+                      >
+                        {Number(row.days_remaining) < 0
+                          ? t("revExpired")
+                          : `${row.days_remaining} ${t("revDaysLeft")}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revExpiringEmpty")}</p>
+              )}
+            </div>
+
+            {/* Paketler */}
+            <div className="surface-card p-4">
+              <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                {t("revPlans")}
+              </h3>
+              {plans.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {plans.map((p) => (
+                    <li key={p.code} className="flex items-center justify-between gap-3 py-2">
+                      <span className="min-w-0 truncate text-ink-800 dark:text-ink-200">
+                        {p.ad}
+                        <span className="ml-2 text-xs text-ink-500 dark:text-ink-400">
+                          {p.sure_gun > 0 ? `${p.sure_gun} gün` : "süresiz"}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-mono tabular-nums text-ink-900 dark:text-white">
+                        {Number(p.fiyat || 0).toLocaleString("tr-TR")} ₺
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
+
+            {/* Ortaklık başvuruları — form gönderiyordu ama kimse göremiyordu. */}
+            <div className="surface-card p-4">
+              <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                {t("revApplications")}
+                {partnershipApps.length ? (
+                  <span className="ml-2 rounded-control bg-brand-500/15 px-2 py-0.5 font-mono text-xs text-brand-700 dark:text-brand-300">
+                    {partnershipApps.length}
+                  </span>
+                ) : null}
+              </h3>
+              {partnershipApps.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {partnershipApps.map((a) => (
+                    <li key={a.id} className="py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate font-medium text-ink-900 dark:text-white">
+                          {a.institution_name}
+                        </span>
+                        <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                          {String(a.created_at || "").slice(0, 10)}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 truncate text-xs text-ink-600 dark:text-ink-400">
+                        {a.contact_person} · {a.email} · {a.phone}
+                      </p>
+                      {a.message ? (
+                        <p className="mt-1 line-clamp-2 text-xs text-ink-600 dark:text-ink-400">
+                          {a.message}
+                        </p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">
+                  {t("revApplicationsEmpty")}
+                </p>
+              )}
+            </div>
+          </div>
         </section>
       )}
 
