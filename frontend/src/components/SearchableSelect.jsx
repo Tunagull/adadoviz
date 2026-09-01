@@ -1,7 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, Search } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { FloatingInput } from "./ui/floating-label";
 
 const MENU_MAX_HEIGHT = 280;
 const MENU_GAP = 4;
@@ -18,6 +19,10 @@ export function SearchableSelect({
   placeholder = "Seçiniz",
   className = "",
   disabled = false,
+  /** Verilmezse yer tutucu, yüzen etiket olur — boş kutuda iki yazı üst üste binmez. */
+  label,
+  /** "sm": araç çubuğu yüksekliği. */
+  size,
   "aria-label": ariaLabel,
 }) {
   const { t, lang } = useLanguage();
@@ -204,19 +209,19 @@ export function SearchableSelect({
             className="overflow-hidden rounded-xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onKeyDown={onListKeyDown}
           >
-            <div className="relative border-b border-ink-200 p-2 dark:border-ink-700">
-              <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-ink-600 dark:text-ink-400" />
-              <input
+            <div className="border-b border-ink-200 px-2 pb-2 pt-3 dark:border-ink-700">
+              <FloatingInput
                 ref={searchRef}
-                type="text"
+                size="sm"
+                label={t("searchPlaceholder")}
+                type="search"
+                autoComplete="off"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
                   setHighlight(0);
                 }}
                 onKeyDown={onListKeyDown}
-                placeholder={t("searchPlaceholder")}
-                className="h-9 w-full rounded-lg border border-ink-200 bg-ink-50 pl-8 pr-3 text-xs text-ink-900 outline-none focus:border-brand-400 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
               />
             </div>
             <ul
@@ -261,26 +266,53 @@ export function SearchableSelect({
         )
       : null;
 
+  const floatLabel = label || placeholder;
+
+  const trigger = (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-haspopup="listbox"
+      aria-expanded={open}
+      aria-controls={listId}
+      aria-label={ariaLabel || floatLabel}
+      onClick={() => !disabled && setOpen((o) => !o)}
+      onKeyDown={onTriggerKeyDown}
+      className="float-field__control"
+    >
+      <span className="min-w-0 truncate">
+        {selected && String(selected.value) !== "" ? selected.label : ""}
+      </span>
+      <ChevronDown
+        className={`size-4 shrink-0 text-ink-500 transition ${open ? "rotate-180" : ""}`}
+        aria-hidden="true"
+      />
+    </button>
+  );
+
+  /*
+    Seçim kutusu her zaman yüzen etiket iskeletini kullanır. Etiket hep
+    yukarıda: kutunun içi ya seçilen değeri gösterir ya boş kalır — yer
+    tutucu artık etiketin kendisi, iki yazı üst üste binmez.
+
+    `<label>` yerine `<span>`: bir düğme etiketlenebilir eleman değil, o yüzden
+    bağ `aria-label` üzerinden kuruluyor.
+  */
   return (
-    <div ref={rootRef} className={`relative ${className}`}>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-label={ariaLabel || placeholder}
-        onClick={() => !disabled && setOpen((o) => !o)}
-        onKeyDown={onTriggerKeyDown}
-        className="flex h-11 w-full items-center justify-between gap-2 rounded-lg border border-ink-300 bg-white px-3 text-left text-sm text-ink-900 outline-none transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] focus:border-brand-400 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:hover:border-brand-400 dark:focus:border-brand-400 disabled:opacity-60 disabled:hover:border-ink-300 disabled:hover:shadow-none dark:disabled:hover:border-ink-700"
-      >
-        <span className={`truncate ${selected ? "" : "text-ink-600 dark:text-ink-400"}`}>
-          {selected?.label || placeholder}
-        </span>
-        <ChevronDown
-          className={`size-4 shrink-0 text-ink-600 dark:text-ink-400 transition ${open ? "rotate-180" : ""}`}
-        />
-      </button>
+    <div
+      ref={rootRef}
+      className={`float-field ${className}`}
+      data-float="always"
+      data-size={size}
+      data-disabled={disabled ? "" : undefined}
+    >
+      {trigger}
+      <span className="float-field__label">{floatLabel}</span>
+      <fieldset aria-hidden="true" className="float-field__outline">
+        <legend>
+          <span>{floatLabel}</span>
+        </legend>
+      </fieldset>
       {menu}
     </div>
   );

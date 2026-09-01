@@ -2,10 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Area,
-  AreaChart,
   CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
+  ComposedChart,
+  Line,
   XAxis,
   YAxis,
 } from "recharts";
@@ -24,6 +23,8 @@ import { HeaderActions } from "./HeaderActions";
 import { Helmet } from "react-helmet-async";
 import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { buildBusinessSlug, buildBranchSlug } from "../lib/slug";
+import { ChartContainer, ChartHoverCard, ChartSwatch, ChartTooltip } from "./ui/chart";
+import { chartSkin, hollowDot } from "../lib/chartTheme";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -89,6 +90,33 @@ function formatTooltipTime(timeMs, localeCode = "tr-TR") {
   const hh = String(d.getHours()).padStart(2, "0");
   const min = String(d.getMinutes()).padStart(2, "0");
   return `${day} ${monthName}, ${hh}:${min}`;
+}
+
+function BusinessRatesTooltip({ active, payload, label, localeCode, buyLabel, sellLabel, buyColor, sellColor }) {
+  if (!active || !payload?.length) return null;
+  const buy = payload.find((entry) => entry.dataKey === "finalBuy" && entry.value != null);
+  const sell = payload.find((entry) => entry.dataKey === "finalSell" && entry.value != null);
+  if (!buy && !sell) return null;
+  return (
+    <ChartHoverCard label={formatTooltipTime(label, localeCode)}>
+      {buy ? (
+        <div className="flex items-center gap-2 text-xs">
+          <ChartSwatch label={`${buyLabel}:`} color={buyColor} />
+          <span className="font-semibold tabular-nums text-ink-900 dark:text-white">
+            {Number(buy.value).toFixed(4)}
+          </span>
+        </div>
+      ) : null}
+      {sell ? (
+        <div className="flex items-center gap-2 text-xs">
+          <ChartSwatch label={`${sellLabel}:`} color={sellColor} />
+          <span className="font-semibold tabular-nums text-ink-900 dark:text-white">
+            {Number(sell.value).toFixed(4)}
+          </span>
+        </div>
+      ) : null}
+    </ChartHoverCard>
+  );
 }
 
 function getFaviconDomain(bankName) {
@@ -189,12 +217,7 @@ export function BusinessDetailModal({
   const { theme } = useTheme();
   const isDark = theme === "dark";
   const localeCode = lang === "en" ? "en-US" : "tr-TR";
-  const chartMuted = isDark ? "#94a3b8" : "#64748b";
-  const chartAxis = isDark ? "#475569" : "#cbd5e1";
-  const chartGrid = isDark ? "#334155" : "#e2e8f0";
-  const tooltipBg = isDark ? "#0f172a" : "#ffffff";
-  const tooltipBorder = isDark ? "#334155" : "#e2e8f0";
-  const tooltipLabel = isDark ? "#e2e8f0" : "#0f172a";
+  const skin = chartSkin(isDark);
   const [activeView, setActiveView] = useState(
     initialView === "konum" ? "konum" : "grafik"
   );
@@ -279,7 +302,13 @@ export function BusinessDetailModal({
       } catch (err) {
         console.error("[BusinessDetailModal] Business rate history:", err);
         if (!cancelled) {
-          setError(err.message || "Geçmiş kurlar alınamadı.");
+          /*
+            ⚠️ TASARIM DÜZELTMESİ (D-12): Hata metni doğrudan `err.message`'tan
+            geliyordu; sunucu 500 döndüğünde kullanıcı ekranda ham "HTTP 500"
+            görüyordu. Hata mesajı kullanıcıya NE OLDUĞUNU ve NE YAPACAĞINI
+            söylemeli — teknik ayrıntı konsola aittir, arayüze değil.
+          */
+          setError("Geçmiş kurlar şu anda yüklenemedi. Birazdan tekrar deneyin.");
           setChartRows([]);
         }
       } finally {
@@ -431,16 +460,10 @@ export function BusinessDetailModal({
     return ticks;
   }, [yDomain]);
 
-  const chartTrendUp = useMemo(() => {
-    if (finalChartData.length < 2) return true;
-    const first = Number(finalChartData[0].finalBuy);
-    const last = Number(finalChartData[finalChartData.length - 1].finalBuy);
-    if (!(first > 0) || !Number.isFinite(last)) return true;
-    return last >= first;
-  }, [finalChartData]);
-
-  const trendStroke = chartTrendUp ? "#10b981" : "#f43f5e";
-  const trendStrokeAlt = chartTrendUp ? "#34d399" : "#fb7185";
+  const chartConfig = {
+    finalBuy: { label: t("buy"), color: skin.neon },
+    finalSell: { label: t("sell"), color: skin.mutedLine },
+  };
   const xAxisTicks = useMemo(() => {
     if (finalChartData.length < 2) return undefined;
     const min = finalChartData[0].timeMs;
@@ -551,7 +574,7 @@ export function BusinessDetailModal({
                   key={tab.id}
                   type="button"
                   onClick={() => setPeriodId(tab.id)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition sm:px-4 sm:py-2 ${
+                  className={`press rounded-lg px-3 py-1.5 text-sm font-medium sm:px-4 sm:py-2 ${
                     periodId === tab.id
                       ? "border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
                       : "border border-transparent text-ink-500 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-ink-800/80 dark:hover:text-white"
@@ -569,10 +592,23 @@ export function BusinessDetailModal({
                     setCurrency(code);
                     trackCurrencyView(code);
                   }}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
+                  /*
+                    ⚠️ TASARIM DÜZELTMESİ (D-11): Bu modalın tek bir satırında
+                    ÜÇ farklı "aktif sekme" dili vardı — görünüm sekmeleri soluk
+                    mavi dolgu, dönem sekmeleri marka tonu, para birimi
+                    sekmeleri ise neredeyse SİYAH dolgu. Siyah, uygulamanın
+                    başka hiçbir yerinde kullanılmayan bir renkti; üç kontrol
+                    yan yana dururken ayrı tasarım sistemlerinden gelmiş gibi
+                    okunuyordu.
+
+                    Artık üçü de aynı marka tonunu kullanıyor. Boyut farkı
+                    (bunlar daha küçük) hiyerarşiyi zaten anlatıyor; ikinci bir
+                    renk diline gerek yok.
+                  */
+                  className={`press rounded-md px-2.5 py-1.5 text-xs font-semibold ${
                     currency === code
-                      ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900"
-                      : "bg-ink-100 text-ink-500 hover:text-ink-800 dark:bg-ink-800 dark:text-ink-400 dark:hover:text-white"
+                      ? "border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
+                      : "border border-transparent bg-ink-100 text-ink-500 hover:text-ink-800 dark:bg-ink-800 dark:text-ink-400 dark:hover:text-white"
                   }`}
                 >
                   {code}
@@ -598,79 +634,101 @@ export function BusinessDetailModal({
                     </span>
                   </div>
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={finalChartData} margin={{ top: 8, right: 8, left: 0, bottom: 4 }}>
+                  <ChartContainer
+                    config={chartConfig}
+                    className="aspect-auto h-full min-h-[260px] w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-ink-300 dark:[&_.recharts-curve.recharts-tooltip-cursor]:stroke-white/20"
+                  >
+                    <ComposedChart data={finalChartData} margin={{ top: 8, right: 15, left: 5, bottom: 5 }}>
                       <defs>
                         <linearGradient id="bizBuyFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={trendStrokeAlt} stopOpacity={isDark ? 0.35 : 0.28} />
-                          <stop offset="100%" stopColor={trendStrokeAlt} stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="bizSellFill" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={trendStroke} stopOpacity={isDark ? 0.28 : 0.2} />
-                          <stop offset="100%" stopColor={trendStroke} stopOpacity={0} />
+                          <stop offset="0%" stopColor={skin.neon} stopOpacity={isDark ? 0.3 : 0.22} />
+                          <stop offset="100%" stopColor={skin.neon} stopOpacity={0.05} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} opacity={0.7} />
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        stroke={skin.grid}
+                        strokeOpacity={1}
+                        horizontal
+                        vertical={false}
+                      />
                       <XAxis
                         dataKey="timeMs"
                         type="number"
                         domain={["dataMin", "dataMax"]}
                         scale="time"
                         ticks={xAxisTicks}
-                        tick={{ fill: chartMuted, fontSize: 11 }}
+                        tick={{ fill: skin.tick, fontSize: 11 }}
                         tickLine={false}
-                        axisLine={{ stroke: chartAxis }}
+                        axisLine={false}
                         minTickGap={40}
+                        tickMargin={8}
                         tickFormatter={(ms) => formatAxisTime(ms, periodId)}
                       />
                       <YAxis
                         domain={yDomain}
                         ticks={yTicks}
-                        tick={{ fill: chartMuted, fontSize: 11 }}
+                        tick={{ fill: skin.tick, fontSize: 11 }}
                         tickLine={false}
-                        axisLine={{ stroke: chartAxis }}
+                        axisLine={false}
                         width={52}
+                        tickMargin={8}
                         tickFormatter={(v) => Number(v).toFixed(2)}
                       />
-                      <Tooltip
-                        cursor={{ stroke: isDark ? "#94a3b8" : "#64748b", strokeWidth: 1 }}
-                        contentStyle={{
-                          background: tooltipBg,
-                          border: `1px solid ${tooltipBorder}`,
-                          borderRadius: 12,
-                          fontSize: 12,
-                          color: tooltipLabel,
+                      <ChartTooltip
+                        content={
+                          <BusinessRatesTooltip
+                            localeCode={localeCode}
+                            buyLabel={t("buy")}
+                            sellLabel={t("sell")}
+                            buyColor={skin.neon}
+                            sellColor={skin.mutedLine}
+                          />
+                        }
+                        cursor={{
+                          stroke: skin.cursor,
+                          strokeWidth: 1,
+                          strokeDasharray: "none",
                         }}
-                        labelStyle={{ color: tooltipLabel }}
-                        formatter={(value, name) => {
-                          const label =
-                            name === "finalBuy" ? t("buy") : name === "finalSell" ? t("sell") : name;
-                          return [Number(value).toFixed(4), label];
-                        }}
-                        labelFormatter={(ms) => formatTooltipTime(ms, localeCode)}
                       />
                       <Area
-                        type="monotone"
+                        type="linear"
                         dataKey="finalBuy"
                         name="finalBuy"
-                        stroke={trendStrokeAlt}
+                        stroke="transparent"
                         fill="url(#bizBuyFill)"
-                        strokeWidth={2}
+                        strokeWidth={0}
                         dot={false}
                         isAnimationActive={false}
+                        legendType="none"
                       />
-                      <Area
-                        type="monotone"
+                      <Line
+                        type="linear"
+                        dataKey="finalBuy"
+                        name="finalBuy"
+                        stroke={skin.neon}
+                        strokeWidth={2}
+                        dot={finalChartData.length <= 16 ? hollowDot(skin.neon, skin.dotFill) : false}
+                        activeDot={hollowDot(skin.neon, skin.dotFill)}
+                        isAnimationActive={false}
+                      />
+                      <Line
+                        type="linear"
                         dataKey="finalSell"
                         name="finalSell"
-                        stroke={trendStroke}
-                        fill="url(#bizSellFill)"
+                        stroke={skin.mutedLine}
                         strokeWidth={2}
-                        dot={false}
+                        strokeDasharray="4 4"
+                        dot={
+                          finalChartData.length <= 16
+                            ? hollowDot(skin.mutedLine, skin.dotFill)
+                            : false
+                        }
+                        activeDot={hollowDot(skin.mutedLine, skin.dotFill)}
                         isAnimationActive={false}
                       />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                    </ComposedChart>
+                  </ChartContainer>
                 )}
               </div>
             </div>
@@ -681,7 +739,7 @@ export function BusinessDetailModal({
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 sm:gap-4 sm:p-4 md:grid-cols-3 md:overflow-hidden md:min-h-[400px]">
             <div className="col-span-1 flex min-h-0 flex-col gap-3 overflow-y-auto md:max-h-full">
               <div className="shrink-0 rounded-xl border border-ink-200 bg-ink-50 p-3 dark:border-ink-800 dark:bg-ink-950/60">
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-ink-500">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-ink-600">
                   <MapPin size={12} className="shrink-0 text-brand-600 dark:text-brand-400" />
                   {t("branchesLabel")}
                 </p>
@@ -725,7 +783,7 @@ export function BusinessDetailModal({
                   </h3>
                   <dl className="space-y-3 text-sm">
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="text-[10px] tracking-wide text-ink-600">
                         {t("addressLabelShort")}
                       </dt>
                       <dd className="mt-0.5 break-words text-ink-700 dark:text-ink-200">
@@ -733,7 +791,7 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="text-[10px] tracking-wide text-ink-600">
                         {t("phoneLabelShort")}
                       </dt>
                       <dd className="mt-0.5 text-ink-700 dark:text-ink-200">
@@ -750,7 +808,7 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="text-[10px] tracking-wide text-ink-600">
                         {t("whatsappLabelShort")}
                       </dt>
                       <dd className="mt-0.5 text-ink-700 dark:text-ink-200">
@@ -769,7 +827,7 @@ export function BusinessDetailModal({
                       </dd>
                     </div>
                     <div ref={hoursPopoverRef} className="relative">
-                      <dt className="mb-1.5 text-[10px] uppercase tracking-wide text-ink-500">
+                      <dt className="mb-1.5 text-[10px] tracking-wide text-ink-600">
                         {t("workingHoursLabel")}
                       </dt>
                       <dd>
@@ -818,7 +876,7 @@ export function BusinessDetailModal({
 
                             {hoursExpanded && canExpandHours ? (
                               <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-dropdown overflow-hidden rounded-xl border border-ink-200 bg-white p-2 shadow-xl shadow-ink-900/10 ring-1 ring-black/5 dark:border-ink-700 dark:bg-ink-900 dark:shadow-black/40 dark:ring-white/5">
-                                <p className="mb-1.5 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                                <p className="mb-1.5 px-1.5 text-[10px] font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                                   {t("weeklyHoursTitle")}
                                 </p>
                                 <ul className="max-h-52 space-y-0.5 overflow-y-auto">

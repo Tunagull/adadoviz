@@ -88,6 +88,8 @@ const {
   touchLastLogin,
   insertAuditLog,
   listAuditLogs,
+  listAuditLogsFiltered,
+  listAuditActions,
   applySupabaseAuditRow,
 } = require("./db");
 const { signToken, requireAuth, requireSuperAdmin, requireWritableBusiness } = require("./auth");
@@ -676,6 +678,16 @@ app.post("/api/auth/login", loginLimiter, (req, res) => {
     });
 
     touchLastLogin(admin.username);
+
+    // Panele giriş de aktivite günlüğüne düşer (işletme kendi geçmişinde görür).
+    recordAudit({
+      action: role === "superadmin" ? "superadmin_login" : "business_login",
+      actor: admin.username,
+      institution_id: admin.institution_id,
+      institution_name: admin.institution_name,
+      detail: "Panele giriş yapıldı",
+    }).catch(() => {});
+
     const fullAfterLogin = getInstitutionFullById(admin.id);
     if (fullAfterLogin) {
       syncInstitutionUpsert(fullAfterLogin).catch((err) => {
@@ -952,6 +964,10 @@ app.put("/api/business/profile", requireAuth, async (req, res) => {
     if (req.user?.role === "superadmin") {
       return res.status(403).json({ error: "Yalnızca işletme hesapları." });
     }
+    // Değişiklik günlüğü, güncellemeden ÖNCEKİ değerlerle karşılaştırılarak
+    // yazılır; böylece "neyi neyle değiştirdi" bilgisi loga girer.
+    const before = getInstitutionFullBySlug(req.user.institution_id);
+
     const business = updateInstitutionProfile(req.user.institution_id, {
       logo_url: req.body?.logo_url,
       phone: req.body?.phone,
@@ -959,6 +975,35 @@ app.put("/api/business/profile", requireAuth, async (req, res) => {
     });
     const full = getInstitutionFullBySlug(req.user.institution_id);
     if (full) await syncInstitutionUpsert(full);
+
+    if (before && full) {
+      const changes = [];
+      if ((before.logo_url || "") !== (full.logo_url || "")) changes.push("logo_url");
+      if ((before.phone || "") !== (full.phone || "")) changes.push("phone");
+      if ((before.working_hours || "") !== (full.working_hours || "")) changes.push("working_hours");
+
+      if (changes.includes("logo_url")) {
+        await recordAudit({
+          action: "business_logo_update",
+          actor: req.user.username || req.user.institution_id,
+          institution_id: full.institution_id,
+          institution_name: full.institution_name,
+          detail: "Profil fotoğrafı değiştirildi",
+        });
+      }
+      const rest = changes.filter((f) => f !== "logo_url");
+      if (rest.length > 0) {
+        const labels = { phone: "Telefon numarası", working_hours: "Çalışma saatleri" };
+        await recordAudit({
+          action: "business_profile_update",
+          actor: req.user.username || req.user.institution_id,
+          institution_id: full.institution_id,
+          institution_name: full.institution_name,
+          detail: rest.map((f) => labels[f] || f).join(", ") + " güncellendi",
+        });
+      }
+    }
+
     return res.json({ ok: true, business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
@@ -1008,6 +1053,27 @@ app.put("/api/business/branches/:id", requireAuth, requireWritableBusiness, asyn
       lng: req.body?.lng !== undefined ? req.body.lng : existing.lng,
     });
     await syncBranchUpsert(branch, full.institution_id);
+
+    // Hangi alanın değiştiğini loga yaz (telefon, whatsapp, adres, konum...).
+    const branchFields = { name: "Şube adı", phone: "Telefon", whatsapp: "WhatsApp", address: "Adres" };
+    const changed = Object.keys(branchFields).filter(
+      (field) => String(existing[field] ?? "") !== String(branch[field] ?? "")
+    );
+    if (Number(existing.lat) !== Number(branch.lat) || Number(existing.lng) !== Number(branch.lng)) {
+      changed.push("konum");
+    }
+    if (changed.length > 0) {
+      await recordAudit({
+        action: "business_branch_update",
+        actor: req.user.username || req.user.institution_id,
+        institution_id: full.institution_id,
+        institution_name: full.institution_name,
+        detail: `${branch.name}: ${changed
+          .map((f) => branchFields[f] || f)
+          .join(", ")} güncellendi`,
+      });
+    }
+
     return res.json({ branch });
   } catch (err) {
     const status = err.message === "Şube bulunamadı." ? 404 : 400;
@@ -1463,6 +1529,22 @@ app.get("/api/admin/businesses/:id/branches", requireSuperAdmin, (req, res) => {
   }
 });
 
+/** Public: aktif abonelik paketleri (fiyatlandırma sayfası). */
+app.get("/api/plans", (_req, res) => {
+  try {
+    const plans = listPlans({ onlyActive: true }).map((p) => ({
+      code: p.code,
+      ad: p.ad,
+      sure_gun: p.sure_gun,
+      fiyat: p.fiyat,
+      sira: p.sira,
+    }));
+    return res.json({ plans });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Paketler alınamadı." });
+  }
+});
+
 /** Public: SEO meta ayarları (anasayfa head) */
 app.get("/api/seo", (_req, res) => {
   try {
@@ -1502,6 +1584,12 @@ app.get("/sitemap.xml", (_req, res) => {
     <lastmod>${lastmod}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>${base}/paketler</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
   </url>
 ${officeUrls}
 </urlset>`;
@@ -1779,6 +1867,76 @@ app.get("/api/admin/system-health", requireSuperAdmin, async (_req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Sağlık raporu alınamadı." });
+  }
+});
+
+/**
+ * Süper admin: filtrelenebilir + sayfalanabilir aktivite günlüğü.
+ * Query: ?action=margin_update&institution_id=akbank&page=1&limit=50
+ */
+app.get("/api/admin/audit-logs", requireSuperAdmin, (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const action = req.query.action ? String(req.query.action).trim() : null;
+    const institutionId = req.query.institution_id
+      ? String(req.query.institution_id).trim().toLowerCase()
+      : null;
+
+    const { rows, total } = listAuditLogsFiltered({
+      institutionId,
+      action,
+      limit,
+      offset: (page - 1) * limit,
+    });
+
+    return res.json({
+      logs: rows,
+      total,
+      page,
+      limit,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+      actions: listAuditActions(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Loglar alınamadı." });
+  }
+});
+
+/**
+ * İşletme: YALNIZCA kendi aktivite günlüğü.
+ * institution_id oturumdan alınır; query'den ASLA okunmaz, aksi hâlde bir
+ * işletme başka bir işletmenin logunu isteyebilirdi.
+ */
+app.get("/api/business/audit-logs", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    const institutionId = String(req.user.institution_id || "").toLowerCase();
+    if (!institutionId) return res.status(404).json({ error: "İşletme bulunamadı." });
+
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const action = req.query.action ? String(req.query.action).trim() : null;
+
+    const { rows, total } = listAuditLogsFiltered({
+      institutionId,
+      action,
+      limit,
+      offset: (page - 1) * limit,
+    });
+
+    return res.json({
+      logs: rows,
+      total,
+      page,
+      limit,
+      pageCount: Math.max(1, Math.ceil(total / limit)),
+      actions: listAuditActions(institutionId),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Loglar alınamadı." });
   }
 });
 

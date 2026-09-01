@@ -52,7 +52,13 @@
       })();
     </script>
   </head>
-  <body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+  <!--
+    Gövde renkleri Tailwind'in stok slate ölçeğinden (slate-950 = #020617,
+    mavi yanı olan bir lacivert) tasarım sistemindeki mat siyah `ink` ölçeğine
+    çekildi. Aksi halde React yüklenmeden görülen ilk kare lacivert, sonrası
+    siyah oluyordu.
+  -->
+  <body class="bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

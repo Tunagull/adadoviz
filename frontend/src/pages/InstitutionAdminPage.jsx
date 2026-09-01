@@ -10,6 +10,7 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
+import { ActivityLogPanel } from "../components/ActivityLogPanel";
 import {
   fetchAdminRates,
   saveAdminRates,
@@ -29,6 +30,7 @@ import { HeaderActions } from "../components/HeaderActions";
 import { Sheet } from "../components/Sheet";
 import { DualRangeSlider } from "../components/DualRangeSlider";
 import { SearchableSelect } from "../components/SearchableSelect";
+import { FloatingInput, FloatingTextarea } from "../components/ui/floating-label";
 import { shouldShowTestBadge } from "../lib/subscriptionBadge";
 import { mediaUrl } from "../lib/api";
 import { getCroppedImg } from "../components/LogoCropModal";
@@ -1372,35 +1374,42 @@ export function InstitutionAdminPage() {
     setInfoError("");
   };
 
-  const renderMaskedPhoneInput = (field, inputRef) => {
+  /*
+    Etiket hep yukarıda (`float="always"`): alanın içinde her zaman görünen bir
+    +90 öneki ve maske hayaleti var, etiket ortada dursaydı üstlerine binerdi.
+  */
+  const renderMaskedPhoneInput = (field, inputRef, label) => {
     const raw = field === "whatsapp" ? rawWhatsappPhone : rawBranchPhone;
     const disabled = infoLoading || !selectedBranchId;
     return (
-      <div className="relative h-11 flex items-center rounded-lg border border-ink-200 bg-white dark:border-ink-700 dark:bg-ink-950 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-500/20 transition">
-        <span className="absolute left-3 z-raised text-sm font-mono font-bold text-ink-800 dark:text-white pointer-events-none">
-          +90
-        </span>
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 flex items-center pl-14 pr-3 text-sm font-mono text-ink-600 dark:text-ink-400 select-none"
-        >
-          {buildPhoneMaskGhost(raw)}
-        </span>
-        <input
-          ref={inputRef}
-          type="tel"
-          inputMode="numeric"
-          autoComplete="tel-national"
-          value={formatPhoneDisplay(raw)}
-          onChange={handlePhoneFieldChange(field)}
-          onKeyDown={handlePhoneFieldKeyDown(field)}
-          onFocus={handlePhoneFieldFocus}
-          onClick={handlePhoneFieldClick}
-          disabled={disabled}
-          placeholder=""
-          className="relative z-raised h-full w-full rounded-lg bg-transparent px-3 pl-14 text-sm font-mono text-ink-800 outline-none caret-brand-500 disabled:opacity-50 dark:text-ink-100"
-        />
-      </div>
+      <FloatingInput
+        ref={inputRef}
+        label={label}
+        float="always"
+        type="tel"
+        inputMode="numeric"
+        autoComplete="tel-national"
+        value={formatPhoneDisplay(raw)}
+        onChange={handlePhoneFieldChange(field)}
+        onKeyDown={handlePhoneFieldKeyDown(field)}
+        onFocus={handlePhoneFieldFocus}
+        onClick={handlePhoneFieldClick}
+        disabled={disabled}
+        controlClassName="!pl-14 font-mono caret-brand-500"
+        adornment={
+          <>
+            <span className="pointer-events-none absolute left-3 top-1/2 z-raised -translate-y-1/2 font-mono text-sm font-bold text-ink-800 dark:text-white">
+              +90
+            </span>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 z-base flex select-none items-center pl-14 pr-3 font-mono text-sm text-ink-600 dark:text-ink-400"
+            >
+              {buildPhoneMaskGhost(raw)}
+            </span>
+          </>
+        }
+      />
     );
   };
 
@@ -1421,7 +1430,7 @@ export function InstitutionAdminPage() {
 
   if (bootstrapping) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-[#020617] dark:text-ink-400">
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-ink-950 dark:text-ink-400">
         Oturum kontrol ediliyor...
       </div>
     );
@@ -1431,7 +1440,7 @@ export function InstitutionAdminPage() {
 
   if (loading || !auth?.institution_id || !marginConfig) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-[#020617] dark:text-ink-400">
+      <div className="flex min-h-screen items-center justify-center bg-ink-50 text-ink-500 dark:bg-ink-950 dark:text-ink-400">
         Veriler yükleniyor...
       </div>
     );
@@ -1459,7 +1468,7 @@ export function InstitutionAdminPage() {
   const nearExpiry = days != null && days <= 30;
 
   return (
-    <div className="min-h-screen bg-ink-50 text-ink-800 dark:bg-[#020617] dark:text-white">
+    <div className="min-h-screen bg-ink-50 text-ink-800 dark:bg-ink-950 dark:text-white">
       {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
       <Helmet>
         <title>İşletme Paneli | AdaDöviz</title>
@@ -1472,7 +1481,7 @@ export function InstitutionAdminPage() {
           <button
             type="button"
             onClick={() => navigate("/")}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
           >
             <ArrowLeft className="size-4 shrink-0" />
             <span className="truncate">{t("backToDashboard")}</span>
@@ -1485,7 +1494,7 @@ export function InstitutionAdminPage() {
               if (isAccountInactive) return;
               setShowLogoModal(true);
             }}
-            className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-200 bg-white transition-all duration-300 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] cursor-pointer dark:border-white/10 dark:bg-ink-950/60 dark:hover:border-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] sm:h-20 sm:w-20"
+            className="group relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-ink-200 bg-white transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 cursor-pointer dark:border-white/10 dark:bg-ink-950/60 dark:hover:border-brand-400 sm:h-20 sm:w-20"
           >
             {profileLogoUrl ? (
               <img
@@ -1601,7 +1610,7 @@ export function InstitutionAdminPage() {
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded-lg border transition-all duration-300 bg-transparent px-3 py-2 text-sm hover:bg-danger-500/5 dark:hover:shadow-[0_0_15px_rgba(255,0,0,0.6)] border-danger-600 text-danger-700 dark:border-[rgb(255,0,0)] dark:text-[rgb(255,0,0)]"
+            className="inline-flex items-center gap-2 rounded-lg border transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong bg-transparent px-3 py-2 text-sm hover:bg-danger-500/5 border-danger-600 text-danger-700 dark:border-danger-500 dark:text-danger-400"
           >
             <LogOut className="size-4" />
             {t("logoutShort")}
@@ -1616,7 +1625,7 @@ export function InstitutionAdminPage() {
             resetPasswordForm();
             setShowPasswordModal(true);
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400"
         >
           <Key className="size-4" />
           {t("changePassword")}
@@ -1632,7 +1641,7 @@ export function InstitutionAdminPage() {
             setSelectedBranchId("");
             setShowInfoModal(true);
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400"
         >
           <Edit2 className="size-4" />
           İşletme Bilgilerini Güncelle
@@ -1642,10 +1651,10 @@ export function InstitutionAdminPage() {
           <button
             type="button"
             onClick={toggleSubscriptionPanel}
-            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-all duration-300 ${
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong ${
               expired || nearExpiry
-                ? "border-danger-600/50 bg-danger-500/5 text-danger-700 hover:border-danger-500 dark:border-[rgb(255,0,0)]/50 dark:text-[rgb(255,0,0)]"
-                : "border-brand-600/40 bg-brand-500/5 text-brand-800 hover:border-brand-400 hover:shadow-[0_0_15px_rgba(34,211,238,0.35)] dark:border-[rgb(0,255,255)]/40 dark:text-brand-200 dark:hover:border-brand-400"
+                ? "border-danger-600/50 bg-danger-500/5 text-danger-700 hover:border-danger-500 dark:border-danger-500/50 dark:text-danger-400"
+                : "border-brand-600/40 bg-brand-500/5 text-brand-800 hover:border-brand-400 dark:border-brand-400/40 dark:text-brand-200 dark:hover:border-brand-400"
             }`}
           >
             {t("subscriptionStatus")}
@@ -1708,7 +1717,7 @@ export function InstitutionAdminPage() {
 
               {subInfo?.performance ? (
                 <div className="border-b border-ink-200 bg-brand-500/5 px-4 py-3 dark:border-ink-700">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
+                  <p className="text-[10px] font-semibold text-brand-700 dark:text-brand-300">
                     Bu dönem görünürlüğünüz
                   </p>
                   <div className="mt-1.5 flex flex-wrap items-baseline gap-4 text-sm">
@@ -1730,7 +1739,7 @@ export function InstitutionAdminPage() {
 
               {subInfo?.payments?.length ? (
                 <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-700">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                  <p className="mb-1.5 text-[10px] font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     Ödemelerim
                   </p>
                   <ul className="space-y-1">
@@ -1749,7 +1758,7 @@ export function InstitutionAdminPage() {
                 </div>
               ) : null}
 
-              <div className="grid grid-cols-3 gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-ink-500 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-400">
+              <div className="grid grid-cols-3 gap-2 border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-semibold tracking-wide text-ink-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-400">
                 <span>{t("branchNameLabel")}</span>
                 <span>{t("subscriptionStartDate")}</span>
                 <span>{t("remainingSubscription")}</span>
@@ -1835,7 +1844,7 @@ export function InstitutionAdminPage() {
         <button
           type="button"
           onClick={openBranchRequestModal}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400"
         >
           <Plus className="size-4" />
           {canAddBranchDirectly ? t("addBranchDirectBtn") : t("newBranchRequestBtn")}
@@ -1843,8 +1852,8 @@ export function InstitutionAdminPage() {
       </div>
 
       {/* Merkez Bankası Bilgisi */}
-      <div className="rounded-2xl border border-brand-500/20 bg-brand-500/10 px-4 py-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
+      <div className="rounded-card border border-brand-500/20 bg-brand-500/10 px-4 py-4">
+        <p className="text-xs font-semibold text-brand-700 dark:text-brand-300">
           {t("centralBankRates")}
         </p>
         <p className="mt-1 text-sm text-ink-600 dark:text-ink-300">
@@ -1879,7 +1888,7 @@ export function InstitutionAdminPage() {
       <form onSubmit={handleSave} className="space-y-6">
         {/* ALIŞ KURLAR */}
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-brand-700 dark:text-[rgb(0,255,255)]">{t("buyRates")}</h3>
+          <h3 className="mb-3 text-sm font-semibold text-brand-700 dark:text-brand-300">{t("buyRates")}</h3>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'buy').map((item) => {
             const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
@@ -1892,25 +1901,25 @@ export function InstitutionAdminPage() {
                 key={`${item.currency}-${item.type}`}
                 className="rounded-xl border border-ink-200 bg-white p-4 transition hover:border-ink-300 dark:border-white/10 dark:bg-ink-900/60 dark:hover:border-white/20"
               >
-                <h4 className="mb-3 text-sm font-bold text-brand-700 dark:text-[rgb(0,255,255)]">{itemLabel}</h4>
+                <h4 className="mb-3 text-sm font-bold text-brand-700 dark:text-brand-300">{itemLabel}</h4>
 
                 {/* Merkez Bankası KUR */}
                 <div className="mb-3">
-                  <p className="text-xs text-ink-500">{t("centralBankRate")}</p>
-                  <input
+                  <FloatingInput
+                    label={t("centralBankRate")}
+                    float="always"
                     readOnly
                     value={formatNum(kur)}
-                    className="h-10 w-full rounded-lg border border-ink-200 bg-ink-50 px-2 font-mono text-xs text-ink-700 outline-none dark:border-ink-700 dark:bg-ink-950/80 dark:text-ink-300"
+                    controlClassName="font-mono"
+                    fieldClassName="!bg-ink-50 dark:!bg-ink-950/80"
+                    hint={`${t("effectiveRate")}: ${formatNum(centralBankRates?.[item?.currency]?.[item?.type === 'buy' ? 'buy_efektif' : 'sell_efektif'] || '0')}`}
                   />
-                  <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
-                    {t("effectiveRate")}: {formatNum(centralBankRates?.[item?.currency]?.[item?.type === 'buy' ? 'buy_efektif' : 'sell_efektif'] || '0')}
-                  </p>
                 </div>
 
                 {/* Kâr Tipi Selectbox */}
                 <div className="mb-3">
-                  <label className="text-xs text-ink-500 dark:text-ink-400">{t("profitType")}</label>
                   <SearchableSelect
+                    label={t("profitType")}
                     value={cfg.type}
                     onChange={(val) =>
                       handleMarginChange(item.currency, item.type, "type", val)
@@ -1926,10 +1935,8 @@ export function InstitutionAdminPage() {
 
                 {/* Kâr Marjı */}
                 <div className="mb-3">
-                  <label className="text-xs text-ink-500 dark:text-ink-400">
-                    {t("profitMargin")} {cfg.type === "percent" ? "(%)" : "(TL)"}
-                  </label>
-                  <input
+                  <FloatingInput
+                    label={`${t("profitMargin")} ${cfg.type === "percent" ? "(%)" : "(TL)"}`}
                     type="number"
                     min="0"
                     step="0.01"
@@ -1938,14 +1945,13 @@ export function InstitutionAdminPage() {
                     onChange={(e) =>
                       handleMarginChange(item.currency, item.type, "value", e.target.value)
                     }
-                    className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
                   />
                 </div>
 
                 {/* Final Kur & Kâr */}
-                <div className="rounded-lg border-2 border-brand-600 bg-brand-50 px-3 py-2.5 text-center dark:border-[rgb(0,255,255)]/80 dark:bg-ink-950/50 dark:shadow-[0_0_15px_rgba(0,255,255,0.5)]">
+                <div className="rounded-lg border-2 border-brand-600 bg-brand-50 px-3 py-2.5 text-center dark:border-brand-400/80 dark:bg-ink-950/50">
                   <p className="text-sm font-bold">
-                    <span className="text-brand-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-brand-700 dark:text-[rgb(0,255,255)] text-base">{formatNum(final)}</span>
+                    <span className="text-brand-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-brand-700 dark:text-brand-300 text-base">{formatNum(final)}</span>
                     {(() => {
                       const kar = final && kur ? final - kur : 0;
                       return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
@@ -1960,7 +1966,7 @@ export function InstitutionAdminPage() {
 
         {/* SATIŞ KURLAR */}
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-danger-700 dark:text-[rgb(255,0,0)]">{t("sellRates")}</h3>
+          <h3 className="mb-3 text-sm font-semibold text-danger-700 dark:text-danger-400">{t("sellRates")}</h3>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
               const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
@@ -1973,25 +1979,25 @@ export function InstitutionAdminPage() {
                   key={`${item.currency}-${item.type}`}
                   className="rounded-xl border border-ink-200 bg-white p-4 transition hover:border-ink-300 dark:border-white/10 dark:bg-ink-900/60 dark:hover:border-white/20"
                 >
-                  <h4 className="mb-3 text-sm font-bold text-danger-700 dark:text-[rgb(255,0,0)]">{itemLabel}</h4>
+                  <h4 className="mb-3 text-sm font-bold text-danger-700 dark:text-danger-400">{itemLabel}</h4>
 
                   {/* Merkez Bankası KUR */}
                   <div className="mb-3">
-                    <p className="text-xs text-ink-500">{t("centralBankRate")}</p>
-                    <input
+                    <FloatingInput
+                      label={t("centralBankRate")}
+                      float="always"
                       readOnly
                       value={formatNum(kur)}
-                      className="h-10 w-full rounded-lg border border-ink-200 bg-ink-50 px-2 font-mono text-xs text-ink-700 outline-none dark:border-ink-700 dark:bg-ink-950/80 dark:text-ink-300"
+                      controlClassName="font-mono"
+                      fieldClassName="!bg-ink-50 dark:!bg-ink-950/80"
+                      hint={`${t("effectiveRate")}: ${formatNum(centralBankRates?.[item?.currency]?.[item?.type === 'buy' ? 'buy_efektif' : 'sell_efektif'] || '0')}`}
                     />
-                    <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
-                      {t("effectiveRate")}: {formatNum(centralBankRates?.[item?.currency]?.[item?.type === 'buy' ? 'buy_efektif' : 'sell_efektif'] || '0')}
-                    </p>
                   </div>
 
                   {/* Kâr Tipi Selectbox */}
                   <div className="mb-3">
-                    <label className="text-xs text-ink-500 dark:text-ink-400">{t("profitType")}</label>
                     <SearchableSelect
+                      label={t("profitType")}
                       value={cfg.type}
                       onChange={(val) =>
                         handleMarginChange(item.currency, item.type, "type", val)
@@ -2007,10 +2013,8 @@ export function InstitutionAdminPage() {
 
                   {/* Kâr Değeri */}
                   <div className="mb-3">
-                    <label className="text-xs text-ink-500 dark:text-ink-400">
-                      {t("profitValue")} {cfg.type === "percent" ? "(%)" : "(TL)"}
-                    </label>
-                    <input
+                    <FloatingInput
+                      label={`${t("profitValue")} ${cfg.type === "percent" ? "(%)" : "(TL)"}`}
                       type="number"
                       min="0"
                       step="0.01"
@@ -2019,14 +2023,13 @@ export function InstitutionAdminPage() {
                       onChange={(e) =>
                         handleMarginChange(item.currency, item.type, "value", e.target.value)
                       }
-                      className="h-10 w-full rounded-lg border border-brand-500/40 bg-white px-2 text-xs text-brand-800 outline-none transition-all focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-ink-950 dark:text-brand-200"
                     />
                   </div>
 
                   {/* Final Kur & Kâr */}
-                  <div className="rounded-lg border-2 border-danger-600 bg-danger-50 px-3 py-2.5 text-center dark:border-[rgb(255,0,0)]/80 dark:bg-ink-950/50 dark:shadow-[0_0_15px_rgba(255,0,0,0.5)]">
+                  <div className="rounded-lg border-2 border-danger-600 bg-danger-50 px-3 py-2.5 text-center dark:border-danger-500/80 dark:bg-ink-950/50">
                     <p className="text-sm font-bold">
-                      <span className="text-danger-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-danger-700 dark:text-[rgb(255,0,0)] text-base">{formatNum(final)}</span>
+                      <span className="text-danger-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-danger-700 dark:text-danger-400 text-base">{formatNum(final)}</span>
                       {(() => {
                         const kar = final && kur ? final - kur : 0;
                         return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
@@ -2052,6 +2055,15 @@ export function InstitutionAdminPage() {
         </div>
       </form>
 
+      {/*
+        İşlem geçmişi: işletmenin kendi profilinde, kurlarında ve şubelerinde
+        yapılan değişikliklerin kaydı. Aynı kayıtlar süper admin panelinde de
+        (tüm işletmeler için) görünür.
+      */}
+      <div className="mt-8">
+        <ActivityLogPanel token={auth?.token} mode="business" />
+      </div>
+
       {/* ✅ FIXED MODAL - BAŞARILI KAYDETME (KAPATILABILIR) */}
       {showSuccessModal && (
         <div 
@@ -2059,7 +2071,7 @@ export function InstitutionAdminPage() {
           onClick={() => setShowSuccessModal(false)}  // ✅ Dışarı tıklanınca kapat
         >
           <div role="dialog" aria-modal="true" 
-            className="relative bg-white border border-ink-200 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all dark:bg-[#1a1f2e] dark:border-ink-700"
+            className="relative bg-white border border-ink-200 p-8 rounded-card shadow-2xl flex flex-col items-center transform transition-[background-color,border-color,color,box-shadow,transform] dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2085,7 +2097,7 @@ export function InstitutionAdminPage() {
       {/* ✅ YÜKLENIYOR MODAL (Spinner) */}
       {isSaving && (
         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/75 backdrop-blur-md">
-          <div role="dialog" aria-modal="true" className="bg-[#1a1f2e] border border-ink-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all">
+          <div role="dialog" aria-modal="true" className="bg-ink-900 border border-ink-700 p-8 rounded-card shadow-2xl flex flex-col items-center transform transition-[background-color,border-color,color,box-shadow,transform]">
             <div className="w-16 h-16 bg-brand-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
               <svg className="w-8 h-8 text-brand-500" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -2101,7 +2113,7 @@ export function InstitutionAdminPage() {
       {/* ✅ FIXED MODAL - ÇIKIS (ADMIN PANELINDEN) */}
       {showLogoutPopup && (
         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/75 backdrop-blur-md">
-          <div role="dialog" aria-modal="true" className="bg-[#1a1f2e] border border-ink-700 p-8 rounded-2xl shadow-2xl flex flex-col items-center transform transition-all">
+          <div role="dialog" aria-modal="true" className="bg-ink-900 border border-ink-700 p-8 rounded-card shadow-2xl flex flex-col items-center transform transition-[background-color,border-color,color,box-shadow,transform]">
             <div className="w-16 h-16 bg-danger-500/20 rounded-full flex items-center justify-center mb-4 animate-spin">
               <svg className="w-8 h-8 text-danger-500" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -2133,7 +2145,7 @@ export function InstitutionAdminPage() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
+            className="relative w-full max-w-lg overflow-hidden rounded-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2255,7 +2267,7 @@ export function InstitutionAdminPage() {
 
                   {/* Zoom Slider */}
                   <div className="space-y-2">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                    <label className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                       Zoom
                     </label>
                     <input
@@ -2322,7 +2334,7 @@ export function InstitutionAdminPage() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
+            className="relative w-full max-w-lg overflow-hidden rounded-card border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2352,14 +2364,14 @@ export function InstitutionAdminPage() {
                 </div>
               </div>
               <div className="w-44 shrink-0 sm:w-52">
-                <SearchableSelect
-                  value={selectedBranchId}
-                  onChange={handleBranchSelect}
-                  options={branchSelectOptions}
-                  placeholder={t("selectBranchPlaceholder")}
-                  aria-label={t("selectBranchPlaceholder")}
-                  disabled={infoLoading || businessBranches.length === 0}
-                />
+              <SearchableSelect
+                label={t("selectBranchPlaceholder")}
+                value={selectedBranchId}
+                onChange={handleBranchSelect}
+                options={branchSelectOptions}
+                placeholder={t("selectBranchPlaceholder")}
+                disabled={infoLoading || businessBranches.length === 0}
+              />
               </div>
             </div>
 
@@ -2370,18 +2382,16 @@ export function InstitutionAdminPage() {
                     !selectedBranchId ? "pointer-events-none opacity-50" : ""
                   }`}
                 >
-                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
-                    <Building2 className="size-4" />
-                    {t("updateBranchNameHint")}
-                  </label>
                   <div className="flex gap-2">
-                    <input
+                    <FloatingInput
+                      className="flex-1"
+                      label={t("updateBranchNameHint")}
+                      icon={Building2}
                       type="text"
                       value={branchName}
                       onChange={(e) => setBranchName(e.target.value)}
                       disabled={branchFieldsLocked}
                       placeholder={t("branchNamePlaceholder")}
-                      className="h-11 flex-1 rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
                     />
                     <button
                       type="button"
@@ -2395,21 +2405,12 @@ export function InstitutionAdminPage() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
-                    <Phone className="size-4" />
-                    {t("branchPhoneLabel")}
-                  </label>
-                  {renderMaskedPhoneInput("branch", branchPhoneInputRef)}
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
-                    <Phone className="size-4" />
-                    {t("whatsappPhoneLabel")}
-                  </label>
-                  {renderMaskedPhoneInput("whatsapp", whatsappPhoneInputRef)}
-                </div>
+                {renderMaskedPhoneInput("branch", branchPhoneInputRef, t("branchPhoneLabel"))}
+                {renderMaskedPhoneInput(
+                  "whatsapp",
+                  whatsappPhoneInputRef,
+                  t("whatsappPhoneLabel")
+                )}
 
                 {!selectedBranchId ? (
                   <p className="text-xs text-warning-600 dark:text-warning-300">
@@ -2500,16 +2501,13 @@ export function InstitutionAdminPage() {
 
                   <div className="space-y-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
-                        {t("branchAddressLabel")}
-                      </label>
-                      <textarea
+                      <FloatingTextarea
+                        label={t("branchAddressLabel")}
                         value={branchAddress}
                         onChange={(e) => setBranchAddress(e.target.value)}
                         disabled={branchFieldsLocked}
                         rows={3}
                         placeholder={t("branchAddressPlaceholder")}
-                        className="min-h-[88px] w-full resize-y rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
                       />
                       <p className="text-[11px] text-ink-500 dark:text-ink-400">
                         {t("branchMapHint")}
@@ -2617,7 +2615,7 @@ export function InstitutionAdminPage() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
+            className="relative w-full max-w-lg overflow-hidden rounded-card border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900 max-h-[min(92dvh,90vh)] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2642,45 +2640,32 @@ export function InstitutionAdminPage() {
             </div>
 
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">
-                  {t("branchNameLabel")}
-                </label>
-                <input
-                  type="text"
-                  value={branchRequestForm.name}
-                  onChange={(e) =>
-                    setBranchRequestForm((p) => ({ ...p, name: e.target.value }))
-                  }
-                  disabled={branchRequestLoading}
-                  placeholder={t("branchNamePlaceholder")}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
-                />
-              </div>
+              <FloatingInput
+                label={t("branchNameLabel")}
+                type="text"
+                value={branchRequestForm.name}
+                onChange={(e) =>
+                  setBranchRequestForm((p) => ({ ...p, name: e.target.value }))
+                }
+                disabled={branchRequestLoading}
+                placeholder={t("branchNamePlaceholder")}
+              />
+
+              <FloatingInput
+                label={t("phoneLabel")}
+                icon={Phone}
+                type="tel"
+                value={branchRequestForm.phone}
+                onChange={(e) =>
+                  setBranchRequestForm((p) => ({ ...p, phone: e.target.value }))
+                }
+                disabled={branchRequestLoading}
+                placeholder={t("phonePlaceholder")}
+              />
 
               <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
-                  <Phone className="size-4" />
-                  {t("phoneLabel")}
-                </label>
-                <input
-                  type="tel"
-                  value={branchRequestForm.phone}
-                  onChange={(e) =>
-                    setBranchRequestForm((p) => ({ ...p, phone: e.target.value }))
-                  }
-                  disabled={branchRequestLoading}
-                  placeholder={t("phonePlaceholder")}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400 flex items-center gap-2">
-                  <MapPin className="size-4" />
-                  {t("branchAddressLabel")}
-                </label>
-                <textarea
+                <FloatingTextarea
+                  label={t("branchAddressLabel")}
                   value={branchRequestForm.address}
                   onChange={(e) =>
                     setBranchRequestForm((p) => ({ ...p, address: e.target.value }))
@@ -2688,7 +2673,6 @@ export function InstitutionAdminPage() {
                   disabled={branchRequestLoading}
                   rows={3}
                   placeholder={t("branchAddressPlaceholder")}
-                  className="min-h-[88px] w-full resize-y rounded-lg border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100"
                 />
                 <p className="text-[11px] text-ink-500 dark:text-ink-400">
                   {t("branchMapHint")}
@@ -2856,7 +2840,7 @@ export function InstitutionAdminPage() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative w-full max-w-md overflow-hidden rounded-2xl border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            className="relative w-full max-w-md overflow-hidden rounded-card border border-ink-200 bg-white p-6 shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2881,64 +2865,43 @@ export function InstitutionAdminPage() {
             </div>
 
             <form onSubmit={handlePasswordSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="old-password"
-                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
-                >
-                  {t("oldPassword")}
-                </label>
-                <input
-                  id="old-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={oldPassword}
-                  onChange={(e) => setOldPassword(e.target.value)}
-                  required
-                  disabled={passwordLoading}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
-                />
-              </div>
+              <FloatingInput
+                id="old-password"
+                label={t("oldPassword")}
+                icon={Key}
+                type="password"
+                autoComplete="current-password"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                required
+                disabled={passwordLoading}
+              />
 
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="new-password"
-                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
-                >
-                  {t("newPassword")}
-                </label>
-                <input
-                  id="new-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                  minLength={4}
-                  disabled={passwordLoading}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
-                />
-              </div>
+              <FloatingInput
+                id="new-password"
+                label={t("newPassword")}
+                icon={Key}
+                type="password"
+                autoComplete="new-password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={4}
+                disabled={passwordLoading}
+              />
 
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="confirm-password"
-                  className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400"
-                >
-                  {t("confirmPassword")}
-                </label>
-                <input
-                  id="confirm-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={4}
-                  disabled={passwordLoading}
-                  className="h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition-all duration-300 focus:border-brand-400 focus:ring-2 focus:ring-brand-500/20 focus:shadow-[0_0_15px_rgba(34,211,238,0.4)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100 dark:focus:border-brand-400 dark:focus:ring-brand-500/20"
-                />
-              </div>
+              <FloatingInput
+                id="confirm-password"
+                label={t("confirmPassword")}
+                icon={Key}
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                minLength={4}
+                disabled={passwordLoading}
+              />
 
               {passwordError ? (
                 <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
@@ -2957,14 +2920,14 @@ export function InstitutionAdminPage() {
                   type="button"
                   onClick={closePasswordModal}
                   disabled={passwordLoading}
-                  className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition-all duration-300 hover:border-danger-500 hover:text-danger-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+                  className="flex-1 rounded-lg border border-ink-200 bg-ink-50 px-4 py-2.5 text-sm font-medium text-ink-600 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-danger-500 hover:text-danger-500 disabled:opacity-50 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500"
                 >
                   {t("cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={passwordLoading}
-                  className="flex-1 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition-all duration-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:brightness-110 disabled:opacity-50 dark:from-brand-500 dark:to-brand-600"
+                  className="flex-1 rounded-lg bg-brand-gradient px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-brand-500/20 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:brightness-110 disabled:opacity-50 dark:from-brand-500 dark:to-brand-600"
                 >
                   {passwordLoading ? t("saving") : t("confirmPasswordAction")}
                 </button>

@@ -67,10 +67,64 @@ canvas {
    * Artık tek kaynak burası. Boyut varyantları tanımlı olduğu için
    * `!important` ezmelerine gerek kalmıyor.
    */
+  /**
+   * ⚠️ HAREKET DÜZELTMESİ (M-02): 146 butonun HİÇBİRİNDE basma geri bildirimi
+   * yoktu. Basıldığında hiçbir şey olmayan buton, arayüzün kullanıcıyı
+   * duymadığı hissini verir — tıklama ile ekrandaki ilk değişiklik arasında
+   * ağ gecikmesi kadar boşluk kalır.
+   *
+   * `transition` yerine açık özellik listesi yazılıyor; kısayol hâli tarayıcıyı
+   * gereğinden fazla özelliği izlemeye zorlar.
+   */
   .btn {
     @apply inline-flex select-none items-center justify-center gap-2 rounded-control
-           text-sm font-semibold transition
+           text-sm font-semibold
+           transition-[transform,background-color,border-color,color,box-shadow,filter]
+           duration-fast ease-out-strong
            disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none;
+  }
+
+  /**
+   * Basma anı hızlı (100 ms), bırakma anı biraz daha yumuşak (160 ms, .btn'den
+   * miras). Asimetri bilinçli: sistem kullanıcıya anında cevap verir, geri
+   * dönüş göze batmadan yerine oturur.
+   */
+  .btn:active:not(:disabled) {
+    @apply scale-[0.97] duration-press;
+  }
+
+  /**
+   * `.btn` ailesini kullanmayan özel kontroller için opt-in basma geri
+   * bildirimi (sekmeler, kartlar, ikon butonları).
+   */
+  .press {
+    @apply transition-transform duration-fast ease-out-strong;
+  }
+
+  .press:active:not(:disabled) {
+    @apply scale-[0.97] duration-press;
+  }
+
+  /**
+   * ⚠️ HAREKET DÜZELTMESİ (M-04): Yönetim panellerindeki 83 butonun (işletme
+   * 34 + süper admin 49) hiçbirinde basma geri bildirimi yoktu. Bu ekranlarda
+   * kullanıcı gün boyu kur giriyor, marj değiştiriyor, abonelik uzatıyor —
+   * yani en çok tıklanan yüzey burası ve hiçbir tıklama karşılık vermiyordu.
+   *
+   * Butonlara tek tek sınıf eklemek yerine varsayılan davranış yapıldı.
+   * `:where()` özgüllüğü sıfırladığı için herhangi bir bileşen sınıfı bunu
+   * ezebilir; özel animasyonu olan bir kontrol `data-no-press` ile çıkabilir.
+   *
+   * Ölçüm: kod tabanındaki hiçbir buton `scale-`/`translate-`/`rotate-`
+   * kullanmıyor, dolayısıyla bu kural mevcut bir dönüşümü bozmuyor.
+   */
+  :where(button, [role="button"]):not([data-no-press]):not(:disabled) {
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  :where(button, [role="button"]):not([data-no-press]):not(:disabled):active {
+    transform: scale(0.97);
+    transition-duration: 100ms;
   }
 
   .btn-sm {
@@ -86,9 +140,24 @@ canvas {
     @apply min-h-[3rem] px-5 py-3 text-base;
   }
 
+  /**
+   * (beyaz neon) Vurgu yüzeyi — aktif sekme, seçili pill, kayan topuz,
+   * birincil buton. Tek tanım: her iki temada "ekrandaki en parlak şey" ne
+   * ise o. Karanlık temada beyaz yüzey + siyah metin + beyaz ışıma; aydınlık
+   * temada tersi.
+   *
+   * Renk yerine parlaklık kullanmanın sebebi: grafit bir yüzey karanlık
+   * temada kartın kendisiyle neredeyse aynı değerde kalıyor ve "birincil"
+   * olduğunu anlatmıyor.
+   */
+  .surface-neon {
+    @apply bg-ink-950 text-white dark:bg-white dark:text-ink-950 dark:shadow-neon;
+  }
+
   .btn-primary {
-    @apply btn btn-md bg-brand-gradient text-white shadow-lg shadow-brand-500/20
-           hover:brightness-110 disabled:hover:brightness-100;
+    @apply btn btn-md bg-ink-950 text-white shadow-lg shadow-ink-950/25
+           hover:bg-ink-800
+           dark:bg-white dark:text-ink-950 dark:shadow-neon dark:hover:bg-ink-100;
   }
 
   .btn-danger {
@@ -127,6 +196,1334 @@ canvas {
    */
   .field-label {
     @apply mb-1.5 block text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-300;
+  }
+}
+
+/**
+ * ── MAT SİYAH + BEYAZ NEON TİPOGRAFİ ─────────────────────────────────────
+ *
+ * Neon, gerçek tüpte olduğu gibi ÜÇ katmandır: harfin kendisi (saf beyaz),
+ * cama yakın sıkı hâle (1-2 px) ve duvara vuran geniş renkli saçılma (24 px+).
+ * Tek bir geniş gölge yazmak bulanık bir leke verir, ışık vermez.
+ *
+ * Işıma YALNIZCA karanlık temada uygulanır: beyaz zeminde beyaz hâle metni
+ * bulanıklaştırmaktan başka bir şey yapmaz ve okunabilirliği düşürür.
+ *
+ * `text-shadow` animasyon değil statik bir boya olduğu için
+ * prefers-reduced-motion altında da güvenle kalır.
+ */
+.dark .neon-text,
+.dark h1,
+.dark h2 {
+  color: #fff;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.55),
+    0 0 12px rgba(255, 255, 255, 0.3),
+    0 0 34px rgba(255, 255, 255, 0.18);
+}
+
+/** Gövde metni / küçük punto için kısılmış hâle (geniş saçılma yok). */
+.dark .neon-text-soft {
+  color: #fff;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.4),
+    0 0 10px rgba(255, 255, 255, 0.18);
+}
+
+/** Daha güçlü ışıyan metin — rozet, aktif sekme, canlı göstergeler. */
+.dark .neon-accent {
+  color: #fff;
+  text-shadow:
+    0 0 2px rgba(255, 255, 255, 0.7),
+    0 0 14px rgba(255, 255, 255, 0.45),
+    0 0 40px rgba(255, 255, 255, 0.25);
+}
+
+/**
+ * ── MOUSE TAKİPLİ SPOTLIGHT KENARLIK (GlowCard) ──────────────────────────
+ *
+ * Eskiden kur kartının üstüne gelince kenarlık tek renge (brand-400) atlıyordu:
+ * statik, işaretçinin nerede olduğunu bilmeyen bir vurgu. Artık ışık kaynağı
+ * imlecin kendisi — kenarlığın yalnızca imlece yakın parçası yanıyor.
+ *
+ * Üç katman:
+ *   __ring   1.5 px keskin ışık — kenarlığın kendisi
+ *   __aura   aynı halka, bulanık ve kartın DIŞINA taşan saçılma
+ *   __sheen  kart yüzeyine düşen çok soluk iç aydınlanma
+ *
+ * Bileşen JS'te yalnızca --glow-x / --glow-y yazar (rAF ile sınırlı);
+ * görünürlük kararını CSS :hover verir, böylece React state'i yeniden
+ * render tetiklemez.
+ *
+ * `@media (hover: hover)` zorunlu: dokunmatik ekranda parmak kalktıktan sonra
+ * :hover takılı kalır ve kart sürekli yanar dururdu.
+ */
+.glow-card {
+  --glow-x: 50%;
+  --glow-y: 0%;
+  --glow-size: 260px;
+  /**
+   * Doygunluk varsayılan olarak SIFIR: ışık beyaz. Ton açısı yine de duruyor
+   * çünkü kur değişiminde ışıma yeşile/kırmızıya dönüyor (yön bilgisi).
+   */
+  --glow-hue: 0;
+  --glow-sat: 0%;
+  --glow-opacity: 0;
+  position: relative;
+  isolation: isolate;
+}
+
+.glow-card__ring,
+.glow-card__aura,
+.glow-card__sheen {
+  position: absolute;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--glow-opacity);
+  transition: opacity 220ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.glow-card__ring,
+.glow-card__sheen {
+  inset: 0;
+}
+
+/**
+ * Gradyan kenarlık tekniği: eleman kutusunun tamamını gradyanla boya, sonra
+ * content-box'ı maskeden ÇIKAR — geriye yalnızca padding kalınlığındaki
+ * çerçeve kalır. `border` ile bu yapılamaz; kenarlık gradyan kabul etmez.
+ */
+.glow-card__ring {
+  padding: 1.5px;
+  /**
+   * Sıçrama noktası neredeyse beyaz (%88 açıklık) ve düşüş sert: gerçek neon
+   * tüpünde de camın dibi beyaza yakındır, renk saçılmada ortaya çıkar. İlk
+   * denemede tepe %78 açıklık ve %55 opaklıktaydı — ekranda ışık değil,
+   * kenarlığa sürülmüş soluk bir pembe şeritti.
+   */
+  background: radial-gradient(
+    var(--glow-size) var(--glow-size) at var(--glow-x) var(--glow-y),
+    hsl(var(--glow-hue) var(--glow-sat) 100%) 0%,
+    hsl(var(--glow-hue) var(--glow-sat) 94% / 0.95) 26%,
+    hsl(var(--glow-hue) var(--glow-sat) 88% / 0.45) 48%,
+    transparent 70%
+  );
+  -webkit-mask:
+    linear-gradient(#000, #000) content-box,
+    linear-gradient(#000, #000);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000, #000) content-box,
+    linear-gradient(#000, #000);
+  mask-composite: exclude;
+}
+
+/**
+ * Bulanıklık maskeden SONRA uygulanmalı, yoksa saçılma kartın dışına çıkmadan
+ * kırpılır. CSS'te maskeleme filtreden sonra geldiği için tek elemanda bu
+ * mümkün değil: dış kap bulanıklaştırır, içteki çocuk maskelenmiş halkayı
+ * çizer. Bu yüzden iç içe iki eleman var.
+ */
+.glow-card__aura {
+  inset: -2px;
+  filter: blur(17px) brightness(1.15);
+}
+
+.glow-card__aura > span {
+  position: absolute;
+  inset: 0;
+  display: block;
+  padding: 4px;
+  border-radius: inherit;
+  background: radial-gradient(
+    calc(var(--glow-size) * 0.9) calc(var(--glow-size) * 0.9) at var(--glow-x) var(--glow-y),
+    hsl(var(--glow-hue) var(--glow-sat) 100%) 0%,
+    hsl(var(--glow-hue) var(--glow-sat) 92% / 0.85) 30%,
+    transparent 68%
+  );
+  -webkit-mask:
+    linear-gradient(#000, #000) content-box,
+    linear-gradient(#000, #000);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000, #000) content-box,
+    linear-gradient(#000, #000);
+  mask-composite: exclude;
+}
+
+.glow-card__sheen {
+  background: radial-gradient(
+    calc(var(--glow-size) * 1.1) calc(var(--glow-size) * 1.1) at var(--glow-x) var(--glow-y),
+    hsl(var(--glow-hue) var(--glow-sat) 90% / 0.09) 0%,
+    transparent 68%
+  );
+}
+
+@media (hover: hover) {
+  .glow-card:hover {
+    --glow-opacity: 1;
+  }
+
+  /** İşletme adı, kart yanarken tüp harf gibi beyaza çıkar. */
+  .dark .glow-card:hover .glow-card-title {
+    text-shadow:
+      0 0 1px rgba(255, 255, 255, 0.45),
+      0 0 12px rgba(255, 255, 255, 0.22);
+  }
+}
+
+/**
+ * Klavyeyle gezen kullanıcı aynı geri bildirimi alır (A-01). Global odak
+ * halkası bilinçli olarak KALDIRILMADI: ışıma bir vurgudur, tek başına
+ * "buradasın" demek için yeterince kesin değil.
+ */
+.glow-card:focus-visible {
+  --glow-opacity: 1;
+}
+
+/**
+ * ── YÜZEN ETİKETLİ ALANLAR (FloatingField) ───────────────────────────────
+ *
+ * Etiket, alan boşken içeride ortada durur; odaklanınca veya değer girilince
+ * küçülüp üst kenara çıkar.
+ *
+ * Kaynak bileşen etiketin arkasına OPAK BİR ZEMİN koyup kenarlığı örtüyordu
+ * (`bg-background`). Bu kod tabanında işe yaramaz: alanların dolgusu beyaz /
+ * ink-950 iken kartların dolgusu beyaz / ink-900. Opak etiket, kartın üstünde
+ * farklı renkte bir yama olarak görünürdü.
+ *
+ * Onun yerine kenarlığı `fieldset` çiziyor, `legend` de gerçek bir BOŞLUK
+ * açıyor — tarayıcı üst kenarlığı legend'in olduğu yerde kesiyor. Hiçbir renk
+ * eşleşmesine ihtiyaç yok, alan hangi yüzeyin üstünde olursa olsun doğru.
+ *
+ * Yüzme koşulu CSS'te, JS'te değil: `:focus` veya `:not(:placeholder-shown)`.
+ * Bu ikincisi `<select>`, `type="date"` ve `type="time"` için hep doğru olduğu
+ * için o alanların etiketi kendiliğinden yukarıda kalıyor — ayrı bir bayrak
+ * gerekmiyor.
+ */
+.float-field {
+  position: relative;
+  display: block;
+  border-radius: theme("borderRadius.control");
+  background-color: #fff;
+}
+
+.dark .float-field {
+  background-color: theme("colors.ink.950");
+}
+
+.float-field__control {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 2.75rem;
+  border: 0;
+  border-radius: inherit;
+  background-color: transparent;
+  padding: 0 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: theme("colors.ink.900");
+  outline: none;
+}
+
+.dark .float-field__control {
+  color: theme("colors.ink.100");
+}
+
+/**
+ * Arama yapılabilen seçim kutusunun (SearchableSelect) tetikleyicisi bir
+ * `button`; aynı iskeleti kullanabilsin diye yerleşimi burada ayrışıyor.
+ */
+button.float-field__control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+/** Salt okunur sonuç kutusu (FloatingDisplay). */
+.float-field__display {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.float-field__control::placeholder {
+  color: transparent;
+}
+
+/**
+ * Biçim ipucu taşıyan yer tutucular (telefon maskesi, tarih biçimi) yalnızca
+ * alan odaktayken görünür: etiket yukarı çıkmadan önce gösterilse ikisi üst
+ * üste biner.
+ */
+.float-field__control:focus::placeholder {
+  color: theme("colors.ink.400");
+}
+
+.float-field__control:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.float-field__control[readonly] {
+  cursor: default;
+}
+
+.float-field__control[type="search"]::-webkit-search-cancel-button,
+.float-field__control[type="search"]::-webkit-search-decoration,
+.float-field__control[type="search"]::-webkit-search-results-button,
+.float-field__control[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.float-field[data-multiline] .float-field__control {
+  height: auto;
+  min-height: 6rem;
+  padding: 0.8125rem 0.875rem;
+  resize: vertical;
+}
+
+/** Dar varyant: araç çubuklarındaki tarih aralığı ve filtreler için. */
+.float-field[data-size="sm"] .float-field__control {
+  height: 2.25rem;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.float-field[data-size="sm"] .float-field__label {
+  left: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.float-field[data-size="sm"] .float-field__icon,
+.float-field[data-size="sm"] .float-field__chevron {
+  top: 1.125rem;
+}
+
+.float-field[data-select] .float-field__control {
+  appearance: none;
+  padding-right: 2.25rem;
+  cursor: pointer;
+}
+
+.float-field[data-icon] .float-field__control {
+  padding-left: 2.5rem;
+}
+
+.float-field__icon {
+  position: absolute;
+  left: 0.875rem;
+  top: 1.375rem;
+  z-index: 2;
+  translate: 0 -50%;
+  pointer-events: none;
+  color: theme("colors.ink.500");
+}
+
+.float-field__chevron {
+  position: absolute;
+  right: 0.875rem;
+  top: 1.375rem;
+  z-index: 2;
+  translate: 0 -50%;
+  pointer-events: none;
+  color: theme("colors.ink.500");
+}
+
+.float-field__label {
+  position: absolute;
+  left: 0.875rem;
+  top: 50%;
+  z-index: 2;
+  transform-origin: 0 50%;
+  transform: translateY(-50%);
+  max-width: calc(100% - 1.75rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: theme("colors.ink.500");
+  pointer-events: none;
+  transition:
+    transform 180ms theme("transitionTimingFunction.out-strong"),
+    color 180ms ease,
+    top 180ms theme("transitionTimingFunction.out-strong");
+}
+
+.dark .float-field__label {
+  color: theme("colors.ink.400");
+}
+
+.float-field[data-icon] .float-field__label {
+  left: 2.5rem;
+}
+
+.float-field[data-multiline] .float-field__label {
+  top: 0.8125rem;
+  transform: translateY(0);
+}
+
+/**
+ * Yüzen konum: etiketin merkezi üst kenarlığın üstüne oturur. İkonlu alanlarda
+ * da sola 0.875rem'e geliyor — çentik hep aynı yerde açıldığı için etiketin
+ * ikonun hizasında kalması çentikle uyuşmazdı.
+ */
+.float-field__control:focus ~ .float-field__label,
+.float-field__control:not(:placeholder-shown) ~ .float-field__label,
+.float-field[data-float="always"] .float-field__label {
+  top: 0;
+  left: 0.875rem;
+  transform: translateY(-50%) scale(0.75);
+}
+
+.float-field[data-size="sm"] .float-field__control:focus ~ .float-field__label,
+.float-field[data-size="sm"] .float-field__control:not(:placeholder-shown) ~ .float-field__label,
+.float-field[data-size="sm"][data-float="always"] .float-field__label {
+  left: 0.75rem;
+}
+
+.float-field__control:focus ~ .float-field__label {
+  color: theme("colors.ink.900");
+}
+
+.dark .float-field__control:focus ~ .float-field__label {
+  color: #fff;
+}
+
+/**
+ * Kenarlık ve çentik. `top: -5px` + `legend { height: 11px }` kombinasyonu
+ * kenarlık çizgisini tam olarak alanın üst kenarına getiriyor: tarayıcı
+ * fieldset'in üst kenarlığını legend'in dikey ortasından geçirir.
+ */
+.float-field__outline {
+  position: absolute;
+  top: -5px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  margin: 0;
+  padding: 0 0.5rem;
+  border: 1px solid theme("colors.ink.300");
+  border-radius: inherit;
+  pointer-events: none;
+  font-size: 0.875rem;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.dark .float-field__outline {
+  border-color: theme("colors.ink.700");
+}
+
+.float-field__outline legend {
+  float: unset;
+  display: block;
+  width: auto;
+  height: 11px;
+  padding: 0;
+  overflow: hidden;
+  visibility: hidden;
+  max-width: 0.01px;
+  white-space: nowrap;
+  font-size: 0.75em;
+  transition: max-width 120ms theme("transitionTimingFunction.out-strong");
+}
+
+.float-field__control:focus ~ .float-field__outline legend,
+.float-field__control:not(:placeholder-shown) ~ .float-field__outline legend,
+.float-field[data-float="always"] .float-field__outline legend {
+  max-width: 100%;
+}
+
+.float-field__outline legend > span {
+  display: inline-block;
+  padding: 0 0.3125rem;
+  opacity: 0;
+  visibility: visible;
+}
+
+@media (hover: hover) {
+  .float-field:hover .float-field__outline {
+    border-color: theme("colors.ink.400");
+  }
+
+  .dark .float-field:hover .float-field__outline {
+    border-color: theme("colors.ink.500");
+  }
+}
+
+/** Odak: kenarlık kalınlaşır ve rengi vurguya çıkar (aydınlıkta mürekkep,
+    karanlıkta beyaz) — panelin geri kalanıyla aynı monokrom dil. */
+.float-field__control:focus ~ .float-field__outline {
+  border-width: 2px;
+  border-color: theme("colors.ink.900");
+}
+
+.dark .float-field__control:focus ~ .float-field__outline {
+  border-color: #fff;
+}
+
+.float-field[data-invalid] .float-field__outline {
+  border-color: theme("colors.danger.500");
+}
+
+.float-field[data-invalid] .float-field__label,
+.float-field[data-invalid] .float-field__control:focus ~ .float-field__label {
+  color: theme("colors.danger.600");
+}
+
+.dark .float-field[data-invalid] .float-field__label,
+.dark .float-field[data-invalid] .float-field__control:focus ~ .float-field__label {
+  color: theme("colors.danger.400");
+}
+
+.float-field__control:disabled ~ .float-field__outline {
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+/**
+ * Chrome'un otomatik doldurma sarısı, alanın dolgusunu ve metin rengini ezip
+ * karanlık temada okunmaz hale getiriyordu. `box-shadow` ile içeriden boyamak
+ * bunu geçersiz kılmanın tek güvenilir yolu.
+ */
+.float-field__control:-webkit-autofill,
+.float-field__control:-webkit-autofill:hover,
+.float-field__control:-webkit-autofill:focus {
+  -webkit-text-fill-color: theme("colors.ink.900");
+  -webkit-box-shadow: inset 0 0 0 1000px #fff;
+  caret-color: theme("colors.ink.900");
+}
+
+.dark .float-field__control:-webkit-autofill,
+.dark .float-field__control:-webkit-autofill:hover,
+.dark .float-field__control:-webkit-autofill:focus {
+  -webkit-text-fill-color: theme("colors.ink.100");
+  -webkit-box-shadow: inset 0 0 0 1000px theme("colors.ink.950");
+  caret-color: #fff;
+}
+
+/**
+ * ── GOOEY ARAMA (GooeySearchBar) ─────────────────────────────────────────
+ *
+ * Kaynak bileşen siyah hap + SVG `feColorMatrix` ile damlacık birleşmesi
+ * kullanıyordu. Renkler shadcn token'ı değil: aydınlıkta mürekkep hap /
+ * beyaz yazı, karanlıkta beyaz hap / mürekkep yazı — sitedeki surface-neon
+ * ile aynı kontrast dili.
+ */
+.gooey-search {
+  --gooey-blob: #0a0a0c;
+  --gooey-ink: #fff;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.dark .gooey-search {
+  --gooey-blob: #fff;
+  --gooey-ink: #0a0a0c;
+}
+
+.gooey-search.no-goo {
+  filter: none !important;
+}
+
+.gooey-search[data-expanded] {
+  z-index: theme("zIndex.dropdown");
+}
+
+.gooey-search__svg {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.gooey-search__stage {
+  position: relative;
+  height: 2.75rem;
+}
+
+.gooey-search__inner {
+  position: relative;
+  height: 2.75rem;
+}
+
+.gooey-search__btn {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--gooey-blob);
+  color: var(--gooey-ink);
+  cursor: pointer;
+}
+
+.gooey-search__label,
+.gooey-search__input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-align: center;
+  outline: none;
+}
+
+.gooey-search__input {
+  height: 100%;
+  padding: 0 1rem;
+  text-align: left;
+  font-weight: 600;
+}
+
+.gooey-search__input::placeholder {
+  color: color-mix(in srgb, var(--gooey-ink) 55%, transparent);
+}
+
+.gooey-search__input::-webkit-search-cancel-button,
+.gooey-search__input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.gooey-search__results {
+  position: absolute;
+  inset: 0 auto auto 0;
+  z-index: 1;
+  width: 100%;
+  pointer-events: none;
+}
+
+.gooey-search__result {
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  width: 100%;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: var(--gooey-blob);
+  padding: 0 1rem;
+  color: var(--gooey-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.gooey-search__result.is-empty {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.gooey-search__info {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+}
+
+.gooey-search__result-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.gooey-search__result-hint {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.625rem;
+  font-weight: 600;
+  opacity: 0.6;
+}
+
+.gooey-search__orb {
+  position: absolute;
+  top: 0;
+  right: -2.85rem;
+  z-index: 2;
+  display: flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--gooey-blob);
+  color: var(--gooey-ink);
+  pointer-events: none;
+}
+
+.gooey-search__glyph {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+
+.gooey-search__spinner {
+  width: 0.9375rem;
+  height: 0.9375rem;
+  animation: gooey-spin 0.8s linear infinite;
+}
+
+@keyframes gooey-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.gooey-search__btn:focus-within {
+  box-shadow: 0 0 0 2px var(--gooey-ink);
+}
+
+.gooey-search--fill {
+  display: block;
+  width: 100%;
+  justify-content: stretch;
+}
+
+.gooey-search--fill .gooey-search__stage,
+.gooey-search--fill .gooey-search__inner,
+.gooey-search--fill .gooey-search__btn {
+  width: 100%;
+}
+
+.gooey-search--fill .gooey-search__label {
+  max-width: none;
+}
+
+.gooey-search--disabled {
+  pointer-events: none;
+}
+
+.gooey-search__results.is-scroll {
+  inset: auto;
+  top: calc(2.75rem + 0.5rem);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  width: 100%;
+  max-height: calc(var(--gooey-scroll-max, 4) * 2.75rem + (var(--gooey-scroll-max, 4) - 1) * 0.35rem);
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow-x: hidden;
+  overflow-y: auto;
+  pointer-events: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--gooey-ink) 35%, transparent) transparent;
+}
+
+.gooey-search__results.is-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.gooey-search__results.is-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gooey-ink) 35%, transparent);
+}
+
+.gooey-search__results.is-scroll .gooey-search__result {
+  position: relative;
+  top: auto;
+  left: auto;
+  flex-shrink: 0;
+}
+
+.gooey-search__label {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 1rem;
+}
+
+.gooey-field,
+.gooey-toggle,
+.gooey-segment {
+  --gooey-blob: #0a0a0c;
+  --gooey-ink: #fff;
+}
+
+.dark .gooey-field,
+.dark .gooey-toggle,
+.dark .gooey-segment {
+  --gooey-blob: #fff;
+  --gooey-ink: #0a0a0c;
+}
+
+.gooey-field {
+  display: flex;
+  width: 100%;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.55rem;
+  border-radius: 999px;
+  background: var(--gooey-blob);
+  color: var(--gooey-ink);
+  padding: 0 1.1rem;
+}
+
+.gooey-field.is-disabled,
+.gooey-field.is-muted,
+.gooey-field.is-readonly {
+  opacity: 1;
+}
+
+.gooey-field__label {
+  flex-shrink: 0;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+
+.gooey-field__input {
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-align: right;
+  outline: none;
+}
+
+.gooey-field__input::placeholder {
+  color: color-mix(in srgb, var(--gooey-ink) 50%, transparent);
+  font-weight: 600;
+}
+
+.gooey-field__input::-webkit-outer-spin-button,
+.gooey-field__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.gooey-field__input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.gooey-toggle {
+  display: inline-flex;
+  height: 2.75rem;
+  width: auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--gooey-blob);
+  color: var(--gooey-ink);
+  padding: 0 1rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.gooey-toggle.is-off .gooey-toggle__track {
+  background: color-mix(in srgb, var(--gooey-ink) 18%, transparent);
+}
+
+.gooey-toggle__icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+}
+
+.gooey-toggle__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gooey-toggle__track {
+  position: relative;
+  display: inline-flex;
+  height: 1.1rem;
+  width: 1.85rem;
+  flex-shrink: 0;
+  align-items: center;
+  margin-left: 0.15rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gooey-ink) 28%, transparent);
+}
+
+.gooey-toggle__knob {
+  display: block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 999px;
+  background: var(--gooey-ink);
+  transform: translateX(0.12rem);
+  transition: transform 160ms ease-out;
+}
+
+.gooey-toggle[aria-checked="true"] .gooey-toggle__knob {
+  transform: translateX(0.9rem);
+}
+
+.gooey-segment {
+  display: flex;
+  width: 100%;
+  height: 2.75rem;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gooey-blob) 16%, transparent);
+}
+
+.gooey-segment__btn {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: color-mix(in srgb, var(--gooey-blob) 72%, transparent);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 160ms ease-out, color 160ms ease-out;
+}
+
+.dark .gooey-segment__btn {
+  color: color-mix(in srgb, var(--gooey-ink) 55%, var(--gooey-blob));
+}
+
+.gooey-segment__btn.is-on {
+  background: var(--gooey-blob);
+  color: var(--gooey-ink);
+}
+
+.gooey-segment__btn:hover:not(.is-on) {
+  color: var(--gooey-blob);
+}
+
+.dark .gooey-segment__btn:hover:not(.is-on) {
+  color: var(--gooey-ink);
+}
+
+.gooey-search--disabled,
+.gooey-field.is-disabled,
+.gooey-field.is-muted,
+.gooey-field.is-readonly,
+.gooey-toggle.is-off {
+  --gooey-blob: #e4e4e7;
+  --gooey-ink: #0a0a0c;
+}
+
+.dark .gooey-search--disabled,
+.dark .gooey-field.is-disabled,
+.dark .gooey-field.is-muted,
+.dark .gooey-field.is-readonly,
+.dark .gooey-toggle.is-off {
+  --gooey-blob: #0a0a0c;
+  --gooey-ink: #f4f4f5;
+}
+
+/**
+ * Detaylı analiz tarih tetikleyicisi + takvim popover.
+ */
+.date-field-trigger {
+  display: inline-flex;
+  min-height: 2.5rem;
+  min-width: 9.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--footer-ink, 10 10 12) / 0.12);
+  background: #0a0a0c;
+  color: #fff;
+  padding: 0.35rem 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dark .date-field-trigger {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: #0a0a0c;
+  color: #fff;
+}
+
+.date-field-trigger__label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.62;
+  white-space: nowrap;
+}
+
+.date-field-trigger__value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.date-field-trigger__icon {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.date-field-popover {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  left: 0;
+  z-index: theme("zIndex.dropdown");
+  border-radius: 1rem;
+  border: 1px solid rgb(226 226 230);
+  background: #fff;
+  padding: 0.75rem;
+  box-shadow: 0 16px 40px -18px rgba(8, 8, 10, 0.35);
+}
+
+.dark .date-field-popover {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #16161a;
+  box-shadow: 0 16px 40px -18px rgba(0, 0, 0, 0.7);
+}
+
+.rdp-adadoviz.rdp-root,
+.rdp-adadoviz {
+  --rdp-accent-color: #0a0a0c;
+  --rdp-accent-background-color: #eeeef0;
+  --rdp-selected-border: 0;
+  --rdp-today-color: #0a0a0c;
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-height: 34px;
+  --rdp-day_button-width: 34px;
+  --rdp-day_button-border-radius: 999px;
+  color: #0a0a0c;
+}
+
+.dark .rdp-adadoviz.rdp-root,
+.dark .rdp-adadoviz {
+  --rdp-accent-color: #fff;
+  --rdp-accent-background-color: rgba(255, 255, 255, 0.12);
+  --rdp-today-color: #fff;
+  color: #fff;
+}
+
+.rdp-adadoviz .rdp-selected .rdp-day_button {
+  background: #0a0a0c;
+  color: #fff;
+  border: 0;
+}
+
+.dark .rdp-adadoviz .rdp-selected .rdp-day_button {
+  background: #fff;
+  color: #0a0a0c;
+}
+
+
+/**
+ * Mobil alt çubuk. md+ ekranda SiteNav zaten üstte; bu yalnızca küçük
+ * ekran. `padding-bottom` güvenli alan (iPhone home indicator).
+ */
+.site-downbar {
+  --gooey-blob: #0a0a0c;
+  --gooey-ink: #fff;
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: theme("zIndex.sticky");
+  padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  pointer-events: none;
+}
+
+.site-downbar__inner {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 0 auto;
+  max-width: 28rem;
+}
+
+.site-downbar__item {
+  display: inline-flex;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  border: 0;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--gooey-blob, #0a0a0c) 92%, transparent);
+  padding: 0.35rem 0.55rem;
+  color: var(--gooey-ink, #fff);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.dark .site-downbar {
+  --gooey-blob: #fff;
+  --gooey-ink: #0a0a0c;
+}
+
+.site-downbar__item[aria-current="page"] {
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--gooey-ink, #fff) 55%, transparent);
+}
+
+.site-downbar__search {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-bottom: 0.1rem;
+}
+
+@media (min-width: 768px) {
+  .site-downbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gooey-search__spinner {
+    animation: none;
+  }
+}
+
+/**
+ * ── SİNEMATİK ALT BÖLÜM (CinematicFooter) ────────────────────────────────
+ *
+ * Kaynak bileşen shadcn token'ları (--foreground, --primary, --destructive) ve
+ * `color-mix(in oklch, …)` üzerine kuruluydu; bu kod tabanında o token'lar yok.
+ * Bunun yerine TEK bir kanal değişkeni var: `--footer-ink`. Aydınlık temada
+ * mürekkep, karanlık temada beyaz. Böylece aşağıdaki her kural iki temada
+ * çalışıyor ve her biri için ayrı `dark:` kopyası yazmak gerekmiyor.
+ */
+.cinematic-footer {
+  --footer-ink: 8 8 10;
+  /* Kaydırma ilerlemesi JS'ten yazılır: 0 = perde kapalı, 1 = tam açık. */
+  --footer-progress: 0;
+  --footer-reveal: 0;
+}
+
+.dark .cinematic-footer {
+  --footer-ink: 255 255 255;
+}
+
+@keyframes footer-breathe {
+  from {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1.12);
+    opacity: 0.9;
+  }
+}
+
+@keyframes footer-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes footer-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.5);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 6px rgb(16 185 129 / 0);
+  }
+}
+
+.footer-breathe {
+  animation: footer-breathe 9s ease-in-out infinite alternate;
+}
+
+.footer-marquee-track {
+  animation: footer-marquee 45s linear infinite;
+}
+
+.footer-live-dot {
+  animation: footer-pulse 2.4s ease-in-out infinite;
+}
+
+/**
+ * Arka plan ızgarası — panodaki dokuyla aynı 72 px aralık ve aynı renksizlik.
+ * Maske üstte ve altta yumuşatıyor; kenarda kesilen ızgara "kırpılmış" durur.
+ */
+.footer-grid {
+  background-size: 72px 72px;
+  background-image:
+    linear-gradient(to right, rgb(var(--footer-ink) / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--footer-ink) / 0.06) 1px, transparent 1px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+}
+
+/** Ortam ışığı. Kaynakta primary+secondary renk geçişiydi; artık beyaz ışık. */
+.footer-aurora {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(var(--footer-ink) / 0.1) 0%,
+    rgb(var(--footer-ink) / 0.04) 45%,
+    transparent 70%
+  );
+}
+
+/**
+ * Cam pill. `background` gradyanı geçiş kabul etmediği için animasyon
+ * yalnızca kenarlık, gölge ve metin renginde — gradyan anında değişiyor.
+ *
+ * Geçiş listesinde `transform` VAR ve ilk sırada: manyetik etki JS'ten
+ * yalnızca `style.transform` yazıyor, süresini bu kural veriyor. Böylece JS
+ * inline `transition` yazmak zorunda kalmıyor ve renk geçişlerini ezmiyor.
+ */
+.footer-glass-pill {
+  background: linear-gradient(
+    145deg,
+    rgb(var(--footer-ink) / 0.06) 0%,
+    rgb(var(--footer-ink) / 0.02) 100%
+  );
+  border: 1px solid rgb(var(--footer-ink) / 0.1);
+  box-shadow:
+    0 10px 30px -12px rgb(0 0 0 / 0.55),
+    inset 0 1px 0 rgb(var(--footer-ink) / 0.12);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform-style: preserve-3d;
+  transition:
+    transform 400ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 260ms ease,
+    box-shadow 260ms ease,
+    color 260ms ease;
+}
+
+/**
+ * İmleç ayrıldığında dönüş biraz aşarak yerine oturur (back-out). GSAP'in
+ * `elastic.out` eğrisinin tek yaylanmalı karşılığı; kütüphane eklemeden
+ * aynı "çekip bıraktım" hissini veriyor.
+ */
+.footer-glass-pill[data-magnet="release"] {
+  transition:
+    transform 820ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 260ms ease,
+    box-shadow 260ms ease,
+    color 260ms ease;
+}
+
+@media (hover: hover) {
+  .footer-glass-pill:hover {
+    border-color: rgb(var(--footer-ink) / 0.4);
+    box-shadow:
+      0 20px 44px -14px rgb(0 0 0 / 0.6),
+      inset 0 1px 0 rgb(var(--footer-ink) / 0.22),
+      0 0 26px -8px rgb(var(--footer-ink) / 0.35);
+  }
+}
+
+/**
+ * Dev arka plan yazısı. Kaynakta 26vw idi ve 6 harflik bir kelime içindi;
+ * "ADADÖVİZ" 8 harf, o boyutta ekranın iki katına taşıyordu. İçi boş, yalnızca
+ * ince kontur ve üstten aşağı sönen bir dolgu — okunacak bir metin değil,
+ * derinlik katmanı.
+ */
+.footer-giant-text {
+  font-size: 17vw;
+  line-height: 0.78;
+  font-weight: 900;
+  letter-spacing: -0.055em;
+  color: transparent;
+  -webkit-text-stroke: 1px rgb(var(--footer-ink) / 0.07);
+  background: linear-gradient(180deg, rgb(var(--footer-ink) / 0.11) 0%, transparent 62%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  /* Perde açılırken aşağıdan yükselir. */
+  opacity: var(--footer-progress);
+  transform: translateX(-50%) translateY(calc((1 - var(--footer-progress)) * 8vh))
+    scale(calc(0.86 + var(--footer-progress) * 0.14));
+}
+
+/** Metalik başlık — beyazdan yarı saydama sönen dolgu + beyaz ışıma. */
+.footer-text-glow {
+  background: linear-gradient(
+    180deg,
+    rgb(var(--footer-ink)) 0%,
+    rgb(var(--footer-ink) / 0.45) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 22px rgb(var(--footer-ink) / 0.28));
+}
+
+/** İçerik, perde açıldıkça yükselir (JS `--footer-reveal` yazar). */
+.footer-reveal {
+  opacity: var(--footer-reveal);
+  transform: translateY(calc((1 - var(--footer-reveal)) * 42px));
+}
+
+/**
+ * Hareket azaltma tercihinde perde sabit kalır: içerik ilk kareden itibaren
+ * tam görünür olur, yoksa animasyonları kapatan global kural yüzünden
+ * `--footer-*` 0'da donup içerik hiç görünmeyebilir.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .cinematic-footer {
+    --footer-progress: 1;
+    --footer-reveal: 1;
+  }
+
+  .footer-giant-text,
+  .footer-reveal {
+    transform: translateY(0);
+  }
+
+  .footer-giant-text {
+    transform: translateX(-50%);
   }
 }
 

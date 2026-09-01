@@ -3,9 +3,11 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider } from "./context/LanguageContext";
+import { OfficeSearchProvider } from "./context/OfficeSearchContext";
 import { V0FinancialDashboard } from "./components/V0FinancialDashboard";
-import { Footer } from "./components/Footer";
+import { CinematicFooter } from "./components/ui/motion-footer";
 import { CookieConsent } from "./components/CookieConsent";
+import { SiteDownbar } from "./components/SiteDownbar";
 import { SeoHead } from "./components/SeoHead";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ModalA11yGuard } from "./components/ModalA11yGuard";
@@ -26,6 +28,12 @@ const SuperAdminDashboard = lazy(() =>
 );
 const ExchangeOfficePage = lazy(() =>
   import("./pages/ExchangeOfficePage").then((m) => ({ default: m.ExchangeOfficePage }))
+);
+const ComparePage = lazy(() =>
+  import("./pages/ComparePage").then((m) => ({ default: m.ComparePage }))
+);
+const PricingPage = lazy(() =>
+  import("./pages/PricingPage").then((m) => ({ default: m.PricingPage }))
 );
 const ResetPasswordPage = lazy(() =>
   import("./pages/ResetPassword").then((m) => ({ default: m.ResetPasswordPage }))
@@ -69,11 +77,32 @@ function AppShell() {
         İçeriğe geç
       </a>
 
-      <div id="main-content" className="flex-1">
+      {/*
+        Sinematik footer bir PERDE: sabit konumda durur, sayfa yüzeyi onun
+        üzerinden kayarak açılır. Perdenin okunması için yüzeyin nerede bittiği
+        belli olmalı — kendi opak zemini ve alt kenarı olmadan iki katman aynı
+        renkte kalıyor, sayfa açılıyormuş gibi değil sadece uzuyormuş gibi
+        görünüyordu. Karanlık temada bu kenarı GÖLGE anlatamıyor (siyah üstüne
+        siyah), ince bir IŞIK çizgisi anlatıyor; aydınlık temada tam tersi.
+
+        Bilerek z-index YOK: `#main-content` bir yığınlama bağlamı açtığı anda
+        panonun sabit arka plan katmanları (ortam ışıkları, ızgara) footer'ın
+        üstüne çıkıyor ve perdeyi boyuyor.
+      */}
+      <div
+        id="main-content"
+        className={`flex-1 ${
+          adminRoute
+            ? ""
+            : "max-md:pb-24 rounded-b-[2rem] border-b border-ink-200 bg-ink-50 shadow-[0_28px_60px_-28px_rgba(8,8,10,0.35)] dark:border-white/20 dark:bg-ink-950 dark:shadow-[0_2px_0_-1px_rgba(255,255,255,0.10),0_24px_50px_-20px_rgba(0,0,0,0.95)]"
+        }`}
+      >
         <ErrorBoundary onNavigateHome={() => navigate("/")} homeLabel="Ana sayfa">
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<V0FinancialDashboard />} />
+              <Route path="/kiyasla" element={<ComparePage />} />
+              <Route path="/paketler" element={<PricingPage />} />
               <Route path="/doviz-burosu/:slug" element={<ExchangeOfficePage />} />
               <Route path="/admin" element={<InstitutionAdminPage />} />
               <Route path="/super-admin" element={<SuperAdminDashboard />} />
@@ -86,7 +115,8 @@ function AppShell() {
         </ErrorBoundary>
       </div>
 
-      {!adminRoute ? <Footer /> : null}
+      {!adminRoute ? <CinematicFooter /> : null}
+      {!adminRoute ? <SiteDownbar /> : null}
       {!adminRoute ? <CookieConsent /> : null}
     </main>
   );
@@ -104,7 +134,9 @@ function App() {
           <SeoHead />
           {/* A-03: tüm modallara odak tuzağı + Esc + erişilebilir ad. */}
           <ModalA11yGuard />
-          <AppShell />
+          <OfficeSearchProvider>
+            <AppShell />
+          </OfficeSearchProvider>
         </AuthProvider>
       </LanguageProvider>
     </ThemeProvider>

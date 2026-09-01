@@ -71,7 +71,9 @@ export function ThemeToggle({ className = "", compact = false }) {
         {/* Kayan topuz */}
         <span
           className={`absolute left-1 flex items-center justify-center rounded-full transition-transform duration-300 ease-out ${knob} ${
-            isDark ? "translate-x-0 bg-ink-800" : `${shift} bg-brand-500`
+            /* (beyaz neon) Aydınlık taraftaki topuz vurgu rengiyle (magenta)
+               doluyordu; palette artık renkli vurgu yok, topuz mat siyah. */
+            isDark ? "translate-x-0 bg-ink-800" : `${shift} bg-ink-950`
           }`}
         >
           {isDark ? (

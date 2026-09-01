@@ -16,29 +16,38 @@ import { Link, useLocation } from "react-router-dom";
  * ise gerçek HTML metni — böylece uygulamanın Inter yazı tipini kullanır, her
  * ekran yoğunluğunda keskin kalır, temaya kendiliğinden uyar ve filtre gerekmez.
  */
+/**
+ * ⚠️ TASARIM DÜZELTMESİ (beyaz neon): İşaret, paletten kaldırılmış ESKİ marka
+ * renginin gradyanını (#5697ae → #0e7490) sabit hex olarak taşıyordu. Site
+ * mat siyah + beyaz neona geçtikten sonra ekranda kalan tek keyfi renk buydu.
+ *
+ * Artık tek renkli ve `currentColor` ile sürülüyor — temayı kendiliğinden
+ * takip ediyor. Oklar boyanmıyor, karenin İÇİNDEN OYULUYOR (maske): böylece
+ * ikinci bir renk seçmek gerekmiyor, oklar her zaman arkadaki yüzeyin rengi
+ * oluyor ve kontrast garanti altında.
+ */
 function Mark({ className = "" }) {
   return (
     <svg viewBox="0 0 64 64" className={className} aria-hidden="true" focusable="false">
       <defs>
-        <linearGradient id="adaBrandMark" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#22d3ee" />
-          <stop offset="1" stopColor="#0e7490" />
-        </linearGradient>
+        <mask id="adaBrandMarkCut">
+          <rect width="64" height="64" rx="15" fill="#fff" />
+          {/* Karşılıklı akan iki ok — döviz değişiminin evrensel jesti. */}
+          <g
+            fill="none"
+            stroke="#000"
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M18 25h22" />
+            <path d="M34.5 19.5 40 25l-5.5 5.5" />
+            <path d="M46 39H24" />
+            <path d="M29.5 33.5 24 39l5.5 5.5" />
+          </g>
+        </mask>
       </defs>
-      <rect width="64" height="64" rx="15" fill="url(#adaBrandMark)" />
-      {/* Karşılıklı akan iki ok — döviz değişiminin evrensel jesti. */}
-      <g
-        fill="none"
-        stroke="#ffffff"
-        strokeWidth="5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M18 25h22" />
-        <path d="M34.5 19.5 40 25l-5.5 5.5" />
-        <path d="M46 39H24" opacity=".88" />
-        <path d="M29.5 33.5 24 39l5.5 5.5" opacity=".88" />
-      </g>
+      <rect width="64" height="64" rx="15" fill="currentColor" mask="url(#adaBrandMarkCut)" />
     </svg>
   );
 }
@@ -63,7 +72,7 @@ export function BrandLogo({ className = "", compact = false }) {
       } ${className}`}
     >
       <Mark
-        className={`shrink-0 ${
+        className={`shrink-0 text-ink-950 dark:text-white dark:drop-shadow-[0_0_10px_rgba(255,255,255,0.35)] ${
           compact ? "size-8" : "size-9 sm:size-10"
         } transition-transform duration-300 group-hover:scale-[1.04]`}
       />
@@ -71,8 +80,8 @@ export function BrandLogo({ className = "", compact = false }) {
       {/*
         Kelime markası ağırlık kontrastıyla kuruluyor (renk kontrastıyla değil):
         "Ada" orta ağırlık ve yumuşak ton, "Döviz" kalın ve tam kontrast.
-        Renk vurgusunu işaret taşıyor — bu hem gradyanlı metinden daha olgun
-        durur hem de kontrast sorunu yaratmaz (bkz. denetim bulgusu A-05).
+        Bütün kimlik artık tek renk üzerinden çalışıyor — ayrım renkte değil
+        ağırlıkta ve parlaklıkta (bkz. denetim bulgusu A-05).
       */}
       <span
         className={`whitespace-nowrap font-sans tracking-tight ${

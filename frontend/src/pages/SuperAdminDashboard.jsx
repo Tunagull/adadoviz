@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
+import { ActivityLogPanel } from "../components/ActivityLogPanel";
 import {
   createAdminBusiness,
   fetchAdminBusinesses,
@@ -49,6 +50,7 @@ import {
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
+import { FloatingInput, FloatingTextarea } from "../components/ui/floating-label";
 import { HeaderActions } from "../components/HeaderActions";
 import { SearchableSelect } from "../components/SearchableSelect";
 
@@ -245,8 +247,8 @@ function SubscriptionFields({ form, setForm }) {
   return (
     <>
       <div className="flex flex-col gap-2">
-        <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("subscriptionTypeLabel")}</label>
         <SearchableSelect
+          label={t("subscriptionTypeLabel")}
           value={form.subscriptionType}
           onChange={(subscriptionType) =>
             setForm((prev) => ({
@@ -265,27 +267,23 @@ function SubscriptionFields({ form, setForm }) {
 
       {form.subscriptionType === "Manuel" && (
         <>
-          <div className="flex flex-col gap-2 mt-1">
-            <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("customDaysLabel")}</label>
-            <input
-              type="number"
-              value={form.manualDays}
-              onChange={(e) => setForm((prev) => ({ ...prev, manualDays: e.target.value }))}
-              className="bg-white border border-ink-200 text-ink-800 rounded-lg px-4 py-2 focus:outline-none focus:border-success-500 dark:bg-ink-900 dark:border-ink-700 dark:text-ink-200"
-              placeholder={t("customDaysPlaceholder")}
-            />
-          </div>
-          <div className="flex flex-col gap-2 mt-1">
-            <label className="text-xs text-ink-500 font-medium dark:text-ink-400">{t("customPriceLabel")}</label>
-            <input
-              type="number"
-              min="0"
-              value={form.price}
-              onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
-              className="bg-white border border-ink-200 text-ink-800 rounded-lg px-4 py-2 focus:outline-none focus:border-success-500 dark:bg-ink-900 dark:border-ink-700 dark:text-ink-200"
-              placeholder={t("customPricePlaceholder")}
-            />
-          </div>
+          <FloatingInput
+            className="mt-1"
+            label={t("customDaysLabel")}
+            type="number"
+            value={form.manualDays}
+            onChange={(e) => setForm((prev) => ({ ...prev, manualDays: e.target.value }))}
+            placeholder={t("customDaysPlaceholder")}
+          />
+          <FloatingInput
+            className="mt-1"
+            label={t("customPriceLabel")}
+            type="number"
+            min="0"
+            value={form.price}
+            onChange={(e) => setForm((prev) => ({ ...prev, price: e.target.value }))}
+            placeholder={t("customPricePlaceholder")}
+          />
         </>
       )}
     </>
@@ -324,9 +322,9 @@ function SubscriptionLedgerButton({ active, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all duration-300 sm:text-sm ${
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong sm:text-sm ${
         active
-          ? "border-brand-500/40 bg-brand-500/20 text-brand-700 shadow-[0_0_12px_rgba(34,211,238,0.35)] dark:text-brand-300"
+          ? "border-brand-500/40 bg-brand-500/20 text-brand-700 shadow-[0_0_12px_rgba(47,123,149,0.35)] dark:text-brand-300"
           : "border-ink-200 bg-white text-ink-600 hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
       }`}
       title={t("subscriptionLedgerTitle")}
@@ -339,26 +337,25 @@ function SubscriptionLedgerButton({ active, onClick }) {
 
 function DateRangeFilter({ from, to, onFromChange, onToChange, t }) {
   return (
-    <div
-      className="flex h-10 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-950 px-2 text-xs text-ink-100"
-      title={t("dateRangeLabel")}
-    >
-      <input
+    <div className="flex items-center gap-1.5" title={t("dateRangeLabel")}>
+      <FloatingInput
+        label={t("dateFromLabel")}
+        size="sm"
+        className="min-w-0 flex-1"
         type="date"
         value={from}
         max={to || undefined}
         onChange={(e) => onFromChange(e.target.value)}
-        aria-label={t("dateFromLabel")}
-        className="min-w-0 flex-1 bg-transparent text-ink-100 outline-none [color-scheme:dark]"
       />
       <span className="text-ink-500">–</span>
-      <input
+      <FloatingInput
+        label={t("dateToLabel")}
+        size="sm"
+        className="min-w-0 flex-1"
         type="date"
         value={to}
         min={from || undefined}
         onChange={(e) => onToChange(e.target.value)}
-        aria-label={t("dateToLabel")}
-        className="min-w-0 flex-1 bg-transparent text-ink-100 outline-none [color-scheme:dark]"
       />
     </div>
   );
@@ -450,6 +447,7 @@ export function SuperAdminDashboard() {
       { id: "create", label: t("tabCreate") },
       { id: "requests", label: t("tabRequests") },
       { id: "health", label: t("tabHealth") },
+      { id: "logs", label: t("logsTitle") },
     ],
     [t]
   );
@@ -1252,7 +1250,7 @@ export function SuperAdminDashboard() {
         <button
           type="button"
           onClick={() => navigate("/")}
-          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/70 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
         >
           <ArrowLeft className="size-4" />
           {t("backToDashboardLink")}
@@ -1280,7 +1278,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={openSeoModal}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
           >
             <Search size={18} />
             {t("seoButton")}
@@ -1288,7 +1286,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={() => setShowLogModal(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-400"
           >
             <Activity size={18} />
             {t("logsButton")}
@@ -1296,7 +1294,7 @@ export function SuperAdminDashboard() {
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-all duration-300 hover:border-danger-500 hover:text-danger-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500 dark:hover:shadow-[0_0_15px_rgba(239,68,68,0.5)]"
+            className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-danger-500 hover:text-danger-500 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-300 dark:hover:border-danger-500 dark:hover:text-danger-500"
           >
             <LogOut size={16} />
             {t("logoutShort")}
@@ -1314,10 +1312,10 @@ export function SuperAdminDashboard() {
               setError("");
               setSuccess("");
             }}
-            className={`relative inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-300 ${
+            className={`relative inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong ${
               tab === item.id
                 ? "bg-brand-500/20 text-brand-700 border border-brand-500/40 dark:text-brand-300"
-                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80"
             }`}
           >
             {item.label}
@@ -1342,7 +1340,7 @@ export function SuperAdminDashboard() {
       ) : null}
 
       {tab === "list" && (
-        <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
           <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
             <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
               <Building2 size={18} className="text-brand-600 dark:text-brand-400" />
@@ -1455,7 +1453,7 @@ export function SuperAdminDashboard() {
             </div>
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full min-w-[1000px] text-left text-sm">
-                <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-500 dark:bg-ink-950/80 dark:text-ink-500">
+                <thead className="bg-ink-50 text-xs tracking-wide text-ink-600 dark:bg-ink-950/80 dark:text-ink-500">
                   <tr>
                     <th className="px-4 py-3 font-medium">{t("colId")}</th>
                     <th className="px-4 py-3 font-medium">{t("businessName")}</th>
@@ -1557,30 +1555,47 @@ export function SuperAdminDashboard() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+                          {/*
+                            ⚠️ TASARIM DÜZELTMESİ (D-21): İşlem sütunundaki üç
+                            buton etiketleriyle birlikte yatay sığmıyordu ve
+                            `flex-wrap` her birini ALT SATIRA atıyordu. Sonuç:
+                            satır yüksekliği ~100 px, ekranda aynı anda yalnızca
+                            2,5 işletme görünüyordu. Yönetim tablosunun işi
+                            karşılaştırma yapmak; satırların çoğu ekran dışında
+                            kalınca tablo işlevini kaybediyor.
+
+                            Yoğun tablolarda standart çözüm ikon eylemleridir.
+                            Etiketler `title` ve `aria-label` olarak korunuyor —
+                            ekran okuyucu ve fareyle üzerine gelme için bilgi
+                            kaybı yok, buna karşılık üç katı satır görünüyor.
+                          */}
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => openEdit(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-1.5 text-xs text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 hover:shadow-[0_0_15px_rgba(34,211,238,0.4)] dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:shadow-[0_0_15px_rgba(34,211,238,0.4)]"
+                              title={t("editBtn")}
+                              aria-label={t("editBtn")}
+                              className="inline-flex size-8 items-center justify-center rounded-control border border-ink-200 bg-white text-ink-600 transition-[background-color,border-color,color] duration-fast ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-300"
                             >
                               <Pencil size={14} />
-                              {t("editBtn")}
                             </button>
                             <button
                               type="button"
                               onClick={() => openBranchSubscriptionModal(biz)}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-brand-500/40 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-700 transition hover:border-brand-400 dark:text-brand-300"
+                              title={t("addSubscriptionBtn")}
+                              aria-label={t("addSubscriptionBtn")}
+                              className="inline-flex size-8 items-center justify-center rounded-control border border-brand-500/40 bg-brand-500/10 text-brand-700 transition-[background-color,border-color,color] duration-fast ease-out-strong hover:border-brand-400 dark:text-brand-300"
                             >
                               <CreditCard size={14} />
-                              {t("addSubscriptionBtn")}
                             </button>
                             <button
                               type="button"
                               onClick={() => setBusinessToDelete(biz)}
-                              className="btn-danger !px-3 !py-1.5 !text-xs"
+                              title={t("deleteBtn")}
+                              aria-label={t("deleteBtn")}
+                              className="inline-flex size-8 items-center justify-center rounded-control border border-danger-600/40 text-danger-700 transition-[background-color,border-color,color] duration-fast ease-out-strong hover:bg-danger-500/10 dark:border-danger-500/40 dark:text-danger-400"
                             >
                               <Trash2 size={14} />
-                              {t("deleteBtn")}
                             </button>
                           </div>
                         </td>
@@ -1608,7 +1623,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="shrink-0 border-b border-ink-200 px-5 pb-3 pt-5 dark:border-ink-800 md:px-6">
@@ -1671,62 +1686,52 @@ export function SuperAdminDashboard() {
                       name={editForm.institution_name}
                       onChange={(logo_url) => setEditForm((p) => ({ ...p, logo_url }))}
                     />
-                    <Field label={t("businessName")}>
-                      <input
-                        value={editForm.institution_name}
-                        onChange={(e) => setEditForm((p) => ({ ...p, institution_name: e.target.value }))}
-                        className={inputClass}
-                        required
-                      />
-                    </Field>
-                    <Field label={t("contactPerson")}>
-                      <input
-                        value={editForm.contact_person}
-                        onChange={(e) =>
-                          setEditForm((p) => ({
-                            ...p,
-                            contact_person: e.target.value.replace(/[0-9]/g, ""),
-                          }))
-                        }
-                        className={inputClass}
-                        placeholder={t("contactPersonPlaceholder")}
-                        required
-                      />
-                    </Field>
-                    <Field label={t("loginIdField")}>
-                      <input
-                        value={editForm.username}
-                        onChange={(e) => setEditForm((p) => ({ ...p, username: e.target.value }))}
-                        className={inputClass}
-                        placeholder={t("loginIdPlaceholder")}
-                        autoComplete="username"
-                        required
-                      />
-                    </Field>
-                    <Field label={t("businessEmailField")}>
-                      <input
-                        type="email"
-                        value={editForm.email}
-                        onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
-                        className={inputClass}
-                        placeholder={t("businessEmailPlaceholder")}
-                        autoComplete="email"
-                        required
-                      />
-                    </Field>
-                    <Field label={t("newPasswordOptionalField")}>
-                      <input
-                        type="password"
-                        value={editForm.password}
-                        onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
-                        className={inputClass}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
-                      />
-                    </Field>
+                    <FloatingInput
+                      label={t("businessName")}
+                      value={editForm.institution_name}
+                      onChange={(e) => setEditForm((p) => ({ ...p, institution_name: e.target.value }))}
+                      required
+                    />
+                    <FloatingInput
+                      label={t("contactPerson")}
+                      value={editForm.contact_person}
+                      onChange={(e) =>
+                        setEditForm((p) => ({
+                          ...p,
+                          contact_person: e.target.value.replace(/[0-9]/g, ""),
+                        }))
+                      }
+                      placeholder={t("contactPersonPlaceholder")}
+                      required
+                    />
+                    <FloatingInput
+                      label={t("loginIdField")}
+                      value={editForm.username}
+                      onChange={(e) => setEditForm((p) => ({ ...p, username: e.target.value }))}
+                      placeholder={t("loginIdPlaceholder")}
+                      autoComplete="username"
+                      required
+                    />
+                    <FloatingInput
+                      label={t("businessEmailField")}
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
+                      placeholder={t("businessEmailPlaceholder")}
+                      autoComplete="email"
+                      required
+                    />
+                    <FloatingInput
+                      label={t("newPasswordOptionalField")}
+                      type="password"
+                      value={editForm.password}
+                      onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
+                      autoComplete="new-password"
+                    />
 
-                    <Field label={t("branchLimitLabel")}>
-                      <input
+                    <div>
+                      <FloatingInput
+                        label={t("branchLimitLabel")}
                         type="number"
                         min="1"
                         step="1"
@@ -1734,7 +1739,6 @@ export function SuperAdminDashboard() {
                         onChange={(e) =>
                           setEditForm((p) => ({ ...p, branchLimit: e.target.value }))
                         }
-                        className={inputClass}
                         required
                       />
                       {/*
@@ -1751,7 +1755,7 @@ export function SuperAdminDashboard() {
                           </span>
                         </p>
                       ) : null}
-                    </Field>
+                    </div>
 
                     <div className="mt-2 flex flex-wrap gap-3">
                       <button type="submit" disabled={saving} className={primaryBtnClass}>
@@ -1834,7 +1838,7 @@ export function SuperAdminDashboard() {
                                 <span className="font-medium text-ink-900 dark:text-white">
                                   {branch.name}
                                   {!active ? (
-                                    <span className="ml-2 rounded bg-danger-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-danger-700 dark:text-danger-300">
+                                    <span className="ml-2 rounded bg-danger-500/15 px-1.5 py-0.5 text-[10px] font-bold text-danger-700 dark:text-danger-300">
                                       {t("statusInactive")}
                                     </span>
                                   ) : null}
@@ -1933,7 +1937,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            className="relative flex w-full max-w-2xl max-h-[90vh] flex-col overflow-hidden rounded-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="shrink-0 border-b border-ink-200 px-5 py-4 dark:border-ink-800 md:px-6">
@@ -2073,7 +2077,7 @@ export function SuperAdminDashboard() {
       ) : null}
 
       {tab === "create" && (
-        <section className="rounded-2xl border border-ink-200 bg-white p-5 md:p-6 dark:border-ink-800 dark:bg-ink-900/80">
+        <section className="rounded-card border border-ink-200 bg-white p-5 md:p-6 dark:border-ink-800 dark:bg-ink-900/80">
           <div className="mb-4 flex items-center gap-2">
             <Plus size={18} className="text-brand-600 dark:text-brand-400" />
             <h2 className="text-lg font-semibold text-ink-900 dark:text-white">{t("tabCreate")}</h2>
@@ -2084,72 +2088,60 @@ export function SuperAdminDashboard() {
               name={createForm.institution_name}
               onChange={(logo_url) => setCreateForm((p) => ({ ...p, logo_url }))}
             />
-            <Field label={t("businessName")}>
-              <input
-                value={createForm.institution_name}
-                onChange={(e) => setCreateForm((p) => ({ ...p, institution_name: e.target.value }))}
-                className={inputClass}
-                required
-              />
-            </Field>
-            <Field label={t("contactPerson")}>
-              <input
-                value={createForm.contact_person}
-                onChange={(e) =>
-                  setCreateForm((p) => ({
-                    ...p,
-                    contact_person: e.target.value.replace(/[0-9]/g, ""),
-                  }))
-                }
-                className={inputClass}
-                placeholder={t("contactPersonPlaceholder")}
-                required
-              />
-            </Field>
-            <Field label={t("loginIdField")}>
-              <input
-                value={createForm.username}
-                onChange={(e) => setCreateForm((p) => ({ ...p, username: e.target.value }))}
-                className={inputClass}
-                placeholder={t("loginIdPlaceholder")}
-                autoComplete="username"
-                required
-              />
-            </Field>
-            <Field label={t("businessEmailField")}>
-              <input
-                type="email"
-                value={createForm.email}
-                onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
-                className={inputClass}
-                placeholder={t("businessEmailPlaceholder")}
-                autoComplete="email"
-                required
-              />
-            </Field>
-            <Field label={t("passwordLabel")}>
-              <input
-                type="password"
-                value={createForm.password}
-                onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
-                className={inputClass}
-                required
-                autoComplete="new-password"
-              />
-            </Field>
-            <Field label={t("branchLimitLabel")}>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={createForm.branchLimit}
-                onChange={(e) =>
-                  setCreateForm((p) => ({ ...p, branchLimit: e.target.value }))
-                }
-                className={inputClass}
-                required
-              />
-            </Field>
+            <FloatingInput
+              label={t("businessName")}
+              value={createForm.institution_name}
+              onChange={(e) => setCreateForm((p) => ({ ...p, institution_name: e.target.value }))}
+              required
+            />
+            <FloatingInput
+              label={t("contactPerson")}
+              value={createForm.contact_person}
+              onChange={(e) =>
+                setCreateForm((p) => ({
+                  ...p,
+                  contact_person: e.target.value.replace(/[0-9]/g, ""),
+                }))
+              }
+              placeholder={t("contactPersonPlaceholder")}
+              required
+            />
+            <FloatingInput
+              label={t("loginIdField")}
+              value={createForm.username}
+              onChange={(e) => setCreateForm((p) => ({ ...p, username: e.target.value }))}
+              placeholder={t("loginIdPlaceholder")}
+              autoComplete="username"
+              required
+            />
+            <FloatingInput
+              label={t("businessEmailField")}
+              type="email"
+              value={createForm.email}
+              onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
+              placeholder={t("businessEmailPlaceholder")}
+              autoComplete="email"
+              required
+            />
+            <FloatingInput
+              label={t("passwordLabel")}
+              type="password"
+              value={createForm.password}
+              onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
+              required
+              autoComplete="new-password"
+            />
+            <FloatingInput
+              label={t("branchLimitLabel")}
+              type="number"
+              min="1"
+              step="1"
+              value={createForm.branchLimit}
+              onChange={(e) =>
+                setCreateForm((p) => ({ ...p, branchLimit: e.target.value }))
+              }
+              required
+            />
             <button type="submit" disabled={saving} className={primaryBtnClass}>
               {saving ? t("creatingBtn") : t("createBusinessBtn")}
             </button>
@@ -2158,7 +2150,7 @@ export function SuperAdminDashboard() {
       )}
 
       {tab === "requests" && (
-        <section className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
           <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
             <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
               <ClipboardList size={18} className="text-brand-600 dark:text-brand-400" />
@@ -2212,7 +2204,7 @@ export function SuperAdminDashboard() {
                       <div className="min-w-0 space-y-1">
                         <p className="font-semibold text-ink-900 dark:text-white">
                           {req.branch_name}
-                          <span className="ml-2 rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300">
+                          <span className="ml-2 rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-ink-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300">
                             {req.request_type === "reactivate"
                               ? t("requestTypeRenew")
                               : t("requestTypeNew")}
@@ -2293,8 +2285,8 @@ export function SuperAdminDashboard() {
           ) : healthData ? (
             <>
               <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                  <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthMbRates")}
                   </p>
                   <p className="mt-2 text-sm text-ink-800 dark:text-ink-100">
@@ -2320,8 +2312,8 @@ export function SuperAdminDashboard() {
                   ) : null}
                 </div>
 
-                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                  <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthDualWrite")}
                   </p>
                   <p className="mt-2 text-2xl font-bold text-ink-900 dark:text-white">
@@ -2342,8 +2334,8 @@ export function SuperAdminDashboard() {
                   )}
                 </div>
 
-                <div className="rounded-2xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-ink-500 dark:text-ink-400">
+                <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900/80">
+                  <p className="text-xs font-semibold tracking-wide text-ink-600 dark:text-ink-400">
                     {t("healthDriftTitle")}
                   </p>
                   {healthData.drift?.ok === false ? (
@@ -2384,7 +2376,7 @@ export function SuperAdminDashboard() {
                 </div>
               ) : null}
 
-              <div className="rounded-2xl border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+              <div className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
                 <div className="border-b border-ink-200 px-4 py-3 dark:border-ink-800">
                   <h2 className="font-semibold">{t("auditLogTitle")}</h2>
                 </div>
@@ -2426,6 +2418,17 @@ export function SuperAdminDashboard() {
         </section>
       )}
 
+      {tab === "logs" && (
+        <ActivityLogPanel
+          token={token}
+          mode="admin"
+          businesses={businesses.map((b) => ({
+            institution_id: b.institution_id,
+            institution_name: b.institution_name,
+          }))}
+        />
+      )}
+
       {ledgerView === "subscription" && (
         <div
           className="fixed inset-0 z-modal flex items-center justify-center bg-ink-950/70 backdrop-blur-sm p-3 sm:p-4"
@@ -2439,7 +2442,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex max-h-[90vh] w-[95%] max-w-3xl flex-col gap-4 overflow-hidden rounded-2xl border border-ink-200 bg-white p-4 shadow-2xl dark:border-ink-700 dark:bg-ink-900 md:w-full md:p-6"
+            className="relative flex max-h-[90vh] w-[95%] max-w-3xl flex-col gap-4 overflow-hidden rounded-card border border-ink-200 bg-white p-4 shadow-2xl dark:border-ink-700 dark:bg-ink-900 md:w-full md:p-6"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2462,10 +2465,8 @@ export function SuperAdminDashboard() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <label className="sr-only" htmlFor="ledger-business-filter">
-                {t("allBusinesses")}
-              </label>
               <SearchableSelect
+                label={t("selectBusinessFilter")}
                 value={ledgerScopeBusiness || ""}
                 onChange={(value) => setLedgerScopeBusiness(value || null)}
                 options={[
@@ -2474,7 +2475,6 @@ export function SuperAdminDashboard() {
                 ]}
                 placeholder={t("allBusinesses")}
                 className="min-w-[200px] flex-1 sm:flex-none sm:min-w-[260px]"
-                aria-label={t("allBusinesses")}
               />
             </div>
 
@@ -2531,7 +2531,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-card border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="shrink-0 border-b border-ink-200 px-5 py-4 dark:border-ink-800">
@@ -2563,85 +2563,65 @@ export function SuperAdminDashboard() {
                 <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
               ) : seoForm ? (
                 <form onSubmit={handleSeoSave} className="grid gap-4">
-                  <Field label={t("seoSiteName")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.site_name}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, site_name: e.target.value }))}
-                    />
-                  </Field>
-                  <Field label={t("seoTitle")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.title}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, title: e.target.value }))}
-                      required
-                    />
-                  </Field>
-                  <Field label={t("seoDescription")}>
-                    <textarea
-                      rows={3}
-                      className={`${inputClass} min-h-[88px] py-2`}
-                      value={seoForm.description}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, description: e.target.value }))}
-                      required
-                    />
-                  </Field>
-                  <Field label={t("seoKeywords")}>
-                    <textarea
-                      rows={2}
-                      className={`${inputClass} min-h-[64px] py-2`}
-                      value={seoForm.keywords}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, keywords: e.target.value }))}
-                    />
-                  </Field>
-                  <Field label={t("seoFocusQueries")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.focus_queries}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, focus_queries: e.target.value }))}
-                      placeholder="döviz, dolar tl, döviz bürosu, exchange..."
-                    />
-                  </Field>
-                  <Field label={t("seoCanonical")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.canonical_url}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, canonical_url: e.target.value }))}
-                    />
-                  </Field>
-                  <Field label={t("seoOgImage")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.og_image}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, og_image: e.target.value }))}
-                    />
-                  </Field>
+                  <FloatingInput
+                    label={t("seoSiteName")}
+                    value={seoForm.site_name}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, site_name: e.target.value }))}
+                  />
+                  <FloatingInput
+                    label={t("seoTitle")}
+                    value={seoForm.title}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, title: e.target.value }))}
+                    required
+                  />
+                  <FloatingTextarea
+                    label={t("seoDescription")}
+                    rows={3}
+                    value={seoForm.description}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, description: e.target.value }))}
+                    required
+                  />
+                  <FloatingTextarea
+                    label={t("seoKeywords")}
+                    rows={2}
+                    value={seoForm.keywords}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, keywords: e.target.value }))}
+                  />
+                  <FloatingInput
+                    label={t("seoFocusQueries")}
+                    value={seoForm.focus_queries}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, focus_queries: e.target.value }))}
+                    placeholder="döviz, dolar tl, döviz bürosu, exchange..."
+                  />
+                  <FloatingInput
+                    label={t("seoCanonical")}
+                    value={seoForm.canonical_url}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, canonical_url: e.target.value }))}
+                  />
+                  <FloatingInput
+                    label={t("seoOgImage")}
+                    value={seoForm.og_image}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, og_image: e.target.value }))}
+                  />
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label={t("seoGeoRegion")}>
-                      <input
-                        className={inputClass}
-                        value={seoForm.geo_region}
-                        onChange={(e) => setSeoForm((p) => ({ ...p, geo_region: e.target.value }))}
-                      />
-                    </Field>
-                    <Field label={t("seoGeoPlace")}>
-                      <input
-                        className={inputClass}
-                        value={seoForm.geo_placename}
-                        onChange={(e) =>
-                          setSeoForm((p) => ({ ...p, geo_placename: e.target.value }))
-                        }
-                      />
-                    </Field>
-                  </div>
-                  <Field label={t("seoRobots")}>
-                    <input
-                      className={inputClass}
-                      value={seoForm.robots}
-                      onChange={(e) => setSeoForm((p) => ({ ...p, robots: e.target.value }))}
+                    <FloatingInput
+                      label={t("seoGeoRegion")}
+                      value={seoForm.geo_region}
+                      onChange={(e) => setSeoForm((p) => ({ ...p, geo_region: e.target.value }))}
                     />
-                  </Field>
+                    <FloatingInput
+                      label={t("seoGeoPlace")}
+                      value={seoForm.geo_placename}
+                      onChange={(e) =>
+                        setSeoForm((p) => ({ ...p, geo_placename: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <FloatingInput
+                    label={t("seoRobots")}
+                    value={seoForm.robots}
+                    onChange={(e) => setSeoForm((p) => ({ ...p, robots: e.target.value }))}
+                  />
                   <label className="flex items-center gap-2 text-sm text-ink-700 dark:text-ink-200">
                     <input
                       type="checkbox"
@@ -2690,7 +2670,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -2745,7 +2725,7 @@ export function SuperAdminDashboard() {
               ) : (
                 <>
                   <div className="rounded-xl bg-ink-800 border border-ink-700/80 px-5 py-6 text-center">
-                    <p className="text-xs font-medium uppercase tracking-wide text-ink-600 dark:text-ink-400">
+                    <p className="text-xs font-medium tracking-wide text-ink-600 dark:text-ink-400">
                       {t("totalUniqueVisitors")}
                     </p>
                     <p className="mt-3 text-4xl font-bold text-success-400">
@@ -2771,6 +2751,7 @@ export function SuperAdminDashboard() {
                         t={t}
                       />
                       <SearchableSelect
+                        label={t("selectBusinessFilter")}
                         value={filterBusiness}
                         onChange={(value) => setFilterBusiness(value)}
                         options={[
@@ -2778,10 +2759,10 @@ export function SuperAdminDashboard() {
                           ...businessFilterOptions.map((name) => ({ value: name, label: name })),
                         ]}
                         placeholder={t("allBusinesses")}
-                        aria-label={t("allBusinesses")}
                       />
 
                       <SearchableSelect
+                        label={t("filterCurrencyLabel")}
                         value={filterCurrency}
                         onChange={(value) => setFilterCurrency(value)}
                         options={[
@@ -2789,10 +2770,10 @@ export function SuperAdminDashboard() {
                           ...currencyFilterOptions.map((cur) => ({ value: cur, label: cur })),
                         ]}
                         placeholder={t("allCurrencies")}
-                        aria-label={t("allCurrencies")}
                       />
 
                       <SearchableSelect
+                        label={t("actionTypeLabel")}
                         value={filterAction}
                         onChange={(value) => setFilterAction(value)}
                         options={[
@@ -2802,7 +2783,6 @@ export function SuperAdminDashboard() {
                           { value: "business", label: t("onlyBusinessViewers") },
                         ]}
                         placeholder={t("allActions")}
-                        aria-label={t("allActions")}
                       />
                     </div>
 
@@ -2863,6 +2843,7 @@ export function SuperAdminDashboard() {
                     t={t}
                   />
                   <SearchableSelect
+                    label={t("selectBusinessFilter")}
                     value={bizLogBusiness}
                     onChange={(value) => setBizLogBusiness(value)}
                     options={[
@@ -2870,10 +2851,10 @@ export function SuperAdminDashboard() {
                       ...bizLogBusinessOptions.map((name) => ({ value: name, label: name })),
                     ]}
                     placeholder={t("allBusinesses")}
-                    aria-label={t("selectBusinessFilter")}
                   />
 
                   <SearchableSelect
+                    label={t("actionTypeLabel")}
                     value={bizLogActionType}
                     onChange={(value) => setBizLogActionType(value)}
                     options={[
@@ -2883,7 +2864,6 @@ export function SuperAdminDashboard() {
                       { value: "branch", label: t("actionTypeBranch") },
                     ]}
                     placeholder={t("allActions")}
-                    aria-label={t("actionTypeLabel")}
                   />
                 </div>
 
@@ -2938,7 +2918,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -3004,7 +2984,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-sm shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -3057,7 +3037,7 @@ export function SuperAdminDashboard() {
           }}
         >
           <div role="dialog" aria-modal="true"
-            className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-xs shadow-2xl flex flex-col items-center text-center gap-3 dark:bg-ink-900 dark:border-ink-700"
+            className="relative rounded-card border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-xs shadow-2xl flex flex-col items-center text-center gap-3 dark:bg-ink-900 dark:border-ink-700"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
@@ -3089,17 +3069,5 @@ export function SuperAdminDashboard() {
     </div>
   );
 }
-
-function Field({ label, children }) {
-  return (
-    <label className="block space-y-1.5">
-      <span className="text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "h-11 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-800 outline-none transition focus:border-brand-400/70 focus:ring-2 focus:ring-brand-500/20 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-100";
 
 const primaryBtnClass = "btn-primary";
