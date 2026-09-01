@@ -750,38 +750,71 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           <div className="p-1.5"><ChevronRight size={16} /></div>
         </button>
 
-        {/* Merkez Kısım: Tarih Aralığı ve Büyüteç İkonu */}
-        <div className="absolute top-3 left-1/2 z-raised flex max-w-[calc(100%-5.5rem)] -translate-x-1/2 flex-col items-center justify-center gap-1 px-1">
-          <span className="max-w-full truncate text-center text-[10px] font-medium text-ink-500 dark:text-ink-400">
+        {/*
+          ⚠️ TASARIM DÜZELTMESİ (D-19): Kart başlığında ÜÇ ayrı hizalama vardı —
+          parite ve kur solda, tarih aralığı ortada, yön oku sağda. Ortadaki
+          blok üstelik dikey diziliyordu: tarihin ALTINDA, hiçbir etiketi
+          olmayan bir büyüteç ikonu tek başına asılı duruyordu; ne neye ait
+          olduğu ne de tıklanabilir olduğu okunuyordu.
+
+          Artık tarih ve büyüteç tek yatay öbek: "şu aralığı görüyorsun, büyütmek
+          için tıkla" tek bir fikir olarak okunuyor. Buton `press` ile basma
+          geri bildirimi de kazandı.
+        */}
+        <div className="absolute left-1/2 top-3 z-raised flex max-w-[calc(100%-5.5rem)] -translate-x-1/2 items-center justify-center gap-1.5 px-1">
+          <span className="max-w-full truncate text-[10px] font-medium text-ink-500 dark:text-ink-400">
             {formatHeaderDate(timeWindow.windowStart)} - {formatHeaderDate(timeWindow.windowEnd)}
           </span>
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
-            className="text-ink-500 hover:text-ink-800 transition-colors p-1 dark:text-ink-400 dark:hover:text-white"
+            className="press shrink-0 rounded-md p-1 text-ink-500 transition-colors hover:text-ink-800 dark:text-ink-400 dark:hover:text-white"
             title="Detaylı Analiz"
             aria-label="Grafiği büyüt"
           >
-            <ZoomIn size={16} />
+            <ZoomIn size={14} />
           </button>
         </div>
 
-        {/* Üst başlık */}
-        <div className="relative flex items-center justify-between mb-3 min-h-[4.5rem]">
-          <div>
-            <p className="text-xs uppercase text-ink-500 dark:text-ink-400">{currency}/TRY</p>
-            <p className="text-lg font-bold text-ink-800 mt-1 dark:text-ink-100">{last.toFixed(4)}</p>
-            <span className={`text-xs font-semibold ${isPositive ? 'text-success-700 dark:text-success-400' : 'text-danger-700 dark:text-danger-400'}`}>
-              {isPositive ? '+' : ''}{change}%
-            </span>
+        {/*
+          ⚠️ TASARIM DÜZELTMESİ (D-17): Kart başlığı tek bir bilgiyi ikiye
+          bölüyordu — değişim yüzdesi solda kurun altında, onun yön oku ise
+          kartın TAM DİĞER UCUNDA duruyordu. İkisi aynı şeyi söylüyor; okuyucu
+          "%-0.21" ile aşağı oku birleştirmek için gözünü kartın bir ucundan
+          diğerine götürmek zorundaydı. Artık ok ve yüzde tek bir öbekte.
+
+          İkinci düzeltme: ana kur `text-lg font-bold` ile yazılıyordu, oysa
+          ofis kartlarındaki aynı türden rakamlar `font-mono tabular-nums`
+          kullanıyor. Aynı veri iki ekranda iki farklı tipografiyle
+          gösteriliyordu. Sabit genişlikli rakam ayrıca kur her saniye
+          değişirken sayıların yerinden oynamasını da engelliyor.
+
+          `min-h-[4.5rem]` kaldırıldı: uyarı satırı yokken 72 px'lik boşluk
+          bırakıyordu.
+        */}
+        <div className="relative mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-ink-500 dark:text-ink-400">{currency}/TRY</p>
+            <p className="mt-1 font-mono text-xl font-bold tabular-nums tracking-tight text-ink-900 dark:text-white">
+              {last.toFixed(4)}
+            </p>
             {dataInfo?.isLimitedByAvailableData && period !== 'Yıllık' && (
-              <p className="text-[10px] text-warning-600/90 mt-1 dark:text-warning-400/80">
+              <p className="mt-1 text-[10px] text-warning-600/90 dark:text-warning-400/80">
                 Sınırlı geçmiş veri ({dataInfo.actualSpanDays} gün / {dataInfo.requestedSpanDays} gün gerekli)
               </p>
             )}
           </div>
 
-          {isPositive ? <TrendingUp size={20} className="text-success-700 dark:text-success-400" /> : <TrendingDown size={20} className="text-danger-700 dark:text-danger-400" />}
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 rounded-control px-2 py-1 font-mono text-xs font-semibold tabular-nums ${
+              isPositive
+                ? 'bg-success-500/10 text-success-700 dark:text-success-400'
+                : 'bg-danger-500/10 text-danger-700 dark:text-danger-400'
+            }`}
+          >
+            {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+            {isPositive ? '+' : ''}{change}%
+          </span>
         </div>
 
         {renderChartContent(false)}
@@ -2152,10 +2185,20 @@ export function V0FinancialDashboard() {
       <div className="pointer-events-none fixed -right-40 top-10 z-0 h-[45rem] w-[45rem] rounded-full bg-brand-500/15 blur-[140px] dark:bg-brand-500/20"></div>
       <div
         className="pointer-events-none fixed inset-0 z-0 opacity-[0.05] dark:opacity-[0.08]"
+        /*
+          ⚠️ TASARIM DÜZELTMESİ (D-16): Arka plan ızgarası paletin dışındaydı —
+          yatay çizgiler sky-400 (#38bdf8), dikey çizgiler indigo-500 (#6366f1)
+          idi. Denetimde 10 renk ailesi 5 semantik role indirilmişti ama bu iki
+          renk geride kalmıştı; ayrıca 0.22 opaklık 38 px aralıkta defter
+          kâğıdı gibi baskın çıkıp üstündeki rakamlarla yarışıyordu.
+
+          Artık tek marka tonu, üçte bir opaklık ve iki katı aralık: doku hâlâ
+          var ama okunacak şey rakamlar.
+        */
         style={{
           backgroundImage:
-            "linear-gradient(rgba(56,189,248,0.22) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.22) 1px, transparent 1px)",
-          backgroundSize: "38px 38px",
+            "linear-gradient(rgba(6,182,212,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(6,182,212,0.07) 1px, transparent 1px)",
+          backgroundSize: "72px 72px",
         }}
       />
       <div className="relative z-raised mx-auto flex w-full max-w-[1600px] flex-col gap-6 px-3 pb-10 pt-6 sm:px-4 md:gap-8 md:px-8 md:pb-12 md:pt-8">
@@ -2164,16 +2207,55 @@ export function V0FinancialDashboard() {
         <p className="text-sm text-ink-600 dark:text-ink-400">{t("homeLead")}</p>
       </div>
 
-      <div className="rounded-2xl border border-ink-200 bg-white/80 p-4 shadow-xl backdrop-blur-lg transition-all hover:border-brand-500/30 dark:border-white/10 dark:bg-ink-900/60 md:p-6">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/*
+        ⚠️ TASARIM DÜZELTMESİ (D-13): Kart yüzeyi sistem dışıydı — `rounded-2xl`
+        + `shadow-xl` kullanılıyordu, oysa tasarım sisteminde `rounded-card`
+        (0.875rem) ve `shadow-card` tanımlı ve `.surface-card` bunları tek
+        yerden veriyor. Ayrıca `transition-all hover:border-brand-500/30`:
+        sayfanın en büyük statik kabının üstüne gelince kenarlığı renk
+        değiştiriyordu. Tıklanabilir değil, bir eylem de değil — amacı olmayan
+        animasyon kaldırıldı.
+      */}
+      <section className="surface-card p-4 md:p-6">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">{t("marketSummary")}</h2>
-            <p className="text-sm text-ink-500 mt-1 dark:text-ink-400">
+            {/*
+              ⚠️ TASARIM DÜZELTMESİ (D-14): Aynı düzeydeki üç bölüm başlığı üç
+              ayrı dille yazılmıştı — piyasa özeti camgöbeği+büyük harf,
+              çevirici gri+büyük harf, ofisler siyah+normal ve daha büyük punto.
+              Hiyerarşi bozuluyordu: küçük camgöbeği etiket, altındaki dev
+              rakamlardan daha çok dikkat çekiyordu.
+
+              Artık tek dil: aynı punto, aynı ağırlık, aynı renk. `uppercase` da
+              kaldırıldı — projenin kendi kuralı (index.css `.field-label`)
+              lang="tr" altında tarayıcının "i" harfini "İ" yapması yüzünden
+              büyük harf kullanmamayı söylüyordu.
+            */}
+            <h2 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+              {t("marketSummary")}
+            </h2>
+            <p className="mt-1 text-sm text-ink-600 dark:text-ink-400">
               {t("marketSummaryNote")}
             </p>
           </div>
-          {/* ✅ YENİ: Filtre Butonu (Saatlik / Günlük / Haftalık / Aylık) - Kur Temasıyla Uyumlu */}
-          <div className="flex w-full max-w-full flex-wrap gap-1 bg-ink-100/80 p-1 rounded-lg border border-ink-200 backdrop-blur-md dark:bg-ink-950/70 dark:border-white/10 sm:w-auto">
+
+          {/*
+            ⚠️ TASARIM DÜZELTMESİ (D-15): Zaman aralığı seçicisi bozuktu. Aktif
+            sekme `sm:scale-105` ile fiziksel olarak BÜYÜYOR, gradyan dolgu ve
+            `shadow-lg` gölge alıyordu; beş sekme `flex-wrap` ile alt satıra
+            taşıp "Yıllık"ı tek başına bırakıyordu. Ölçüm: 741 px genişlikte
+            sekme grubu iki satıra kırılıyordu.
+
+            Yeni hâli tek satırda kalır (dar ekranda yatay kayar) ve aktif sekme
+            büyümez — yalnızca yüzey rengiyle ayrışır. Geçiş 300 ms `ease-in-out`
+            yerine 160 ms `ease-out-strong`: sekme değişimi bir giriş
+            hareketidir, yavaş başlaması arayüzü ağırlaştırıyordu.
+          */}
+          <div
+            role="tablist"
+            aria-label={t("marketSummary")}
+            className="flex shrink-0 gap-0.5 overflow-x-auto rounded-control border border-ink-200 bg-ink-100/70 p-1 [scrollbar-width:none] dark:border-white/10 dark:bg-ink-950/60 sm:overflow-visible [&::-webkit-scrollbar]:hidden"
+          >
             {[
               { key: "Saatlik", label: t("periodHourly") },
               { key: "Günlük", label: t("periodDaily") },
@@ -2181,13 +2263,16 @@ export function V0FinancialDashboard() {
               { key: "Aylık", label: t("periodMonthly") },
               { key: "Yıllık", label: t("periodYearly") },
             ].map(({ key, label }) => (
-              <button 
+              <button
                 key={key}
+                type="button"
+                role="tab"
+                aria-selected={chartPeriod === key}
                 onClick={() => setChartPeriod(key)}
-                className={`min-h-[2.75rem] px-3 py-1.5 text-[11px] sm:text-xs font-medium rounded-md transition-all duration-300 ease-in-out ${
-                  chartPeriod === key 
-                    ? 'bg-brand-gradient text-white shadow-lg shadow-brand-500/20 sm:scale-105' 
-                    : 'text-ink-600 hover:text-ink-900 bg-transparent hover:bg-ink-200/60 dark:text-ink-300 dark:hover:text-white dark:hover:bg-ink-900/40'
+                className={`press min-h-[2.25rem] shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-[background-color,color] duration-fast ease-out-strong ${
+                  chartPeriod === key
+                    ? "bg-white text-ink-900 shadow-sm dark:bg-ink-800 dark:text-white"
+                    : "bg-transparent text-ink-600 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
                 }`}
               >
                 {label}
@@ -2206,11 +2291,12 @@ export function V0FinancialDashboard() {
             />
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-2xl border border-ink-200 bg-white/80 p-4 sm:p-6 shadow-xl backdrop-blur-lg transition-all hover:border-brand-500/30 dark:border-white/10 dark:bg-ink-900/60">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-600 dark:text-ink-300">
+      {/* D-13 / D-14: piyasa özeti kartıyla aynı yüzey ve aynı başlık dili. */}
+      <section className="surface-card p-4 sm:p-6">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
             {mode === "exchange"
               ? t("currencyConverter")
               : mode === "interest"
@@ -2507,9 +2593,12 @@ export function V0FinancialDashboard() {
             </div>
           </div>
         )}
-      </div>
+      </section>
 
-      <h2 className="text-lg font-semibold text-ink-900 dark:text-white">{t("homeH2Offices")}</h2>
+      {/* D-14: üçüncü bölüm de artık aynı başlık dilini kullanıyor. */}
+      <h2 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+        {t("homeH2Offices")}
+      </h2>
 
       {/*
         A-06 / mobil UX: Arama + sıralama + "Şu An Açık" üç kontrolü 375px'te

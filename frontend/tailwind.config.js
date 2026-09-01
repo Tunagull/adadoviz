@@ -17,6 +17,19 @@
 export default {
   darkMode: "class",
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+
+  /**
+   * ⚠️ HAREKET DÜZELTMESİ (M-03): Dokunmatik cihazda `hover:` sınıfları
+   * dokunuşta tetiklenir ve parmak kalktıktan sonra da EKRANDA KALIR — kart
+   * vurgulu, buton renkli takılı kalır. Kod tabanında 200'den fazla `hover:`
+   * kullanımı vardı ve hiçbiri işaretçi tipine göre korunmuyordu.
+   *
+   * Bu bayrak her `hover:` yardımcı sınıfını `@media (hover: hover)` içine
+   * alır; tek tek dosya düzenlemeden tüm uygulamayı düzeltir.
+   */
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
   theme: {
     extend: {
       fontFamily: {
@@ -101,6 +114,39 @@ export default {
       /** D-01: TEK marka gradyanı (eski 5 varyantın yerine). */
       backgroundImage: {
         "brand-gradient": "linear-gradient(90deg, #06b6d4 0%, #0e7490 100%)",
+      },
+
+      /**
+       * ⚠️ HAREKET DÜZELTMESİ (M-01): Kod tabanında tanımlı TEK BİR özel easing
+       * eğrisi yoktu; her geçiş Tailwind'in varsayılan
+       * `cubic-bezier(0.4, 0, 0.2, 1)` eğrisini kullanıyordu. Varsayılan
+       * eğriler zayıftır — hareketi kasıtlı hissettiren "tokat" yoktur.
+       *
+       * Kullanım kuralı:
+       *   giren/çıkan öğe (dropdown, toast, modal) → ease-out-strong
+       *   ekranda yer/şekil değiştiren öğe          → ease-in-out-strong
+       *   çekmece / bottom sheet                    → ease-drawer
+       *   hover ve renk geçişi                      → varsayılan `ease`
+       *
+       * `ease-in` BİLİNÇLİ OLARAK YOK: yavaş başladığı için arayüzü ağır
+       * hissettirir ve kullanıcının en dikkatli baktığı ilk anı geciktirir.
+       */
+      transitionTimingFunction: {
+        "out-strong": "cubic-bezier(0.23, 1, 0.32, 1)",
+        "in-out-strong": "cubic-bezier(0.77, 0, 0.175, 1)",
+        drawer: "cubic-bezier(0.32, 0.72, 0, 1)",
+      },
+
+      /**
+       * Süre ölçeği. Kural: arayüz animasyonları 300 ms'in ALTINDA kalır.
+       * Ölçüm: kod tabanında 300 ms ve üzeri 57 süre kullanımı vardı.
+       */
+      transitionDuration: {
+        press: "100ms",
+        instant: "125ms",
+        fast: "160ms",
+        base: "200ms",
+        slow: "260ms",
       },
     },
   },

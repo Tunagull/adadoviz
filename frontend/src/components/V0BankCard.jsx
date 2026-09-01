@@ -206,6 +206,25 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
 
       {mode === "exchange" ? (
         <div className="px-1 pb-1">
+          {/*
+            ⚠️ TASARIM DÜZELTMESİ (D-18): "Alış" ve "Satış" etiketleri HER kur
+            satırında tekrar ediyordu — üç para birimi × iki etiket = kart
+            başına 6 kez, altı büroluk bir listede 36 kez. Tablo başlığı bir kez
+            yazılır; tekrar eden etiket bilgi taşımaz, yalnızca rakamların
+            etrafını doldurur ve asıl okunacak şeyin kontrastını düşürür.
+
+            Sütunlar sabit genişlikte (w-[4.75rem]) olduğu için başlık ile
+            değerler dikeyde hizalanır; sabit genişlik ayrıca kur değişince
+            rakamların yatayda oynamasını engeller.
+          */}
+          <div className="flex items-center justify-end gap-5 px-1 pb-1.5">
+            <span className="w-[4.75rem] text-right text-[11px] font-medium tracking-wide text-ink-500 dark:text-ink-400">
+              {t("buyShort")}
+            </span>
+            <span className="w-[4.75rem] text-right text-[11px] font-medium tracking-wide text-ink-500 dark:text-ink-400">
+              {t("sellShort")}
+            </span>
+          </div>
           <div className="divide-y divide-ink-200 dark:divide-ink-700/60">
             {exchangeRates.map((rate) => {
               /**
@@ -224,7 +243,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
               return (
                 <div key={rate.currency} className="flex items-center justify-between gap-3 py-3">
                   <span
-                    className={`inline-flex items-center justify-center rounded-control px-3 py-1.5 text-xs font-semibold transition-colors duration-700 ease-out ${
+                    className={`inline-flex items-center justify-center rounded-control px-3 py-1.5 text-xs font-semibold transition-colors ease-out-strong ${flashColor ? "duration-instant" : "duration-[700ms]"} ${
                       flashColor === "green"
                         ? "bg-success-500/25 text-success-700 dark:text-success-400"
                         : flashColor === "red"
@@ -244,19 +263,17 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
                       rengiyle karışıyordu. Ayrım artık ETİKET ve HİZALAMA ile
                       yapılıyor; renk yalnızca değişim yönünü anlatıyor.
                     */}
-                    <div className="text-right">
-                      <span className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                        {isBestBuy ? (
-                          <Award
-                            size={11}
-                            className="text-brand-600 dark:text-brand-400"
-                            aria-label={t("bestBuy")}
-                          />
-                        ) : null}
-                        {t("buyShort")}
-                      </span>
+                    {/* D-18: etiket sütun başlığına taşındı; ödül işareti rakamın yanında kaldı. */}
+                    <div className="flex w-[4.75rem] items-center justify-end gap-1">
+                      {isBestBuy ? (
+                        <Award
+                          size={12}
+                          className="shrink-0 text-brand-600 dark:text-brand-400"
+                          aria-label={t("bestBuy")}
+                        />
+                      ) : null}
                       <span
-                        className={`font-mono text-xl font-bold tabular-nums transition-colors duration-700 ease-out ${
+                        className={`font-mono text-xl font-bold tabular-nums transition-colors ease-out-strong ${flashColor ? "duration-instant" : "duration-[700ms]"} ${
                           flashColor === "green"
                             ? "text-success-700 dark:text-success-400"
                             : flashColor === "red"
@@ -270,19 +287,17 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
                       </span>
                     </div>
 
-                    <div className="text-right">
-                      <span className="mb-0.5 flex items-center justify-end gap-1 text-[11px] font-medium tracking-wide text-ink-600 dark:text-ink-400">
-                        {isBestSell ? (
-                          <Award
-                            size={11}
-                            className="text-brand-600 dark:text-brand-400"
-                            aria-label={t("bestSell")}
-                          />
-                        ) : null}
-                        {t("sellShort")}
-                      </span>
+                    {/* D-18: aynı düzeltme satış sütunu için. */}
+                    <div className="flex w-[4.75rem] items-center justify-end gap-1">
+                      {isBestSell ? (
+                        <Award
+                          size={12}
+                          className="shrink-0 text-brand-600 dark:text-brand-400"
+                          aria-label={t("bestSell")}
+                        />
+                      ) : null}
                       <span
-                        className={`font-mono text-xl font-bold tabular-nums transition-colors duration-700 ease-out ${
+                        className={`font-mono text-xl font-bold tabular-nums transition-colors ease-out-strong ${flashColor ? "duration-instant" : "duration-[700ms]"} ${
                           flashColor === "green"
                             ? "text-success-700 dark:text-success-400"
                             : flashColor === "red"

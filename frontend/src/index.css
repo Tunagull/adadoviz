@@ -67,10 +67,42 @@ canvas {
    * Artık tek kaynak burası. Boyut varyantları tanımlı olduğu için
    * `!important` ezmelerine gerek kalmıyor.
    */
+  /**
+   * ⚠️ HAREKET DÜZELTMESİ (M-02): 146 butonun HİÇBİRİNDE basma geri bildirimi
+   * yoktu. Basıldığında hiçbir şey olmayan buton, arayüzün kullanıcıyı
+   * duymadığı hissini verir — tıklama ile ekrandaki ilk değişiklik arasında
+   * ağ gecikmesi kadar boşluk kalır.
+   *
+   * `transition` yerine açık özellik listesi yazılıyor; kısayol hâli tarayıcıyı
+   * gereğinden fazla özelliği izlemeye zorlar.
+   */
   .btn {
     @apply inline-flex select-none items-center justify-center gap-2 rounded-control
-           text-sm font-semibold transition
+           text-sm font-semibold
+           transition-[transform,background-color,border-color,color,box-shadow,filter]
+           duration-fast ease-out-strong
            disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none;
+  }
+
+  /**
+   * Basma anı hızlı (100 ms), bırakma anı biraz daha yumuşak (160 ms, .btn'den
+   * miras). Asimetri bilinçli: sistem kullanıcıya anında cevap verir, geri
+   * dönüş göze batmadan yerine oturur.
+   */
+  .btn:active:not(:disabled) {
+    @apply scale-[0.97] duration-press;
+  }
+
+  /**
+   * `.btn` ailesini kullanmayan özel kontroller için opt-in basma geri
+   * bildirimi (sekmeler, kartlar, ikon butonları).
+   */
+  .press {
+    @apply transition-transform duration-fast ease-out-strong;
+  }
+
+  .press:active:not(:disabled) {
+    @apply scale-[0.97] duration-press;
   }
 
   .btn-sm {

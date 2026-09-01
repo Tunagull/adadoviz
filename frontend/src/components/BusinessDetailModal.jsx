@@ -279,7 +279,13 @@ export function BusinessDetailModal({
       } catch (err) {
         console.error("[BusinessDetailModal] Business rate history:", err);
         if (!cancelled) {
-          setError(err.message || "Geçmiş kurlar alınamadı.");
+          /*
+            ⚠️ TASARIM DÜZELTMESİ (D-12): Hata metni doğrudan `err.message`'tan
+            geliyordu; sunucu 500 döndüğünde kullanıcı ekranda ham "HTTP 500"
+            görüyordu. Hata mesajı kullanıcıya NE OLDUĞUNU ve NE YAPACAĞINI
+            söylemeli — teknik ayrıntı konsola aittir, arayüze değil.
+          */
+          setError("Geçmiş kurlar şu anda yüklenemedi. Birazdan tekrar deneyin.");
           setChartRows([]);
         }
       } finally {
@@ -551,7 +557,7 @@ export function BusinessDetailModal({
                   key={tab.id}
                   type="button"
                   onClick={() => setPeriodId(tab.id)}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition sm:px-4 sm:py-2 ${
+                  className={`press rounded-lg px-3 py-1.5 text-sm font-medium sm:px-4 sm:py-2 ${
                     periodId === tab.id
                       ? "border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
                       : "border border-transparent text-ink-500 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-ink-800/80 dark:hover:text-white"
@@ -569,10 +575,23 @@ export function BusinessDetailModal({
                     setCurrency(code);
                     trackCurrencyView(code);
                   }}
-                  className={`rounded-md px-2.5 py-1.5 text-xs font-semibold transition ${
+                  /*
+                    ⚠️ TASARIM DÜZELTMESİ (D-11): Bu modalın tek bir satırında
+                    ÜÇ farklı "aktif sekme" dili vardı — görünüm sekmeleri soluk
+                    mavi dolgu, dönem sekmeleri marka tonu, para birimi
+                    sekmeleri ise neredeyse SİYAH dolgu. Siyah, uygulamanın
+                    başka hiçbir yerinde kullanılmayan bir renkti; üç kontrol
+                    yan yana dururken ayrı tasarım sistemlerinden gelmiş gibi
+                    okunuyordu.
+
+                    Artık üçü de aynı marka tonunu kullanıyor. Boyut farkı
+                    (bunlar daha küçük) hiyerarşiyi zaten anlatıyor; ikinci bir
+                    renk diline gerek yok.
+                  */
+                  className={`press rounded-md px-2.5 py-1.5 text-xs font-semibold ${
                     currency === code
-                      ? "bg-ink-900 text-white dark:bg-ink-100 dark:text-ink-900"
-                      : "bg-ink-100 text-ink-500 hover:text-ink-800 dark:bg-ink-800 dark:text-ink-400 dark:hover:text-white"
+                      ? "border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
+                      : "border border-transparent bg-ink-100 text-ink-500 hover:text-ink-800 dark:bg-ink-800 dark:text-ink-400 dark:hover:text-white"
                   }`}
                 >
                   {code}
