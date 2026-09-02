@@ -1580,7 +1580,13 @@ app.get("/sitemap.xml", (_req, res) => {
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>${base}/#partnership</loc>
+    <loc>${base}/kiyasla</loc>
+    <lastmod>${lastmod}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>${base}/iletisim</loc>
     <lastmod>${lastmod}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>

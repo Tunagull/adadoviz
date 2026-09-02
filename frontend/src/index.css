@@ -916,6 +916,33 @@ button.float-field__control {
   pointer-events: none;
 }
 
+.gooey-search__results.is-stack-scroll {
+  inset: 0 auto auto 0;
+  z-index: 1;
+  width: 100%;
+  max-height: calc(2.75rem + var(--gooey-scroll-max, 4) * 50px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  pointer-events: none;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--gooey-ink) 35%, transparent) transparent;
+}
+
+.gooey-search__results.is-stack-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.gooey-search__results.is-stack-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--gooey-ink) 35%, transparent);
+}
+
+.gooey-search__stack-inner {
+  position: relative;
+  width: 100%;
+}
+
 .gooey-search__results.is-scroll {
   inset: auto;
   top: calc(2.75rem + 0.5rem);
@@ -956,6 +983,45 @@ button.float-field__control {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 0 1rem;
+}
+
+/* Döviz büroları filtre çubuğu — eşit genişlik ve aralık */
+.office-filters {
+  display: grid;
+  width: 100%;
+  gap: 0.625rem;
+  padding-top: 0.5rem;
+  overflow: visible;
+}
+
+@media (min-width: 640px) {
+  .office-filters {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 0.75rem;
+    max-width: 44rem;
+  }
+
+  .office-filters--three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-width: 33rem;
+  }
+}
+
+.office-filters__cell {
+  min-width: 0;
+  overflow: visible;
+}
+
+.office-filters__toggle {
+  width: 100%;
+  justify-content: center;
+  padding: 0 0.75rem;
+}
+
+.office-filters__toggle .gooey-toggle__label {
+  flex: 1;
+  text-align: center;
 }
 
 .gooey-field,
@@ -1030,6 +1096,197 @@ button.float-field__control {
 .gooey-field__input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+.gooey-pill-field {
+  display: flex;
+  width: 100%;
+  height: 2.75rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgb(229 231 235);
+  background: rgb(243 244 246);
+  padding: 0.2rem 0.2rem 0.2rem 0.75rem;
+}
+
+.dark .gooey-pill-field {
+  border-color: rgb(38 38 42);
+  background: #0a0a0c;
+}
+
+.gooey-pill-field__label {
+  flex-shrink: 0;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgb(107 114 128);
+}
+
+.dark .gooey-pill-field__label {
+  color: rgb(161 161 170);
+}
+
+.gooey-pill-field__surface {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 0.85rem;
+  transition: background-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
+}
+
+.gooey-pill-field__surface--edit {
+  background: #fff;
+  color: #0a0a0c;
+  box-shadow: 0 0 0 1px rgba(10, 10, 12, 0.06);
+}
+
+.dark .gooey-pill-field__surface--edit {
+  background: #fff;
+  color: #0a0a0c;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 16px rgba(255, 255, 255, 0.1);
+}
+
+.gooey-pill-field.is-readonly:not(.has-value) .gooey-pill-field__surface {
+  background: transparent;
+  color: rgb(107 114 128);
+  box-shadow: inset 0 0 0 1px rgb(229 231 235);
+}
+
+.dark .gooey-pill-field.is-readonly:not(.has-value) .gooey-pill-field__surface {
+  color: rgb(161 161 170);
+  box-shadow: inset 0 0 0 1px rgb(63 63 70);
+}
+
+.gooey-pill-field__surface--active,
+.gooey-pill-field.has-value .gooey-pill-field__surface {
+  background: #fff;
+  color: #0a0a0c;
+  box-shadow: 0 0 0 1px rgba(10, 10, 12, 0.06);
+}
+
+.dark .gooey-pill-field__surface--active,
+.dark .gooey-pill-field.has-value .gooey-pill-field__surface {
+  background: #fff;
+  color: #0a0a0c;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 16px rgba(255, 255, 255, 0.12);
+}
+
+.gooey-pill-field.is-disabled {
+  opacity: 0.85;
+}
+
+.gooey-pill-field.is-locked {
+  cursor: not-allowed;
+}
+
+.gooey-pill-field.is-locked .gooey-pill-field__input {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.gooey-pill-field.is-disabled .gooey-pill-field__surface--edit {
+  background: color-mix(in srgb, #fff 72%, rgb(243 244 246));
+}
+
+.dark .gooey-pill-field.is-disabled .gooey-pill-field__surface--edit {
+  background: color-mix(in srgb, #fff 88%, #0a0a0c);
+}
+
+.gooey-pill-field__input,
+.gooey-pill-field__value {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-align: right;
+  outline: none;
+}
+
+.gooey-pill-field__value.is-placeholder {
+  font-weight: 600;
+  color: rgb(107 114 128);
+}
+
+.dark .gooey-pill-field__value.is-placeholder {
+  color: rgb(161 161 170);
+}
+
+.gooey-pill-field__input::placeholder {
+  color: rgb(156 163 175);
+  font-weight: 600;
+}
+
+.dark .gooey-pill-field__input::placeholder {
+  color: rgb(113 113 122);
+}
+
+.gooey-pill-field__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gooey-pill-field__input::-webkit-outer-spin-button,
+.gooey-pill-field__input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.gooey-pill-field__input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark,
+.gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark-readonly {
+  background: transparent;
+  color: rgb(107 114 128);
+  box-shadow: inset 0 0 0 1px rgb(229 231 235);
+}
+
+.dark .gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark,
+.dark .gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark-readonly {
+  color: rgb(161 161 170);
+  box-shadow: inset 0 0 0 1px rgb(63 63 70);
+}
+
+.gooey-pill-field.is-dark-tone.has-input-value .gooey-pill-field__surface--dark,
+.gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--dark-readonly,
+.gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--active {
+  background: transparent;
+  color: #0a0a0c;
+  box-shadow: inset 0 0 0 1px rgb(156 163 175);
+}
+
+.dark .gooey-pill-field.is-dark-tone.has-input-value .gooey-pill-field__surface--dark,
+.dark .gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--dark-readonly,
+.dark .gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--active {
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgb(113 113 122), 0 0 14px rgba(255, 255, 255, 0.06);
+}
+
+.gooey-pill-field.is-dark-tone.is-disabled .gooey-pill-field__surface--dark {
+  background: transparent;
+}
+
+.gooey-pill-field.is-dark-tone .gooey-pill-field__input::placeholder {
+  color: rgb(156 163 175);
+}
+
+.dark .gooey-pill-field.is-dark-tone .gooey-pill-field__input::placeholder {
+  color: rgb(113 113 122);
 }
 
 .gooey-toggle {
@@ -1524,6 +1781,541 @@ button.float-field__control {
 
   .footer-giant-text {
     transform: translateX(-50%);
+  }
+}
+
+/* ── İletişim: orbital kanal çarkı ──────────────────────────────────────
+   Artık bir panelin içinde değil, doğrudan sayfa zemininde duruyor. Bu
+   yüzden renkler tema duyarlı: aşağıdaki `--orb-*` değişkenleri açık tema
+   için tanımlı, `.dark` altında yeniden yazılıyor.
+
+   Ölçü de sabit değil: yörünge bir ELİPS ve `--orbital-rx` / `--orbital-ry`
+   sahnenin ölçülen kutusundan JSX tarafında hesaplanıyor; halka, düğüm boyu,
+   etiket puntosu ve kartın dikey konumu hep onlardan türüyor.
+
+   Marka rengi (`--orbital-accent`) yalnızca grafik yüzeylerde kullanılıyor
+   (ikon, hâle, rozet kenarı, ölçek çubuğu); metin taşıyan yüzeyler tema
+   mürekkebinde kalıyor ki her kanalda kontrast tutsun. */
+.orbital-contact {
+  --orb-surface: #ffffff;
+  --orb-edge: rgb(8 8 10 / 0.14);
+  --orb-node-bg: #ffffff;
+  --orb-ink: #08080a;
+  --orb-ink-soft: rgb(8 8 10 / 0.66);
+  --orb-ink-faint: rgb(8 8 10 / 0.45);
+  --orb-line: rgb(8 8 10 / 0.1);
+  --orb-track: rgb(8 8 10 / 0.09);
+  --orb-cta-bg: #08080a;
+  --orb-cta-ink: #ffffff;
+  --orb-card-shadow: 0 24px 64px rgb(8 8 10 / 0.18);
+  --orb-focus: rgb(8 8 10 / 0.55);
+
+  position: relative;
+  padding: 0.5rem 0 1rem;
+
+  /* Yatayda kesiliyor, dikeyde değil (`clip`, `hidden`in aksine diğer ekseni
+     görünür bırakır ve kaydırma kabı oluşturmaz — kart aşağı taşabilsin).
+     Şart: yarıçap sahnenin ölçülen genişliğinden geliyor, düğümler sayfayı
+     genişletebilseydi "düğüm taşar → sayfa genişler → yarıçap büyür → daha
+     çok taşar" döngüsü kurulup taşmış bir dengede kilitleniyordu. */
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.dark .orbital-contact {
+  --orb-surface: rgb(12 12 15 / 0.94);
+  --orb-edge: rgb(255 255 255 / 0.16);
+  --orb-node-bg: #0a0a0c;
+  --orb-ink: #ffffff;
+  --orb-ink-soft: rgb(255 255 255 / 0.68);
+  --orb-ink-faint: rgb(255 255 255 / 0.45);
+  --orb-line: rgb(255 255 255 / 0.1);
+  --orb-track: rgb(255 255 255 / 0.12);
+  --orb-cta-bg: #ffffff;
+  --orb-cta-ink: #0a0a0c;
+  --orb-card-shadow: 0 24px 64px rgb(0 0 0 / 0.55);
+  --orb-focus: rgb(255 255 255 / 0.6);
+}
+
+.orbital-contact__hint {
+  margin: 0 auto 0.5rem;
+  max-width: 28rem;
+  text-align: center;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--orb-ink-faint);
+}
+
+.orbital-contact__stage {
+  /* Düğüm çapı ve merkez, yarıçapla birlikte ölçekleniyor. */
+  --orb-node: clamp(2.5rem, calc(var(--orbital-ry, 160px) * 0.23), 3.5rem);
+  --orb-core: clamp(3.5rem, calc(var(--orbital-ry, 160px) * 0.32), 5.5rem);
+
+  position: relative;
+  margin: 0 auto;
+  /* Elips olduğu için genişlik artık yüksekliğe bağlı değil: sahne yanlara
+     kadar açılıyor, yükseklik ise kaydırmayı makul tutacak kadar. */
+  width: min(100%, 82rem);
+  height: min(38rem, 66vh);
+}
+
+.orbital-contact__orbit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orbital-contact__ring {
+  position: absolute;
+  /* Elips: yatay ve dikey yarıçap ayrı. */
+  width: calc(var(--orbital-rx, 240px) * 2);
+  height: calc(var(--orbital-ry, 160px) * 2);
+  border-radius: 50%;
+  border: 1px solid var(--orb-line);
+  pointer-events: none;
+}
+
+.orbital-contact__core {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  width: var(--orb-core);
+  height: var(--orb-core);
+  align-items: center;
+  justify-content: center;
+  transition: opacity 300ms ease;
+}
+
+/* Kart açıkken merkez onun altında kalıyor; söndürülüyor ki arkadan sızıp
+   kartın metnini bozmasın. */
+.orbital-contact__core.is-dimmed {
+  opacity: 0;
+}
+
+.orbital-contact__core-ring {
+  position: absolute;
+  border-radius: 999px;
+  border: 1px solid var(--orb-edge);
+  animation: orbital-ping 2.8s ease-out infinite;
+}
+
+.orbital-contact__core-ring--outer {
+  width: calc(var(--orb-core) * 1.4);
+  height: calc(var(--orb-core) * 1.4);
+  opacity: 0.55;
+}
+
+.orbital-contact__core-ring--inner {
+  width: calc(var(--orb-core) * 1.2);
+  height: calc(var(--orb-core) * 1.2);
+  animation-delay: 0.6s;
+  opacity: 0.35;
+}
+
+.orbital-contact__core-mark {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: var(--orb-ink);
+  filter: drop-shadow(0 0 26px rgb(120 120 140 / 0.4));
+}
+
+/* transform / z-index / opacity buraya YAZILMIYOR: rAF döngüsü her karede
+   doğrudan style'a yazıyor. Buraya bir geçiş koymak, kare başına yeniden
+   başlayan ve hiç tamamlanmayan bir animasyon demek olurdu — takılmanın
+   eski sebebi tam olarak buydu. */
+.orbital-contact__node {
+  position: absolute;
+  will-change: transform;
+}
+
+.orbital-contact__trigger {
+  position: relative;
+  display: block;
+  width: var(--orb-node);
+  height: var(--orb-node);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.orbital-contact__trigger:focus-visible {
+  outline: none;
+}
+
+.orbital-contact__glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--orb-node) * 1.9);
+  height: calc(var(--orb-node) * 1.9);
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--orbital-accent, currentColor) 0%, transparent 68%);
+  opacity: 0.16;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+
+.orbital-contact__trigger:hover .orbital-contact__glow,
+.orbital-contact__trigger:focus-visible .orbital-contact__glow {
+  opacity: 0.38;
+}
+
+.orbital-contact__trigger.is-expanded .orbital-contact__glow {
+  opacity: 0.5;
+}
+
+.orbital-contact__trigger.is-related .orbital-contact__glow {
+  opacity: 0.34;
+  animation: orbital-pulse 1.4s ease-in-out infinite;
+}
+
+.orbital-contact__icon {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 2px solid var(--orb-edge);
+  background: var(--orb-node-bg);
+  color: var(--orb-ink-soft);
+  transition:
+    transform 300ms ease,
+    border-color 300ms ease,
+    background-color 300ms ease,
+    color 300ms ease,
+    box-shadow 300ms ease;
+}
+
+.orbital-contact__trigger:hover .orbital-contact__icon {
+  transform: scale(1.12);
+  border-color: var(--orbital-accent, currentColor);
+  color: var(--orbital-accent, currentColor);
+}
+
+.orbital-contact__trigger:focus-visible .orbital-contact__icon {
+  border-color: var(--orbital-accent, currentColor);
+  box-shadow: 0 0 0 3px var(--orb-focus);
+}
+
+.orbital-contact__trigger.is-expanded .orbital-contact__icon {
+  transform: scale(1.3);
+  border-color: var(--orbital-accent, currentColor);
+  background: var(--orbital-accent, currentColor);
+  color: #0a0a0c;
+  box-shadow: 0 0 32px -6px var(--orbital-accent, currentColor);
+}
+
+.orbital-contact__trigger.is-related .orbital-contact__icon {
+  border-color: var(--orbital-accent, currentColor);
+  color: var(--orbital-accent, currentColor);
+}
+
+.orbital-contact__title {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  width: max-content;
+  /* Yarıçap hesabı (RadialOrbitalContact.jsx) bu değerin yarısını iç boşluk
+     olarak kullanıyor; ikisi birlikte değişmeli. */
+  max-width: min(7rem, 22vw);
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: clamp(0.6875rem, calc(var(--orbital-ry, 160px) * 0.055), 0.875rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  color: var(--orb-ink-soft);
+  transition:
+    color 300ms ease,
+    transform 300ms ease;
+}
+
+.orbital-contact__trigger:hover .orbital-contact__title {
+  color: var(--orb-ink);
+}
+
+.orbital-contact__trigger.is-expanded .orbital-contact__title {
+  color: var(--orb-ink);
+  transform: translateX(-50%) scale(1.06);
+}
+
+/* Sahneye göre konumlanıyor: seçili düğüm hep tepede (50% - yarıçap) durduğu
+   için kart da hep aynı yerde, yatayda ortalanmış açılıyor.
+   z-index düğümlerin en yükseğinin (200) üstünde: arkada dönen Gmail /
+   Instagram düğümleri kartın önüne geçiyordu. */
+.orbital-contact__card {
+  position: absolute;
+  top: calc(50% - var(--orbital-ry, 160px) + var(--orb-node) / 2 + 2.2rem);
+  left: 50%;
+  z-index: 300;
+  width: min(20rem, 84vw);
+  transform: translateX(-50%);
+  border-radius: 1.15rem;
+  border: 1px solid var(--orb-edge);
+  background: var(--orb-surface);
+  padding: 1rem 1.15rem 1.15rem;
+  text-align: left;
+  box-shadow: var(--orb-card-shadow);
+  backdrop-filter: blur(14px);
+  cursor: default;
+}
+
+.orbital-contact__card-connector {
+  position: absolute;
+  top: -0.85rem;
+  left: 50%;
+  width: 1px;
+  height: 0.85rem;
+  transform: translateX(-50%);
+  background: var(--orbital-accent, currentColor);
+}
+
+.orbital-contact__badge {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid var(--orbital-accent, currentColor);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--orb-ink);
+}
+
+.orbital-contact__card-title {
+  margin-top: 0.6rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--orb-ink);
+}
+
+.orbital-contact__card-copy {
+  margin-top: 0.4rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--orb-ink-soft);
+}
+
+.orbital-contact__value {
+  margin-top: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--orb-line);
+  background: var(--orb-track);
+  padding: 0.4rem 0.4rem 0.4rem 0.7rem;
+}
+
+.orbital-contact__value-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--orb-ink);
+  user-select: all;
+}
+
+.orbital-contact__copy {
+  display: inline-flex;
+  flex: none;
+  width: 1.7rem;
+  height: 1.7rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.5rem;
+  border: 1px solid var(--orb-line);
+  background: transparent;
+  color: var(--orb-ink-soft);
+  cursor: pointer;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    color 200ms ease;
+}
+
+.orbital-contact__copy:hover {
+  border-color: var(--orb-edge);
+  background: var(--orb-track);
+  color: var(--orb-ink);
+}
+
+.orbital-contact__meter {
+  margin-top: 0.9rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--orb-line);
+}
+
+.orbital-contact__meter-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--orb-ink-soft);
+}
+
+.orbital-contact__meter-value {
+  margin-left: auto;
+  font-weight: 700;
+  color: var(--orb-ink);
+}
+
+.orbital-contact__meter-track {
+  margin-top: 0.4rem;
+  height: 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--orb-track);
+}
+
+.orbital-contact__meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--orbital-accent, currentColor);
+}
+
+.orbital-contact__cta {
+  margin-top: 0.95rem;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  border: 0;
+  background: var(--orb-cta-bg);
+  padding: 0.65rem 0.9rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--orb-cta-ink);
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 12px 28px -14px var(--orbital-accent, currentColor);
+  transition:
+    filter 200ms ease,
+    transform 150ms ease;
+}
+
+.orbital-contact__cta:hover {
+  filter: brightness(1.18);
+}
+
+.dark .orbital-contact__cta:hover {
+  filter: brightness(0.9);
+}
+
+.orbital-contact__cta:active {
+  transform: translateY(1px);
+}
+
+.orbital-contact__related {
+  margin-top: 0.95rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--orb-line);
+}
+
+.orbital-contact__related-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--orb-ink-faint);
+}
+
+.orbital-contact__related-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.orbital-contact__related-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--orb-line);
+  background: transparent;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--orb-ink-soft);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    border-color 200ms ease,
+    background-color 200ms ease,
+    color 200ms ease;
+}
+
+.orbital-contact__related-btn:hover {
+  border-color: var(--orb-edge);
+  background: var(--orb-track);
+  color: var(--orb-ink);
+}
+
+@media (max-width: 639px) {
+  /* Dar ekranda yarıçapı genişlik belirliyor, yükseklik değil. Sahne ne kadar
+     yüksekse kartın altında o kadar yer kalıyor (kart 50% - yarıçaptan
+     başlıyor); alt boşluk da kısa ekranlarda taşmayı karşılıyor. */
+  .orbital-contact {
+    padding-bottom: 6rem;
+  }
+
+  .orbital-contact__stage {
+    height: min(32rem, 62vh);
+  }
+
+  .orbital-contact__card {
+    padding: 0.85rem 0.95rem 1rem;
+  }
+}
+
+/* Hareket azaltma tercihinde çark JS tarafında duruyor; halka ve nabız
+   animasyonlarını dosyanın sonundaki global `prefers-reduced-motion` kuralı
+   zaten susturuyor, burada tekrar edilmiyor. */
+
+@keyframes orbital-ping {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+}
+
+/* Yalnızca hâle (glow) katmanında kullanılıyor; değerler o katmanın durgun
+   opaklığının (0.16) etrafında salınıyor. */
+@keyframes orbital-pulse {
+  0%,
+  100% {
+    opacity: 0.42;
+  }
+  50% {
+    opacity: 0.18;
   }
 }
 

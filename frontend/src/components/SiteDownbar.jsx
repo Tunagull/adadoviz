@@ -1,21 +1,14 @@
 import { useEffect, useState } from "react";
-import { BarChart3, Building2, LineChart } from "lucide-react";
+import { BarChart3, LineChart, Mail } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../context/LanguageContext";
 import { useOfficeSearch } from "../context/OfficeSearchContext";
 import { GooeySearchBar } from "./ui/animated-search-bar";
-import {
-  scrollToPartnership,
-  scrollToRates,
-  useHomeSectionNav,
-} from "../hooks/useHomeSectionNav";
+import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
 
 /**
  * Mobil alt çubuk (downbar). Üst SiteNav `md` altında gizlendiği için
- * Kurlar / Kıyasla / İşletme burada yaşar; ortadaki hap gooey aramadır.
- *
- * Sinematik footer açılınca çubuk kaybolur — iki sabit katman üst üste
- * binmesin diye. Çerez banner'ı `z-modal` olduğu için bunun ÜSTÜNDE kalır.
+ * Kurlar / Kıyasla / İletişim burada yaşar; ortadaki hap gooey aramadır.
  */
 export function SiteDownbar() {
   const { t } = useLanguage();
@@ -41,35 +34,13 @@ export function SiteDownbar() {
   const items = [
     { key: "rates", label: t("navRates"), icon: LineChart, to: "/" },
     { key: "compare", label: t("navCompare"), icon: BarChart3, to: "/kiyasla" },
-    { key: "business", label: t("navBusiness"), icon: Building2, to: "#partnership" },
+    { key: "contact", label: t("navContact"), icon: Mail, to: "/iletisim" },
   ];
 
   const isActive = (item) => {
-    if (item.key === "business") return nav.isBusinessActive;
+    if (item.key === "contact") return nav.isContactActive;
     if (item.key === "rates") return nav.isRatesActive;
     return nav.isCompareActive;
-  };
-
-  const go = (item) => {
-    if (item.key === "business") {
-      nav.activateBusiness();
-      if (location.pathname === "/") {
-        scrollToPartnership();
-        return;
-      }
-      navigate("/#partnership");
-      return;
-    }
-    if (item.key === "rates") {
-      nav.activateRates();
-      if (location.pathname === "/") {
-        scrollToRates();
-        return;
-      }
-      navigate("/");
-      return;
-    }
-    navigate(item.to);
   };
 
   const hasOffices = (officeSearch?.items || []).length > 0;
@@ -83,7 +54,7 @@ export function SiteDownbar() {
             <button
               key={item.key}
               type="button"
-              onClick={() => go(item)}
+              onClick={() => navigate(item.to)}
               aria-current={active ? "page" : undefined}
               className="site-downbar__item"
             >
@@ -97,6 +68,8 @@ export function SiteDownbar() {
           <div className="site-downbar__search">
             <GooeySearchBar
               placement="up"
+              fill
+              hideOrb
               items={officeSearch.items}
               value={officeSearch.query}
               onChange={officeSearch.onQuery}
@@ -110,24 +83,24 @@ export function SiteDownbar() {
         ) : (
           <button
             type="button"
-            onClick={() => go(items[2])}
+            onClick={() => navigate(items[2].to)}
             aria-current={isActive(items[2]) ? "page" : undefined}
             className="site-downbar__item"
           >
-            <Building2 className="size-4" aria-hidden="true" />
-            {t("navBusiness")}
+            <Mail className="size-4" aria-hidden="true" />
+            {t("navContact")}
           </button>
         )}
 
         {hasOffices ? (
           <button
             type="button"
-            onClick={() => go(items[2])}
+            onClick={() => navigate(items[2].to)}
             aria-current={isActive(items[2]) ? "page" : undefined}
             className="site-downbar__item"
           >
-            <Building2 className="size-4" aria-hidden="true" />
-            {t("navBusiness")}
+            <Mail className="size-4" aria-hidden="true" />
+            {t("navContact")}
           </button>
         ) : null}
       </div>

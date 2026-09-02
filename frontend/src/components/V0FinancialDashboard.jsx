@@ -21,7 +21,8 @@ import { Sheet } from "./Sheet";
 import { BusinessLoginModal } from "./BusinessLoginModal";
 import { SearchableSelect } from "./SearchableSelect";
 import { FloatingDisplay, FloatingInput, FloatingTextarea } from "./ui/floating-label";
-import { GooeyField, GooeySearchBar, GooeySegment, GooeyToggle } from "./ui/animated-search-bar";
+import { BuySellToggle } from "./BuySellToggle";
+import { GooeyPillField, GooeySearchBar, GooeyToggle } from "./ui/animated-search-bar";
 /*
   ⚠️ OPTİMİZASYON (O-02): `DateField`, `react-day-picker`'ı (21 kB gzip) paket
   grafiğine çekiyordu ve bu kütüphane ANA SAYFANIN ilk yüklemesine giriyordu —
@@ -970,327 +971,6 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   );
 }
 
-function PartnershipForm() {
-  const { t } = useLanguage();
-  const [formData, setFormData] = useState({
-    institution_name: "",
-    contact_person: "",
-    email: "",
-    phone: "",
-    message: "",
-  });
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
-  const [rawPhone, setRawPhone] = useState("5");
-  const phoneFormattedRef = useRef("0(5");
-  const phoneInputRef = useRef(null);
-
-  const PHONE_MASK_TEMPLATE = "0(5XX) XXX XXXX";
-
-  const formatPhoneDisplay = (rawDigits) => {
-    let d = String(rawDigits || "").replace(/\D/g, "").slice(0, 10);
-    if (!d.startsWith("5")) d = `5${d.replace(/^5*/, "")}`.slice(0, 10);
-    if (!d) d = "5";
-    let out = "0(";
-    out += d.slice(0, Math.min(3, d.length));
-    if (d.length >= 3) out += ")";
-    if (d.length > 3) out += ` ${d.slice(3, Math.min(6, d.length))}`;
-    if (d.length > 6) out += ` ${d.slice(6, Math.min(10, d.length))}`;
-    return out;
-  };
-
-  const buildPhoneMaskGhost = (rawDigits) => {
-    const typed = formatPhoneDisplay(rawDigits);
-    return PHONE_MASK_TEMPLATE.split("")
-      .map((ch, i) => (i < typed.length ? "\u00A0" : ch))
-      .join("");
-  };
-
-  const extractRawPhoneDigits = (value) => {
-    let digits = String(value || "").replace(/\D/g, "");
-    if (digits.startsWith("90") && digits.length >= 11) digits = digits.slice(2);
-    if (digits.startsWith("0")) digits = digits.slice(1);
-    digits = digits.slice(0, 10);
-    if (!digits.startsWith("5")) {
-      digits = `5${digits.replace(/^5*/, "")}`.slice(0, 10);
-    }
-    return digits || "5";
-  };
-
-  const syncPhone = (digits) => {
-    const next = extractRawPhoneDigits(digits);
-    setRawPhone(next);
-    phoneFormattedRef.current = formatPhoneDisplay(next);
-    setFormData((prev) => ({ ...prev, phone: `+90 ${formatPhoneDisplay(next)}` }));
-  };
-
-  const handlePhoneInputChange = (e) => {
-    const inputValue = e.target.value;
-    const prevFormatted = phoneFormattedRef.current;
-    let digits = extractRawPhoneDigits(inputValue);
-
-    if (
-      inputValue.length < prevFormatted.length &&
-      digits.length >= rawPhone.length &&
-      rawPhone.length > 1
-    ) {
-      digits = rawPhone.slice(0, -1);
-    }
-
-    syncPhone(digits);
-  };
-
-  const handlePhoneKeyDown = (e) => {
-    const input = e.target;
-    const start = input.selectionStart ?? 0;
-    const end = input.selectionEnd ?? 0;
-    const lockedUntil = 3;
-
-    if (
-      (e.key === "Backspace" || e.key === "Delete" || e.key === "ArrowLeft" || e.key === "Home") &&
-      start <= lockedUntil &&
-      start === end
-    ) {
-      if (e.key === "Backspace" || e.key === "Delete" || e.key === "Home") {
-        e.preventDefault();
-        requestAnimationFrame(() => input.setSelectionRange(lockedUntil, lockedUntil));
-        return;
-      }
-      if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        input.setSelectionRange(lockedUntil, lockedUntil);
-        return;
-      }
-    }
-
-    if (e.key !== "Backspace" || start !== end) return;
-    if (rawPhone.length <= 1) {
-      e.preventDefault();
-      return;
-    }
-    const before = input.value[start - 1];
-    if (before && /\D/.test(before)) {
-      e.preventDefault();
-      syncPhone(rawPhone.slice(0, -1));
-    }
-  };
-
-  const handlePhoneFocus = (e) => {
-    const lockedUntil = 3;
-    const input = e.target;
-    requestAnimationFrame(() => {
-      const pos = Math.max(input.selectionStart ?? lockedUntil, lockedUntil);
-      input.setSelectionRange(pos, pos);
-    });
-  };
-
-  const handlePhoneClick = (e) => {
-    const lockedUntil = 3;
-    const input = e.target;
-    if ((input.selectionStart ?? 0) < lockedUntil) {
-      input.setSelectionRange(lockedUntil, lockedUntil);
-    }
-  };
-
-  useEffect(() => {
-    phoneFormattedRef.current = formatPhoneDisplay(rawPhone);
-  }, [rawPhone]);
-
-  const buildPartnershipDefaultMessage = () => {
-    const institution = String(formData.institution_name || "").trim() || "…";
-    const person = String(formData.contact_person || "").trim() || "…";
-    const mail = String(formData.email || "").trim() || "…";
-    const tel =
-      rawPhone.length >= 10
-        ? `+90 ${formatPhoneDisplay(rawPhone)}`
-        : String(formData.phone || "").trim() || "…";
-    return (
-      `${institution} kurumundan ${person} adlı yetkili, AdaDöviz partnerlik programına başvurmak istemektedir. ` +
-      `İletişim: ${mail} / ${tel}. Lütfen en kısa sürede dönüş yapınız.`
-    );
-  };
-
-  const messageIsEmpty = !String(formData.message || "").trim();
-  const messagePreview = buildPartnershipDefaultMessage();
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    let next = value;
-    if (name === "contact_person") {
-      next = value.replace(/[0-9]/g, "");
-    }
-    setFormData((prev) => ({ ...prev, [name]: next }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (rawPhone.length !== 10) {
-      setError(t("phoneIncompleteError") || "Lütfen 10 haneli telefon numarasını eksiksiz girin.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-
-    const payload = {
-      ...formData,
-      phone: `+90 ${formatPhoneDisplay(rawPhone)}`,
-      message: messageIsEmpty ? messagePreview : String(formData.message).trim(),
-    };
-
-    try {
-      const res = await fetch(apiUrl("/api/partnership-apply"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-
-      setSubmitted(true);
-      setFormData({
-        institution_name: "",
-        contact_person: "",
-        email: "",
-        phone: "+90 0(5",
-        message: "",
-      });
-      setRawPhone("5");
-      phoneFormattedRef.current = "0(5";
-      setTimeout(() => setSubmitted(false), 5000);
-    } catch (err) {
-      setError(err.message || t("applicationSendFailed"));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <section
-      id="partnership"
-      className="mt-12 scroll-mt-28 rounded-2xl border border-ink-200 bg-white p-4 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-ink-900/60 sm:p-6"
-    >
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-ink-900 dark:text-white">{t("partnership")}</h2>
-        <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">{t("partnershipDesc")}</p>
-      </div>
-
-      {submitted ? (
-        <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-4 py-3 text-sm text-success-700 dark:text-success-200">
-          {t("applicationSuccess")}
-        </div>
-      ) : (
-        <>
-          {error && (
-            <div className="mb-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-sm text-danger-700 dark:text-danger-200">
-              {error}
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FloatingInput
-                label={t("institutionName")}
-                type="text"
-                name="institution_name"
-                placeholder={t("institutionNamePlaceholder")}
-                value={formData.institution_name}
-                onChange={handleChange}
-                required
-              />
-              <FloatingInput
-                label={t("contactPerson")}
-                type="text"
-                name="contact_person"
-                placeholder={t("contactPersonPlaceholder")}
-                value={formData.contact_person}
-                onChange={handleChange}
-                inputMode="text"
-                autoComplete="name"
-                required
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <FloatingInput
-                label={t("emailLabel")}
-                type="email"
-                name="email"
-                placeholder={t("emailPlaceholder")}
-                value={formData.email}
-                onChange={handleChange}
-                required
-              />
-              {/*
-                Telefon alanının etiketi hep yukarıda: içinde her zaman görünen
-                bir maske hayaleti ve +90 öneki var, etiket ortada dursaydı
-                onların üstüne binerdi.
-              */}
-              <FloatingInput
-                ref={phoneInputRef}
-                label={t("phoneLabel")}
-                float="always"
-                type="tel"
-                name="phone"
-                value={formatPhoneDisplay(rawPhone)}
-                onChange={handlePhoneInputChange}
-                onKeyDown={handlePhoneKeyDown}
-                onFocus={handlePhoneFocus}
-                onClick={handlePhoneClick}
-                inputMode="numeric"
-                autoComplete="tel-national"
-                required
-                controlClassName="!pl-14 font-mono caret-brand-500"
-                adornment={
-                  <>
-                    <span className="pointer-events-none absolute left-3 top-1/2 z-raised -translate-y-1/2 font-mono text-sm font-bold text-ink-800 dark:text-white">
-                      +90
-                    </span>
-                    {/* Hayalet maske girdinin ALTINDA kalmalı, yoksa yazılan
-                        rakamların üstüne biner. */}
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 z-base flex select-none items-center pl-14 pr-3 font-mono text-sm text-ink-600 dark:text-ink-400"
-                    >
-                      {buildPhoneMaskGhost(rawPhone)}
-                    </span>
-                  </>
-                }
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <FloatingTextarea
-                label={t("messageLabel")}
-                name="message"
-                rows={4}
-                placeholder={t("messagePlaceholder")}
-                value={formData.message}
-                onChange={handleChange}
-              />
-              {messageIsEmpty ? (
-                <div className="rounded-lg border border-dashed border-brand-500/40 bg-brand-500/5 px-3 py-2.5">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-700 dark:text-brand-300">
-                    {t("messageTemplatePreviewLabel")}
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-ink-600 dark:text-ink-300">
-                    {messagePreview}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full sm:w-auto"
-            >
-              {loading ? t("submitting") : t("submitApplication")}
-            </button>
-          </form>
-        </>
-      )}
-    </section>
-  );
-}
-
 /** Backend listesiyle uyumlu Türkiye banka haritası. */
 const LOCAL_BANKS = [
   { id: "ziraat", name: "Ziraat Bankası", websiteUrl: "https://www.ziraatbank.com.tr" },
@@ -1616,17 +1296,6 @@ export function V0FinancialDashboard() {
     refetchBanksRef.current?.();
   }, [liveRates]);
 
-  const scrollToPartnership = () => {
-    document.getElementById("partnership")?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  useEffect(() => {
-    if (window.location.hash === "#partnership") {
-      const timer = window.setTimeout(scrollToPartnership, 120);
-      return () => window.clearTimeout(timer);
-    }
-    return undefined;
-  }, []);
   const [exchangeCurrency, setExchangeCurrency] = useState("");
   // Alış: döviz tutarı → TL; Satış: TL tutarı → döviz
   const [exchangeAmount, setExchangeAmount] = useState("0");
@@ -2111,6 +1780,7 @@ export function V0FinancialDashboard() {
       fill
       items={sortItems}
       selectedId={sortBy}
+      neutralSelectedId="none"
       onSelect={(item) => handleSortChange(item.id)}
       collapsedLabel={t("sortLabel")}
       placeholder={t("sortLabel")}
@@ -2124,7 +1794,7 @@ export function V0FinancialDashboard() {
 
   const openNowControl = (
     <GooeyToggle
-      className="w-full sm:w-auto"
+      className="office-filters__toggle"
       label={t("openNow")}
       checked={openNowOnly}
       onChange={setOpenNowOnly}
@@ -2139,6 +1809,7 @@ export function V0FinancialDashboard() {
         fill
         items={cityItems}
         selectedId={cityFilter || "__all__"}
+        neutralSelectedId="__all__"
         onSelect={(item) => setCityFilter(item.id === "__all__" ? "" : item.id)}
         collapsedLabel={t("cityFilterLabel")}
         placeholder={t("cityFilterLabel")}
@@ -2172,6 +1843,8 @@ export function V0FinancialDashboard() {
 
   const officeSearchBar = (
     <GooeySearchBar
+      fill
+      hideOrb
       items={officeSearchItems}
       value={searchQuery}
       onChange={onOfficeQuery}
@@ -2243,14 +1916,6 @@ export function V0FinancialDashboard() {
               <span className="hidden md:inline">{t("logout")}</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={scrollToPartnership}
-            className="hidden min-h-[2.75rem] items-center rounded-full border border-ink-300 bg-white px-3.5 py-1 text-xs font-semibold text-ink-700 transition-all duration-300 hover:border-brand-400 hover:text-brand-600 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400 sm:inline-flex md:hidden"
-          >
-            {t("partnership")}
-          </button>
 
           <HeaderActions />
         </div>
@@ -2422,15 +2087,7 @@ export function V0FinancialDashboard() {
             </div>
 
             <div className="min-w-0 xl:col-span-2">
-              <GooeySegment
-                aria-label={t("operationType")}
-                value={exchangeOperation}
-                onChange={setExchangeOperation}
-                options={[
-                  { value: "buy", label: t("buy") },
-                  { value: "sell", label: t("sell") },
-                ]}
-              />
+              <BuySellToggle value={exchangeOperation} onChange={setExchangeOperation} />
             </div>
 
             <div className="min-w-0 sm:col-span-2 xl:col-span-3">
@@ -2470,7 +2127,8 @@ export function V0FinancialDashboard() {
             </div>
 
             <div className="min-w-0 xl:col-span-2">
-              <GooeyField
+              <GooeyPillField
+                tone="dark"
                 label={
                   exchangeOperation === "buy"
                     ? exchangeCurrency
@@ -2483,7 +2141,8 @@ export function V0FinancialDashboard() {
                 disabled={!calculatorBank}
                 value={!calculatorBank ? "" : exchangeAmount === "0" ? "" : exchangeAmount}
                 onChange={(next) => setExchangeAmount(next === "" ? "0" : next)}
-                placeholder={!calculatorBank ? t("selectOfficePrompt") : t("enterAmount")}
+                placeholder={calculatorBank ? t("enterAmount") : ""}
+                title={!calculatorBank ? t("selectOfficeFirst") : undefined}
               />
             </div>
 
@@ -2491,8 +2150,9 @@ export function V0FinancialDashboard() {
               const hasResult =
                 Number.isFinite(exchangeResult) && calculatorBank && Number(exchangeAmount) > 0;
               return (
-                <GooeyField
+                <GooeyPillField
                   className="min-w-0 sm:col-span-2 xl:col-span-3"
+                  tone="dark"
                   label={
                     exchangeOperation === "buy"
                       ? t("resultSell")
@@ -2500,15 +2160,15 @@ export function V0FinancialDashboard() {
                   }
                   readOnly
                   muted={!hasResult}
+                  placeholder={calculatorBank && !hasResult ? t("enterAmountPrompt") : ""}
+                  title={!calculatorBank ? t("selectOfficeFirst") : undefined}
                   value={
                     hasResult
                       ? `${exchangeResult.toLocaleString(localeCode, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })} ${exchangeOperation === "buy" ? "TL" : exchangeCurrency}`
-                      : !calculatorBank
-                        ? t("selectOfficePrompt")
-                        : t("enterAmountPrompt")
+                      : ""
                   }
                 />
               );
@@ -2675,40 +2335,30 @@ export function V0FinancialDashboard() {
         dar alana sıkışıyordu. Mobilde arama görünür kalır, sıralama ve filtre
         alttan açılan Sheet'e taşınır; sm+ ekranlarda hepsi eskisi gibi satır içi.
       */}
-      <div className="flex flex-col gap-4 overflow-visible pt-2 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex w-full min-w-0 flex-col gap-4 overflow-visible sm:flex-row sm:flex-wrap sm:items-start sm:gap-8">
-          <div className="hidden min-w-[16.75rem] justify-start pr-12 sm:flex sm:flex-none">
-            {officeSearchBar}
-          </div>
+      <div className={cityControl ? "office-filters" : "office-filters office-filters--three"}>
+        <div className="office-filters__cell hidden sm:block">{officeSearchBar}</div>
 
-          {/* Mobil: tek düğme → Sheet */}
-          <button
-            type="button"
-            onClick={() => setFilterSheetOpen(true)}
-            className="btn-ghost w-full justify-between sm:hidden"
-          >
-            <span className="inline-flex items-center gap-2">
-              <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
-              {t("sortLabel")}
+        <button
+          type="button"
+          onClick={() => setFilterSheetOpen(true)}
+          className="btn-ghost w-full justify-between sm:hidden"
+        >
+          <span className="inline-flex items-center gap-2">
+            <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
+            {t("sortLabel")}
+          </span>
+          {activeFilterCount > 0 ? (
+            <span className="ml-2 inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-xs font-bold text-white">
+              {activeFilterCount}
             </span>
-            {activeFilterCount > 0 ? (
-              <span className="ml-2 inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-brand-600 px-1.5 py-0.5 text-xs font-bold text-white">
-                {activeFilterCount}
-              </span>
-            ) : null}
-          </button>
-
-          {/* sm+ : satır içi kontroller */}
-          <div className="hidden min-w-[15rem] sm:block sm:flex-none lg:w-56">
-            {sortControl}
-          </div>
-          {cityControl ? (
-            <div className="hidden min-w-[12rem] sm:block sm:flex-none lg:w-44">
-              {cityControl}
-            </div>
           ) : null}
-          <div className="hidden sm:block sm:flex-none">{openNowControl}</div>
-        </div>
+        </button>
+
+        <div className="office-filters__cell hidden sm:block">{sortControl}</div>
+        {cityControl ? (
+          <div className="office-filters__cell hidden sm:block">{cityControl}</div>
+        ) : null}
+        <div className="office-filters__cell hidden sm:block">{openNowControl}</div>
       </div>
 
       <Sheet
@@ -2837,8 +2487,6 @@ export function V0FinancialDashboard() {
           </div>
         </div>
       ) : null}
-
-        <PartnershipForm />
 
         {/* ✅ FIXED MODAL - ÇIKIS */}
         {showLogoutPopup && (

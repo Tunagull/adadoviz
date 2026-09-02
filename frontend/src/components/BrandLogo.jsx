@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Link, useLocation } from "react-router-dom";
 
 /**
@@ -26,11 +27,16 @@ import { Link, useLocation } from "react-router-dom";
  * ikinci bir renk seçmek gerekmiyor, oklar her zaman arkadaki yüzeyin rengi
  * oluyor ve kontrast garanti altında.
  */
-function Mark({ className = "" }) {
+/** İletişim çarkının merkezi de bu işareti kullanıyor, o yüzden dışa açık. */
+export function BrandMark({ className = "" }) {
+  // İşaret aynı sayfada birden çok kez basılıyor (başlık + iletişim çarkının
+  // merkezi); sabit bir mask id'si yinelenen DOM id'si demekti.
+  const maskId = useId();
+
   return (
     <svg viewBox="0 0 64 64" className={className} aria-hidden="true" focusable="false">
       <defs>
-        <mask id="adaBrandMarkCut">
+        <mask id={maskId}>
           <rect width="64" height="64" rx="15" fill="#fff" />
           {/* Karşılıklı akan iki ok — döviz değişiminin evrensel jesti. */}
           <g
@@ -47,7 +53,7 @@ function Mark({ className = "" }) {
           </g>
         </mask>
       </defs>
-      <rect width="64" height="64" rx="15" fill="currentColor" mask="url(#adaBrandMarkCut)" />
+      <rect width="64" height="64" rx="15" fill="currentColor" mask={`url(#${maskId})`} />
     </svg>
   );
 }
@@ -71,7 +77,7 @@ export function BrandLogo({ className = "", compact = false }) {
         compact ? "gap-2" : "gap-2.5"
       } ${className}`}
     >
-      <Mark
+      <BrandMark
         className={`shrink-0 text-ink-950 dark:text-white dark:drop-shadow-[0_0_10px_rgba(255,255,255,0.35)] ${
           compact ? "size-8" : "size-9 sm:size-10"
         } transition-transform duration-300 group-hover:scale-[1.04]`}

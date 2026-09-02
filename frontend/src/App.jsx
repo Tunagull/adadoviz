@@ -32,8 +32,14 @@ const ExchangeOfficePage = lazy(() =>
 const ComparePage = lazy(() =>
   import("./pages/ComparePage").then((m) => ({ default: m.ComparePage }))
 );
+const ContactPage = lazy(() =>
+  import("./pages/ContactPage").then((m) => ({ default: m.ContactPage }))
+);
 const PricingPage = lazy(() =>
   import("./pages/PricingPage").then((m) => ({ default: m.PricingPage }))
+);
+const PartnershipPage = lazy(() =>
+  import("./pages/PartnershipPage").then((m) => ({ default: m.PartnershipPage }))
 );
 const ResetPasswordPage = lazy(() =>
   import("./pages/ResetPassword").then((m) => ({ default: m.ResetPasswordPage }))
@@ -101,14 +107,17 @@ function AppShell() {
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<V0FinancialDashboard />} />
+              <Route path="/kurlar" element={<Navigate to="/" replace />} />
               <Route path="/kiyasla" element={<ComparePage />} />
               <Route path="/paketler" element={<PricingPage />} />
+              <Route path="/iletisim" element={<ContactPage />} />
+              <Route path="/partnerlik" element={<PartnershipPage />} />
               <Route path="/doviz-burosu/:slug" element={<ExchangeOfficePage />} />
               <Route path="/admin" element={<InstitutionAdminPage />} />
               <Route path="/super-admin" element={<SuperAdminDashboard />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/dashboard" element={<Navigate to="/" replace />} />
-              <Route path="/partnership" element={<Navigate to="/#partnership" replace />} />
+              <Route path="/partnership" element={<Navigate to="/partnerlik" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>

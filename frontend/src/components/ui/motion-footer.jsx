@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { ArrowUp, BarChart3, Building2, LineChart, MessageCircle } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
+import { contactLinks } from "../../lib/contact";
+import { InstagramIcon } from "./brand-icons";
 
 /**
  * Sinematik alt bölüm — "perde açılışı" (curtain reveal) footer.
@@ -121,25 +123,6 @@ export function MagneticButton({
   );
 }
 
-function InstagramIcon({ className }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5" />
-    </svg>
-  );
-}
-
 /**
  * Perdenin ne kadar açıldığını ölçer ve iki özel değişken yazar:
  *   --footer-progress  0→1  dev arka plan yazısının yükselişi
@@ -219,7 +202,6 @@ function MarqueeRun({ items }) {
 export function CinematicFooter() {
   const { t } = useLanguage();
   const navigate = useNavigate();
-  const location = useLocation();
   const wrapperRef = useRef(null);
   const footerRef = useRef(null);
 
@@ -234,11 +216,7 @@ export function CinematicFooter() {
   ];
 
   const goPartnership = () => {
-    if (location.pathname === "/") {
-      document.getElementById("partnership")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else {
-      navigate("/#partnership");
-    }
+    navigate("/partnerlik");
   };
 
   const pillLink =
@@ -333,7 +311,7 @@ export function CinematicFooter() {
 
               <MagneticButton
                 as="a"
-                href="https://wa.me/YOUR_WHATSAPP_NUMBER"
+                href={contactLinks.whatsapp}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="WhatsApp ile iletişim kurun"
@@ -346,7 +324,7 @@ export function CinematicFooter() {
 
               <MagneticButton
                 as="a"
-                href="https://instagram.com/YOUR_INSTAGRAM_HANDLE"
+                href={contactLinks.instagram}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Instagram'da bizi takip edin"

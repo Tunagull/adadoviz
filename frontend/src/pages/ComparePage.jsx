@@ -112,7 +112,6 @@ export function ComparePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [businesses, setBusinesses] = useState([]);
   const [seriesByBusiness, setSeriesByBusiness] = useState({});
-  const [centralSeries, setCentralSeries] = useState(new Map());
   /** institutionId -> o işletmenin şubelerinin bulunduğu şehir slug'ları */
   const [citiesByBusiness, setCitiesByBusiness] = useState({});
   const [branchGroups, setBranchGroups] = useState({});
@@ -218,21 +217,6 @@ export function ComparePage() {
     };
   }, []);
 
-  // MB referans kuru
-  useEffect(() => {
-    let alive = true;
-    fetch(apiUrl(`/api/historical-rates?currency=${currency}&period=Günlük`))
-      .then((res) => res.json())
-      .then((data) => {
-        if (!alive) return;
-        setCentralSeries(bucketByDay(data?.rates, "buy_rate", "sell_rate"));
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [currency]);
-
   // Seçili her işletme için nihai kur geçmişi
   useEffect(() => {
     // Boş seçimde de Promise.all kullanılır: setState efekt gövdesinde senkron
@@ -280,12 +264,9 @@ export function ComparePage() {
           row[`${id}_buy`] = point?.buy ?? null;
           row[`${id}_sell`] = point?.sell ?? null;
         }
-        const mb = centralSeries.get(day);
-        row.mb_buy = mb?.buy ?? null;
-        row.mb_sell = mb?.sell ?? null;
         return row;
       }),
-    [days, selected, seriesByBusiness, centralSeries, locale]
+    [days, selected, seriesByBusiness, locale]
   );
 
   const summary = useMemo(
@@ -307,10 +288,7 @@ export function ComparePage() {
   );
 
   const chartConfig = useMemo(() => {
-    const cfg = {
-      mb_buy: { label: `${t("compareMbLine")} - ${t("buyShort")}`, color: skin.mutedLine },
-      mb_sell: { label: `${t("compareMbLine")} - ${t("sellShort")}`, color: skin.mutedLine },
-    };
+    const cfg = {};
     selected.forEach((id, index) => {
       const name = businesses.find((b) => b.institutionId === id)?.name || id;
       const color = palette[index % palette.length];
@@ -318,7 +296,7 @@ export function ComparePage() {
       cfg[`${id}_sell`] = { label: `${name} - ${t("sellShort")}`, color };
     });
     return cfg;
-  }, [selected, businesses, palette, t, skin.mutedLine]);
+  }, [selected, businesses, palette, t]);
 
   const toggle = (id) => {
     const exists = selected.includes(id);
@@ -510,27 +488,6 @@ export function ComparePage() {
                           />,
                         ];
                       })}
-                      <Line
-                        type="linear"
-                        dataKey="mb_buy"
-                        name={t("compareMbLine") + " - " + t("buyShort")}
-                        stroke={skin.mutedLine}
-                        strokeWidth={1.5}
-                        dot={false}
-                        activeDot={hollowDot(skin.mutedLine, skin.dotFill, 4)}
-                        connectNulls
-                      />
-                      <Line
-                        type="linear"
-                        dataKey="mb_sell"
-                        name={t("compareMbLine") + " - " + t("sellShort")}
-                        stroke={skin.mutedLine}
-                        strokeWidth={1.5}
-                        strokeDasharray="4 4"
-                        dot={false}
-                        activeDot={hollowDot(skin.mutedLine, skin.dotFill, 4)}
-                        connectNulls
-                      />
                     </ComposedChart>
                   </ChartContainer>
                 )}

@@ -15,7 +15,7 @@ import {
 } from "../lib/plans";
 
 function applyCta(navigate, code) {
-  navigate(`/?paket=${encodeURIComponent(code)}#partnership`);
+  navigate(`/partnerlik?paket=${encodeURIComponent(code)}`);
 }
 
 export function PricingPage() {

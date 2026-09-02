@@ -50,10 +50,12 @@ function GooeyFilter({ id }) {
   );
 }
 
-function getResultItemVariants(index, isUnsupported, placement, reduceMotion) {
-  const stack = (index + 1) * 50;
+function getResultItemVariants(index, isUnsupported, placement, reduceMotion, scrollMax = 0) {
+  const stack = (index + 1) * STACK_STEP_PX;
   const y = placement === "up" ? -stack : stack;
-  if (reduceMotion) {
+  const skipStackMotion = scrollMax > 0 && index >= scrollMax;
+
+  if (reduceMotion || skipStackMotion) {
     return {
       initial: { y, opacity: 0 },
       animate: { y, opacity: 1 },
@@ -78,8 +80,11 @@ function getResultItemVariants(index, isUnsupported, placement, reduceMotion) {
   };
 }
 
-function getResultItemTransition(index, reduceMotion) {
+function getResultItemTransition(index, reduceMotion, scrollMax = 0) {
   if (reduceMotion) return { duration: 0.15 };
+  if (scrollMax > 0 && index >= scrollMax) {
+    return { duration: 0.12, delay: 0 };
+  }
   return {
     duration: 0.75,
     delay: index * 0.08,
@@ -92,6 +97,12 @@ function getResultItemTransition(index, reduceMotion) {
 
 function collapsedWidthFor(label) {
   return Math.min(220, Math.max(118, String(label || "").length * 9 + 36));
+}
+
+const STACK_STEP_PX = 50;
+
+function getStackInnerHeight(count) {
+  return Math.max(count, 1) * STACK_STEP_PX;
 }
 
 /**
@@ -112,6 +123,8 @@ function collapsedWidthFor(label) {
  * @param {boolean} [props.fill]
  * @param {number} [props.expandedWidth]
  * @param {import("react").ComponentType<{ className?: string }>} [props.resultIcon]
+ * @param {boolean} [props.hideOrb]
+ * @param {string} [props.neutralSelectedId] Varsayılan seçimde collapsedLabel göster (ör. sıralama/konum)
  */
 export function GooeySearchBar({
   items = [],
@@ -131,6 +144,8 @@ export function GooeySearchBar({
   expandedWidth = 240,
   scrollMax = 0,
   resultIcon: ResultIcon = Building2,
+  hideOrb = false,
+  neutralSelectedId,
   "aria-label": ariaLabel,
 }) {
   const reactId = useId().replace(/:/g, "");
@@ -199,7 +214,13 @@ export function GooeySearchBar({
     return pool.find((item) => String(item.id) === String(selectedId)) || null;
   }, [isSelect, items, selectedId]);
 
-  const collapsedText = selectedItem?.label || collapsedLabel;
+  const isNeutralSelection =
+    isSelect &&
+    neutralSelectedId != null &&
+    String(selectedId) === String(neutralSelectedId);
+  const collapsedText = isNeutralSelection
+    ? collapsedLabel
+    : selectedItem?.label || collapsedLabel;
 
   const commit = useCallback(
     (item) => {
@@ -247,6 +268,7 @@ export function GooeySearchBar({
   const btnCollapsedWidth = fill ? "100%" : collapsedWidthFor(collapsedText);
   const btnExpandedWidth = fill ? "100%" : expandedWidth;
   const useScrollList = Number(scrollMax) > 0;
+  const stackInnerHeight = getStackInnerHeight(results.length);
 
   const openBar = () => {
     if (disabled || expanded) return;
@@ -254,20 +276,73 @@ export function GooeySearchBar({
     setStep(2);
   };
 
+  const renderResultItems = () => (
+    <>
+      <AnimatePresence mode="popLayout">
+        {results.map((item, index) => (
+          <motion.button
+            type="button"
+            key={item.id || item.label}
+            whileHover={reduceMotion ? undefined : { scale: 1.02, transition: { duration: 0.2 } }}
+            variants={getResultItemVariants(
+              index,
+              isUnsupported,
+              placement,
+              reduceMotion,
+              useScrollList ? scrollMax : 0
+            )}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={getResultItemTransition(index, reduceMotion, useScrollList ? scrollMax : 0)}
+            className={clsx("gooey-search__result", index === highlight && "is-active")}
+            role="option"
+            aria-selected={index === highlight}
+            onMouseEnter={() => setHighlight(index)}
+            onClick={() => commit(item)}
+          >
+            {ResultIcon ? <ResultIcon className="gooey-search__info" aria-hidden="true" /> : null}
+            <span className="gooey-search__result-label">{item.label}</span>
+            {item.hint ? <span className="gooey-search__result-hint">{item.hint}</span> : null}
+          </motion.button>
+        ))}
+      </AnimatePresence>
+      {expanded && results.length === 0 && !showSpinner ? (
+        <motion.div
+          key="empty"
+          className="gooey-search__result is-empty"
+          variants={getResultItemVariants(
+            0,
+            isUnsupported,
+            placement,
+            reduceMotion,
+            useScrollList ? scrollMax : 0
+          )}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={getResultItemTransition(0, reduceMotion, useScrollList ? scrollMax : 0)}
+        >
+          <span className="gooey-search__result-label">{emptyLabel}</span>
+        </motion.div>
+      ) : null}
+    </>
+  );
+
   return (
     <div
       ref={rootRef}
       className={clsx(
         "gooey-search",
-        (isUnsupported || useScrollList) && "no-goo",
+        isUnsupported && "no-goo",
         fill && "gooey-search--fill",
         disabled && "gooey-search--disabled",
-        useScrollList && "gooey-search--scroll",
+        useScrollList && "gooey-search--stack-scroll",
         className
       )}
       data-placement={placement}
       data-expanded={expanded ? "" : undefined}
-      style={isUnsupported || useScrollList ? undefined : { filter: `url(#${filterId})` }}
+      style={isUnsupported ? undefined : { filter: `url(#${filterId})` }}
     >
       <GooeyFilter id={filterId} />
 
@@ -286,62 +361,24 @@ export function GooeySearchBar({
             {expanded ? (
               <motion.div
                 key="search-results"
-                className={clsx("gooey-search__results", useScrollList && "is-scroll")}
+                className={clsx("gooey-search__results", useScrollList && "is-stack-scroll")}
                 role="listbox"
                 aria-label={ariaLabel || collapsedLabel}
-                style={useScrollList ? { "--gooey-scroll-max": scrollMax } : undefined}
+                style={
+                  useScrollList
+                    ? { "--gooey-scroll-max": scrollMax, "--gooey-stack-height": `${stackInnerHeight}px` }
+                    : undefined
+                }
                 exit={reduceMotion ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
-                transition={{ delay: reduceMotion || isUnsupported || useScrollList ? 0.05 : 0.35, duration: 0.35 }}
+                transition={{ delay: reduceMotion || isUnsupported ? 0.05 : 0.35, duration: 0.35 }}
               >
-                <AnimatePresence mode="popLayout">
-                  {results.map((item, index) => (
-                    <motion.button
-                      type="button"
-                      key={item.id || item.label}
-                      whileHover={reduceMotion || useScrollList ? undefined : { scale: 1.02, transition: { duration: 0.2 } }}
-                      variants={
-                        useScrollList
-                          ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } }
-                          : getResultItemVariants(index, isUnsupported, placement, reduceMotion)
-                      }
-                      initial="initial"
-                      animate="animate"
-                      exit="exit"
-                      transition={useScrollList ? { duration: 0.15 } : getResultItemTransition(index, reduceMotion)}
-                      className={clsx(
-                        "gooey-search__result",
-                        index === highlight && "is-active"
-                      )}
-                      role="option"
-                      aria-selected={index === highlight}
-                      onMouseEnter={() => setHighlight(index)}
-                      onClick={() => commit(item)}
-                    >
-                      {ResultIcon ? <ResultIcon className="gooey-search__info" aria-hidden="true" /> : null}
-                      <span className="gooey-search__result-label">{item.label}</span>
-                      {item.hint ? (
-                        <span className="gooey-search__result-hint">{item.hint}</span>
-                      ) : null}
-                    </motion.button>
-                  ))}
-                </AnimatePresence>
-                {expanded && results.length === 0 && !showSpinner ? (
-                  <motion.div
-                    key="empty"
-                    className="gooey-search__result is-empty"
-                    variants={
-                      useScrollList
-                        ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } }
-                        : getResultItemVariants(0, isUnsupported, placement, reduceMotion)
-                    }
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    transition={useScrollList ? { duration: 0.15 } : getResultItemTransition(0, reduceMotion)}
-                  >
-                    <span className="gooey-search__result-label">{emptyLabel}</span>
-                  </motion.div>
-                ) : null}
+                {useScrollList ? (
+                  <div className="gooey-search__stack-inner" style={{ height: `${stackInnerHeight}px` }}>
+                    {renderResultItems()}
+                  </div>
+                ) : (
+                  renderResultItems()
+                )}
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -385,7 +422,7 @@ export function GooeySearchBar({
           </motion.div>
 
           <AnimatePresence mode="wait">
-            {expanded && !fill ? (
+            {expanded && !fill && !hideOrb ? (
               <motion.div
                 key="orb"
                 className="gooey-search__orb"
@@ -413,6 +450,72 @@ export function GooeySearchBar({
 }
 
 export default GooeySearchBar;
+
+export function GooeyPillField({
+  label,
+  value = "",
+  onChange,
+  type = "text",
+  disabled = false,
+  readOnly = false,
+  muted = false,
+  tone = "default",
+  placeholder = "",
+  min,
+  className = "",
+  title,
+  "aria-label": ariaLabel,
+}) {
+  const hasValue = String(value || "").trim().length > 0;
+  const showActiveResult = readOnly && !muted && hasValue;
+  const showPlaceholder = Boolean(placeholder) && !hasValue;
+  const isDarkTone = tone === "dark";
+
+  return (
+    <div
+      className={clsx(
+        "gooey-pill-field",
+        disabled && "is-disabled",
+        readOnly && "is-readonly",
+        muted && "is-muted",
+        isDarkTone && "is-dark-tone",
+        showActiveResult && "has-value",
+        !readOnly && hasValue && "has-input-value",
+        (disabled || (readOnly && !hasValue && title)) && "is-locked",
+        className
+      )}
+      title={title}
+    >
+      {label ? <span className="gooey-pill-field__label">{label}</span> : null}
+      <div
+        className={clsx(
+          "gooey-pill-field__surface",
+          !readOnly && "gooey-pill-field__surface--edit",
+          isDarkTone && !readOnly && "gooey-pill-field__surface--dark",
+          isDarkTone && readOnly && "gooey-pill-field__surface--dark-readonly",
+          showActiveResult && "gooey-pill-field__surface--active"
+        )}
+      >
+        {readOnly ? (
+          <span className={clsx("gooey-pill-field__value", showPlaceholder && "is-placeholder")}>
+            {value || (showPlaceholder ? placeholder : "")}
+          </span>
+        ) : (
+          <input
+            type={type}
+            min={min}
+            className="gooey-pill-field__input"
+            disabled={disabled}
+            value={value}
+            placeholder={placeholder}
+            aria-label={ariaLabel || label}
+            onChange={(event) => onChange?.(event.target.value)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function GooeyField({
   label,
