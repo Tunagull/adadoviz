@@ -25,6 +25,7 @@ import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { buildBusinessSlug, buildBranchSlug } from "../lib/slug";
 import { ChartContainer, ChartHoverCard, ChartSwatch, ChartTooltip } from "./ui/chart";
 import { chartSkin, hollowDot } from "../lib/chartTheme";
+import { SlidingTabs } from "./ui/sliding-tabs";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -511,11 +512,6 @@ export function BusinessDetailModal({
 
   const canExpandHours = Boolean(weekSchedule?.length && weekSchedule[0]?.key !== "legacy");
 
-  const tabActiveClass =
-    "rounded-md px-2.5 py-1.5 text-xs font-semibold transition border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300 sm:px-3";
-  const tabIdleClass =
-    "rounded-md px-2.5 py-1.5 text-xs font-semibold transition border border-transparent text-ink-500 hover:text-brand-700 hover:bg-ink-100 dark:text-ink-400 dark:hover:text-brand-200 dark:hover:bg-ink-800/80 sm:px-3";
-
   if (!business) return null;
 
   const panelBody = (
@@ -548,72 +544,51 @@ export function BusinessDetailModal({
             </div>
           </div>
 
-          <div className="flex w-full rounded-lg border border-ink-200 bg-ink-50 p-0.5 dark:border-ink-700 dark:bg-ink-950">
-            <button
-              type="button"
-              onClick={() => setActiveView("grafik")}
-              className={`min-w-0 flex-1 text-center ${activeView === "grafik" ? tabActiveClass : tabIdleClass}`}
-            >
-              {t("chartTabLabel")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView("konum")}
-              className={`min-w-0 flex-1 text-center ${activeView === "konum" ? tabActiveClass : tabIdleClass}`}
-            >
-              {t("businessInfoTabLabel")}
-            </button>
-          </div>
+          {/*
+            Sekme dolgusu artık anında yer değiştirmiyor: tek bir gösterge
+            katmanı iki sekme arasında kayıyor (tema anahtarındaki topuzla aynı
+            hareket dili), seçili olan beyaz yüzeyde duruyor.
+          */}
+          <SlidingTabs
+            ariaLabel={t("chartTabLabel")}
+            className="flex w-full rounded-lg border border-ink-200 bg-ink-50 p-0.5 dark:border-white/10 dark:bg-ink-950"
+            items={[
+              { key: "grafik", label: t("chartTabLabel") },
+              { key: "konum", label: t("businessInfoTabLabel") },
+            ]}
+            value={activeView}
+            onChange={setActiveView}
+            tabClassName="min-w-0 flex-1 text-center"
+          />
         </div>
 
         {activeView === "grafik" && (
           <>
-            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-ink-200 px-3 py-2.5 dark:border-ink-800 sm:px-4">
-              {PERIOD_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setPeriodId(tab.id)}
-                  className={`press rounded-lg px-3 py-1.5 text-sm font-medium sm:px-4 sm:py-2 ${
-                    periodId === tab.id
-                      ? "border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
-                      : "border border-transparent text-ink-500 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-ink-800/80 dark:hover:text-white"
-                  }`}
-                >
-                  {t(tab.labelKey)}
-                </button>
-              ))}
-              <div className="mx-1 hidden h-6 w-px bg-ink-200 dark:bg-ink-700 sm:block" />
-              {CURRENCIES.map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  onClick={() => {
-                    setCurrency(code);
-                    trackCurrencyView(code);
-                  }}
-                  /*
-                    ⚠️ TASARIM DÜZELTMESİ (D-11): Bu modalın tek bir satırında
-                    ÜÇ farklı "aktif sekme" dili vardı — görünüm sekmeleri soluk
-                    mavi dolgu, dönem sekmeleri marka tonu, para birimi
-                    sekmeleri ise neredeyse SİYAH dolgu. Siyah, uygulamanın
-                    başka hiçbir yerinde kullanılmayan bir renkti; üç kontrol
-                    yan yana dururken ayrı tasarım sistemlerinden gelmiş gibi
-                    okunuyordu.
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-ink-200 px-3 py-2.5 dark:border-white/10 sm:px-4">
+              {/*
+                Bu satırda üç ayrı "aktif sekme" dili vardı ve üçü de marka
+                tonuna (brand-500) çevrilmişti. Palet artık renk vurgusu
+                kullanmıyor: mat siyah + beyaz neon. İkisi de kayan göstergeli
+                şeride geçti, seçili olan beyaz yüzeyde duruyor.
+              */}
+              <SlidingTabs
+                ariaLabel={t("chartTabLabel")}
+                className="flex gap-0.5 rounded-control border border-ink-200 bg-ink-100/70 p-1 dark:border-white/10 dark:bg-ink-950/60"
+                items={PERIOD_TABS.map((tab) => ({ key: tab.id, label: t(tab.labelKey) }))}
+                value={periodId}
+                onChange={setPeriodId}
+              />
 
-                    Artık üçü de aynı marka tonunu kullanıyor. Boyut farkı
-                    (bunlar daha küçük) hiyerarşiyi zaten anlatıyor; ikinci bir
-                    renk diline gerek yok.
-                  */
-                  className={`press rounded-md px-2.5 py-1.5 text-xs font-semibold ${
-                    currency === code
-                      ? "border border-brand-500/40 bg-brand-500/15 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300"
-                      : "border border-transparent bg-ink-100 text-ink-500 hover:text-ink-800 dark:bg-ink-800 dark:text-ink-400 dark:hover:text-white"
-                  }`}
-                >
-                  {code}
-                </button>
-              ))}
+              <SlidingTabs
+                ariaLabel={t("currencyUnit")}
+                className="flex gap-0.5 rounded-control border border-ink-200 bg-ink-100/70 p-1 dark:border-white/10 dark:bg-ink-950/60"
+                items={CURRENCIES.map((code) => ({ key: code, label: code }))}
+                value={currency}
+                onChange={(code) => {
+                  setCurrency(code);
+                  trackCurrencyView(code);
+                }}
+              />
             </div>
 
             <div className="flex min-h-[280px] flex-1 flex-col overflow-hidden px-3 py-3 sm:min-h-0 sm:px-4 md:min-h-[420px]">

@@ -6,8 +6,20 @@
     <link rel="apple-touch-icon" href="/adadoviz-mark.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      display=optional (eskiden swap).
+
+      `swap` yedek fontla çizip Inter gelince DEĞİŞTİRİYOR; her değişim bir
+      reflow, yani düzen kayması. Chrome trace'i bunu doğruladı: büro
+      ızgarasının 0.21'lik kaymasının kök nedeni olarak bu font gösterildi.
+
+      `optional` ile tarayıcı fontu ancak ~100 ms içinde hazırsa kullanıyor,
+      değilse o açılışı yedek fontla tamamlıyor — kayma sıfır. Bedeli: çok
+      yavaş ilk ziyarette sistem fontu görünebilir (font önbelleğe alındığı
+      için sonraki ziyaretlerde Inter geliyor).
+    -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=optional"
       rel="stylesheet"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

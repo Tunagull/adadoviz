@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
 const bcrypt = require("bcryptjs");
 const axios = require("axios");
 const { buildBanksFromCentralRates, emptyPayloadForServerError, BANK_DEFINITIONS } = require("./scraper");
@@ -264,6 +265,24 @@ const visitorLimiter = createRateLimiter({
   max: 10,
   message: "Çok fazla istek. Lütfen daha sonra tekrar deneyin.",
 });
+
+/**
+ * Yanıt sıkıştırma — CORS'tan ÖNCE, ki her yanıt kapsansın.
+ *
+ * Sıkıştırma hiç yoktu. `/api/historical-rates` tek para birimi için 227 KB
+ * ham JSON gönderiyordu (ana sayfa üçünü birden istiyor → ~680 KB). Aynı
+ * gövde gzip ile 20.7 KB: yaklaşık %91 azalma. Alanlar tekrarlı sayı ve
+ * tarih olduğu için oran bu kadar yüksek.
+ *
+ * SSE (`/api/rates-stream`) hariç: sıkıştırma akışı tamponlar ve olaylar
+ * istemciye ancak tampon dolunca ulaşırdı.
+ */
+app.use(
+  compression({
+    filter: (req, res) =>
+      req.path === "/api/rates-stream" ? false : compression.filter(req, res),
+  })
+);
 
 app.use(
   cors({

@@ -269,8 +269,36 @@ canvas {
   --glow-hue: 0;
   --glow-sat: 0%;
   --glow-opacity: 0;
+
+  /**
+   * Işığın AÇIKLIK durakları. Ton ve doygunluk JS'ten geliyor (kur yükseldi /
+   * düştü yönü); açıklık ise temadan.
+   *
+   * Varsayılan = AÇIK TEMA, yani ışık kaynağı SİYAH. Beyaz ışıma beyaz kartın
+   * üstünde görünmüyordu — efekt açık temada fiilen yoktu. Ton/doygunluk
+   * korunduğu için yeşil/kırmızı yön bilgisi de kayboluyor değil, koyu
+   * yeşile/kırmızıya dönüyor.
+   */
+  --glow-l-core: 4%;
+  --glow-l-mid: 12%;
+  --glow-l-aura: 10%;
+  --glow-l-edge: 20%;
+  --glow-l-sheen: 14%;
+  --glow-a-sheen: 0.07;
+  --glow-aura-filter: blur(15px);
+
   position: relative;
   isolation: isolate;
+}
+
+.dark .glow-card {
+  --glow-l-core: 100%;
+  --glow-l-mid: 94%;
+  --glow-l-aura: 92%;
+  --glow-l-edge: 88%;
+  --glow-l-sheen: 90%;
+  --glow-a-sheen: 0.09;
+  --glow-aura-filter: blur(17px) brightness(1.15);
 }
 
 .glow-card__ring,
@@ -303,9 +331,9 @@ canvas {
    */
   background: radial-gradient(
     var(--glow-size) var(--glow-size) at var(--glow-x) var(--glow-y),
-    hsl(var(--glow-hue) var(--glow-sat) 100%) 0%,
-    hsl(var(--glow-hue) var(--glow-sat) 94% / 0.95) 26%,
-    hsl(var(--glow-hue) var(--glow-sat) 88% / 0.45) 48%,
+    hsl(var(--glow-hue) var(--glow-sat) var(--glow-l-core)) 0%,
+    hsl(var(--glow-hue) var(--glow-sat) var(--glow-l-mid) / 0.95) 26%,
+    hsl(var(--glow-hue) var(--glow-sat) var(--glow-l-edge) / 0.45) 48%,
     transparent 70%
   );
   -webkit-mask:
@@ -326,7 +354,7 @@ canvas {
  */
 .glow-card__aura {
   inset: -2px;
-  filter: blur(17px) brightness(1.15);
+  filter: var(--glow-aura-filter);
 }
 
 .glow-card__aura > span {
@@ -337,8 +365,8 @@ canvas {
   border-radius: inherit;
   background: radial-gradient(
     calc(var(--glow-size) * 0.9) calc(var(--glow-size) * 0.9) at var(--glow-x) var(--glow-y),
-    hsl(var(--glow-hue) var(--glow-sat) 100%) 0%,
-    hsl(var(--glow-hue) var(--glow-sat) 92% / 0.85) 30%,
+    hsl(var(--glow-hue) var(--glow-sat) var(--glow-l-core)) 0%,
+    hsl(var(--glow-hue) var(--glow-sat) var(--glow-l-aura) / 0.85) 30%,
     transparent 68%
   );
   -webkit-mask:
@@ -354,7 +382,7 @@ canvas {
 .glow-card__sheen {
   background: radial-gradient(
     calc(var(--glow-size) * 1.1) calc(var(--glow-size) * 1.1) at var(--glow-x) var(--glow-y),
-    hsl(var(--glow-hue) var(--glow-sat) 90% / 0.09) 0%,
+    hsl(var(--glow-hue) var(--glow-sat) var(--glow-l-sheen) / var(--glow-a-sheen)) 0%,
     transparent 68%
   );
 }
@@ -912,8 +940,35 @@ button.float-field__control {
   max-width: none;
 }
 
+/**
+ * Devre dışı seçici.
+ *
+ * `pointer-events: none` KÖKTEYDİ; tarayıcı hover üretmediği için `title`
+ * ipucu hiç görünmüyordu. Artık kök olayları alıyor (ipucu çıksın), tıklamayı
+ * yalnızca içteki düğme reddediyor.
+ *
+ * Yüzey de dolu siyah hap yerine "Tutar" / "Elde Edilecek TL" alanlarıyla
+ * aynı sönük dil: saydam zemin + 1px iç kenarlık.
+ */
 .gooey-search--disabled {
+  cursor: not-allowed;
+}
+
+.gooey-search--disabled .gooey-search__btn,
+.gooey-search--disabled .gooey-search__input,
+.gooey-search--disabled .gooey-search__results {
   pointer-events: none;
+}
+
+.gooey-search--disabled .gooey-search__btn {
+  background: transparent;
+  color: rgb(107 114 128);
+  box-shadow: inset 0 0 0 1px rgb(229 231 235);
+}
+
+.dark .gooey-search--disabled .gooey-search__btn {
+  color: rgb(161 161 170);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
 }
 
 .gooey-search__results.is-stack-scroll {
@@ -1125,11 +1180,72 @@ button.float-field__control {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgb(107 114 128);
+  /* "Şu An Açık" anahtarının etiketiyle aynı mürekkep: bu ikisi soluk griydi
+     ve yanlarındaki kontrollerden belirgin biçimde sönük duruyordu. */
+  color: rgb(10 10 12);
 }
 
+/* Koyu temada neon beyaz — `.neon-text-soft` ile aynı kısılmış ışıma. Küçük
+   punto olduğu için geniş saçılma yok; geniş hâle bu boyutta harfleri
+   bulanıklaştırıyor. */
 .dark .gooey-pill-field__label {
-  color: rgb(161 161 170);
+  color: #fff;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.4),
+    0 0 10px rgba(255, 255, 255, 0.18);
+}
+
+/* ── Kayan göstergeli sekme şeridi ──────────────────────────────────────
+   Dolgu her sekmede yeniden boyanmıyor; tek bir katman (`__indicator`)
+   sekmeler arasında süzülüyor — tema anahtarındaki kayan topuzla aynı dil.
+   Konum ve genişlik JSX tarafında ölçülüp inline yazılıyor. */
+.sliding-tabs {
+  position: relative;
+}
+
+.sliding-tabs__indicator {
+  position: absolute;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  left: 0;
+  z-index: 0;
+  width: 0;
+  border-radius: 999px;
+  pointer-events: none;
+  transition:
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease-out;
+}
+
+.sliding-tabs__tab {
+  position: relative;
+  z-index: 1;
+  min-height: 2.25rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 200ms ease-out;
+}
+
+/* Aktif sekmenin altında gösterge zaten var; hover yalnızca pasiflerde. */
+.sliding-tabs__tab[aria-selected="false"]:hover {
+  color: rgb(10 10 12);
+}
+
+.dark .sliding-tabs__tab[aria-selected="false"]:hover {
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sliding-tabs__indicator {
+    transition: none;
+  }
 }
 
 .gooey-pill-field__surface {
@@ -1296,7 +1412,9 @@ button.float-field__control {
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
-  border: 0;
+  /* Şeffaf ama VAR: kapalı hâlde renklendiriliyor, açıkken şeffaf kalıyor.
+     Böylece durum değişince hapın ölçüsü oynamıyor. */
+  border: 1px solid transparent;
   border-radius: 999px;
   background: var(--gooey-blob);
   color: var(--gooey-ink);
@@ -1306,6 +1424,17 @@ button.float-field__control {
   letter-spacing: 0.01em;
   cursor: pointer;
   white-space: nowrap;
+}
+
+/* Kapalı hâlde dolgu, hapın oturduğu yüzeyle neredeyse aynı renk (koyu temada
+   ikisi de #0a0a0c) — sınırları hiç okunmuyordu. Yanındaki "Büro ara" /
+   "Sırala" hapları dolgu kontrastıyla ayrışıyor, bu ise çerçeveyle. */
+.gooey-toggle.is-off {
+  border-color: rgb(212 212 216);
+}
+
+.dark .gooey-toggle.is-off {
+  border-color: rgb(255 255 255 / 0.22);
 }
 
 .gooey-toggle.is-off .gooey-toggle__track {

@@ -23,6 +23,7 @@ import { SearchableSelect } from "./SearchableSelect";
 import { FloatingDisplay, FloatingInput, FloatingTextarea } from "./ui/floating-label";
 import { BuySellToggle } from "./BuySellToggle";
 import { GooeyPillField, GooeySearchBar, GooeyToggle } from "./ui/animated-search-bar";
+import { SlidingTabs } from "./ui/sliding-tabs";
 /*
   ⚠️ OPTİMİZASYON (O-02): `DateField`, `react-day-picker`'ı (21 kB gzip) paket
   grafiğine çekiyordu ve bu kütüphane ANA SAYFANIN ilk yüklemesine giriyordu —
@@ -124,6 +125,27 @@ function RatePointTooltip({ active, payload, label, formatLabel, seriesLabel, co
     </ChartHoverCard>
   );
 }
+
+/**
+ * Grafik gezinme okları — kartın iki kenarındaki dairesel düğmeler.
+ * Tek yerde tanımlı: iki buton aynı yüzeyi paylaşıyor, yalnızca konumu
+ * (`left-2` / `right-2`) farklı.
+ */
+/**
+ * Grafik kartının yükleme / veri-yok hâli. Yükseklik dolu kartla aynı
+ * (ölçülen 294 px) — yer tutucu küçük kalırsa veri geldiğinde sayfa zıplıyor.
+ */
+const CHART_CARD_PLACEHOLDER_CLASS =
+  "flex h-[294px] items-center justify-center rounded-xl border border-ink-200 " +
+  "bg-white p-4 backdrop-blur-md dark:border-ink-800 dark:bg-ink-900/80";
+
+const CHART_ARROW_CLASS =
+  "absolute top-1/2 z-raised flex size-7 -translate-y-1/2 items-center justify-center " +
+  "rounded-full border transition-colors duration-fast ease-out-strong " +
+  "border-ink-200 bg-white/90 text-ink-600 hover:bg-ink-100 hover:text-ink-950 " +
+  "dark:border-white/10 dark:bg-ink-900/90 dark:text-ink-300 dark:hover:bg-ink-800 dark:hover:text-white " +
+  "disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white/90 " +
+  "dark:disabled:hover:bg-ink-900/90";
 
 function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const { theme } = useTheme();
@@ -639,9 +661,19 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     return `${day} ${monthName}, ${hh}:${min}`;
   };
 
+  /*
+    ⚠️ PERFORMANS DÜZELTMESİ (CLS): Bu iki yer tutucu `h-32` (128 px) idi, dolu
+    kart ise 294 px. Grafik verisi geldiğinde kart 166 px büyüyor, üç kart yan
+    yana durduğu için ALTINDAKİ HER ŞEY (döviz çevirici, büro ızgarası) aşağı
+    zıplıyordu. Ölçülen CLS 0.75 — "iyi" sınırı 0.1. Sayfanın oturmamış,
+    takılıyormuş gibi hissettirmesinin başlıca sebebi buydu.
+
+    Yer tutucular artık dolu kartla aynı yüksekliği kaplıyor; veri gelince
+    içerik yerine oturuyor, kutu kıpırdamıyor.
+  */
   if (loading) {
     return (
-      <div className="rounded-xl border border-ink-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-ink-800 dark:bg-ink-900/80">
+      <div className={CHART_CARD_PLACEHOLDER_CLASS}>
         <p className="text-xs text-ink-500 dark:text-ink-400">{t("loadingGeneric")}</p>
       </div>
     );
@@ -650,7 +682,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   // Yalnızca gerçekten hiç rate yoksa "Veri yok" — navigasyon sonrası boş pencere kartı öldürmesin
   if (error || chartData.length === 0) {
     return (
-      <div className="rounded-xl border border-ink-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-ink-800 dark:bg-ink-900/80">
+      <div className={CHART_CARD_PLACEHOLDER_CLASS}>
         <p className="text-xs text-ink-500 dark:text-ink-400">{error ? `❌ ${error}` : t("chartNoData")}</p>
       </div>
     );
@@ -777,8 +809,24 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
   return (
     <>
-      <div className="rounded-xl border border-ink-200 bg-white p-4 relative overflow-hidden dark:border-ink-800 dark:bg-ink-900">
-        {/* Sol Ok - Kartın sol kenarına yakın (border'dan ~8px uzak) */}
+      {/*
+        Yükseklik SABİT (yer tutucuyla aynı 294 px). İçeriğe bağlı bırakıldığında
+        veri/uyarı satırları geldikçe kart büyüyor, üç kart yan yana durduğu için
+        altındaki her şey zıplıyordu. İçteki grafik zaten sabit yükseklikte,
+        dolayısıyla sabitlemek içeriği kırpmıyor.
+      */}
+      <div className="relative h-[294px] overflow-hidden rounded-xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
+        {/*
+          ⚠️ TASARIM DÜZELTMESİ: Bu iki ok hem ORANSIZ hem TEMA KÖRÜ idi.
+          `dark:` sınıfları açık tema sınıflarının BİREBİR AYNISIYDI
+          (`bg-ink-900/90`, `text-ink-300`), yani açık temada da koyu bir hap
+          çiziyorlardı. Ölçüsü de yoktu: kutu yalnızca `p-1.5` + ikon kadar
+          büyüyor, kartın kenarında iri bir daire gibi duruyordu.
+
+          Artık sabit kare ölçü, temaya göre iki ayrı yüzey, ve devre dışı hâli
+          ternary yerine `disabled:` varyantıyla — aynı sınıf listesi iki kez
+          yazılmıyor. Etiketler de sözlükten geliyor (eskiden sabit Türkçe).
+        */}
         <button
           type="button"
           onClick={() => {
@@ -786,18 +834,12 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
           }}
           disabled={timeWindow.isLeftDisabled}
-          className={`absolute top-1/2 z-raised -translate-y-1/2 rounded-full transition-all border ${
-            timeWindow.isLeftDisabled 
-              ? "text-ink-600 opacity-40 cursor-not-allowed border-white/10 bg-ink-900/90 dark:text-ink-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-ink-900/90"
-              : "text-ink-300 hover:bg-ink-800 hover:text-white border-white/10 bg-ink-900/90 dark:text-ink-300 dark:hover:bg-ink-800 dark:hover:text-white dark:border-white/10 dark:bg-ink-900/90"
-          }`}
-          style={{ left: '8px' }}
-          aria-label="Önceki dönem"
+          className={`${CHART_ARROW_CLASS} left-2`}
+          aria-label={t("chartPrevPeriod")}
         >
-          <div className="p-1.5"><ChevronLeft size={16} /></div>
+          <ChevronLeft size={15} aria-hidden="true" />
         </button>
 
-        {/* Sağ Ok - Kartın sağ kenarına yakın (border'dan ~8px uzak) */}
         <button
           type="button"
           onClick={() => {
@@ -805,15 +847,10 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             setTimeOffset((prev) => Math.max(0, prev - 1));
           }}
           disabled={timeOffset === 0}
-          className={`absolute top-1/2 z-raised -translate-y-1/2 rounded-full transition-all border ${
-            timeOffset === 0 
-              ? "text-ink-600 opacity-40 cursor-not-allowed border-white/10 bg-ink-900/90 dark:text-ink-600 dark:opacity-40 dark:cursor-not-allowed dark:border-white/10 dark:bg-ink-900/90"
-              : "text-ink-300 hover:bg-ink-800 hover:text-white border-white/10 bg-ink-900/90 dark:text-ink-300 dark:hover:bg-ink-800 dark:hover:text-white dark:border-white/10 dark:bg-ink-900/90"
-          }`}
-          style={{ right: '8px' }}
-          aria-label="Sonraki dönem"
+          className={`${CHART_ARROW_CLASS} right-2`}
+          aria-label={t("chartNextPeriod")}
         >
-          <div className="p-1.5"><ChevronRight size={16} /></div>
+          <ChevronRight size={15} aria-hidden="true" />
         </button>
 
         {/*
@@ -835,8 +872,8 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             type="button"
             onClick={() => setIsModalOpen(true)}
             className="press shrink-0 rounded-md p-1 text-ink-500 transition-colors hover:text-ink-800 dark:text-ink-400 dark:hover:text-white"
-            title="Detaylı Analiz"
-            aria-label="Grafiği büyüt"
+            title={t("chartDetailedAnalysis")}
+            aria-label={t("chartExpand")}
           >
             <ZoomIn size={14} />
           </button>
@@ -901,7 +938,7 @@ function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                 type="button"
                 onClick={() => setIsModalOpen(false)}
                 className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
-                aria-label="Kapat"
+                aria-label={t("commonClose")}
               >
                 <X size={22} />
               </button>
@@ -2006,38 +2043,25 @@ export function V0FinancialDashboard() {
             sekme grubu iki satıra kırılıyordu.
 
             Yeni hâli tek satırda kalır (dar ekranda yatay kayar) ve aktif sekme
-            büyümez — yalnızca yüzey rengiyle ayrışır. Geçiş 300 ms `ease-in-out`
-            yerine 160 ms `ease-out-strong`: sekme değişimi bir giriş
-            hareketidir, yavaş başlaması arayüzü ağırlaştırıyordu.
+            büyümez — yalnızca yüzey rengiyle ayrışır.
+
+            Dolgu artık her sekmede yeniden boyanmıyor: tek bir gösterge katmanı
+            sekmeler arasında kayıyor (SlidingTabs), tema anahtarındaki kayan
+            topuzla aynı hareket dili.
           */}
-          <div
-            role="tablist"
-            aria-label={t("marketSummary")}
+          <SlidingTabs
+            ariaLabel={t("marketSummary")}
             className="flex shrink-0 gap-0.5 overflow-x-auto rounded-control border border-ink-200 bg-ink-100/70 p-1 [scrollbar-width:none] dark:border-white/10 dark:bg-ink-950/60 sm:overflow-visible [&::-webkit-scrollbar]:hidden"
-          >
-            {[
+            items={[
               { key: "Saatlik", label: t("periodHourly") },
               { key: "Günlük", label: t("periodDaily") },
               { key: "Haftalık", label: t("periodWeekly") },
               { key: "Aylık", label: t("periodMonthly") },
               { key: "Yıllık", label: t("periodYearly") },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={chartPeriod === key}
-                onClick={() => setChartPeriod(key)}
-                className={`press min-h-[2.25rem] shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-[background-color,color] duration-fast ease-out-strong ${
-                  chartPeriod === key
-                    ? "surface-neon shadow-sm"
-                    : "bg-transparent text-ink-600 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+            ]}
+            value={chartPeriod}
+            onChange={setChartPeriod}
+          />
         </div>
         
         {/* ✅ SADELEŞTIRILMIŞ: Sadece USD, EUR, GBP - GERÇEK VERİ */}
@@ -2091,6 +2115,13 @@ export function V0FinancialDashboard() {
             </div>
 
             <div className="min-w-0 sm:col-span-2 xl:col-span-3">
+              {/*
+                Uyarı artık ETİKET değil. Para birimi seçilmeden önce düğmenin
+                üstünde "Lütfen önce Döviz Birimi seçin" yazıyordu; kontrolün
+                ne olduğu (döviz bürosu seçici) hiç okunmuyordu ve uzun metin
+                hapı komşu alanlardan farklı gösteriyordu. Etiket artık her
+                hâlde "Döviz Bürosu"; sebep `title` ile imleçte veriliyor.
+              */}
               <GooeySearchBar
                 mode="select"
                 fill
@@ -2117,8 +2148,9 @@ export function V0FinancialDashboard() {
                   setCalculatorBank(item.id);
                   setExchangeAmount("0");
                 }}
-                collapsedLabel={!exchangeCurrency ? t("selectCurrencyFirst") : t("selectBank")}
-                placeholder={!exchangeCurrency ? t("selectCurrencyFirst") : t("selectExchangeOffice")}
+                collapsedLabel={t("selectBank")}
+                placeholder={t("selectExchangeOffice")}
+                title={!exchangeCurrency ? t("selectCurrencyFirst") : undefined}
                 emptyLabel={t("noResults")}
                 maxResults={8}
                 scrollMax={4}
@@ -2189,7 +2221,7 @@ export function V0FinancialDashboard() {
             </div>
             <FloatingInput
               className="min-w-0"
-              label="Anapara Tutarı (TL)"
+              label={t("calcPrincipalTl")}
               type="number"
               min="0"
               value={depositAmount}
@@ -2197,7 +2229,7 @@ export function V0FinancialDashboard() {
             />
             <div className="flex min-w-0 flex-col gap-1">
               <SearchableSelect
-                label="Vade Türü"
+                label={t("calcTermType")}
                 value={depositType}
                 onChange={setDepositType}
                 options={[
@@ -2209,7 +2241,7 @@ export function V0FinancialDashboard() {
             </div>
             <FloatingInput
               className="min-w-0"
-              label="Vade Süresi (Gün)"
+              label={t("calcTermDays")}
               type="number"
               min="1"
               value={depositDays}
@@ -2217,7 +2249,7 @@ export function V0FinancialDashboard() {
             />
             <FloatingDisplay
               className="min-w-0"
-              label="Net Getiri"
+              label={t("calcNetReturn")}
               muted={!Number.isFinite(depositProfit)}
               valueClassName={Number.isFinite(depositProfit) ? "font-semibold" : ""}
             >
@@ -2230,7 +2262,7 @@ export function V0FinancialDashboard() {
             </FloatingDisplay>
             <FloatingDisplay
               className="min-w-0"
-              label="Vade Sonu Toplam"
+              label={t("calcMaturityTotal")}
               muted={!Number.isFinite(depositTotal)}
               valueClassName={Number.isFinite(depositTotal) ? "font-semibold" : ""}
             >
@@ -2262,7 +2294,7 @@ export function V0FinancialDashboard() {
             </div>
             <div className="flex min-w-0 flex-col gap-1">
               <SearchableSelect
-                label="Kredi Türü"
+                label={t("calcLoanType")}
                 value={loanType}
                 onChange={setLoanType}
                 options={[
@@ -2274,7 +2306,7 @@ export function V0FinancialDashboard() {
             </div>
             <FloatingInput
               className="min-w-0"
-              label="Kredi Tutarı (TL)"
+              label={t("calcLoanAmountTl")}
               type="number"
               min="0"
               value={loanAmount}
@@ -2282,7 +2314,7 @@ export function V0FinancialDashboard() {
             />
             <FloatingInput
               className="min-w-0"
-              label="Vade (Ay)"
+              label={t("calcTermMonths")}
               type="number"
               min="1"
               value={loanMonths}
@@ -2290,7 +2322,7 @@ export function V0FinancialDashboard() {
             />
             <FloatingDisplay
               className="min-w-0"
-              label="Aylık Taksit Tutarı"
+              label={t("calcMonthlyPayment")}
               muted={!Number.isFinite(loanInstallment)}
               valueClassName={Number.isFinite(loanInstallment) ? "font-semibold" : ""}
             >
@@ -2303,7 +2335,7 @@ export function V0FinancialDashboard() {
             </FloatingDisplay>
             <FloatingDisplay
               className="min-w-0"
-              label="Toplam Geri Ödeme"
+              label={t("calcTotalRepayment")}
               muted={!Number.isFinite(loanTotal)}
               valueClassName={Number.isFinite(loanTotal) ? "font-semibold" : ""}
             >
@@ -2481,7 +2513,12 @@ export function V0FinancialDashboard() {
 
       {lastUpdated ? (
         <div className="mt-10 flex justify-center px-2">
-          <div className="rounded-lg border border-ink-200 bg-white/80 px-4 py-2.5 text-center text-xs tracking-wide text-ink-500 shadow-sm dark:border-ink-700/80 dark:bg-ink-950/60">
+          {/*
+            Metin her iki temada da `text-ink-500` idi; koyu zeminde neredeyse
+            okunmuyordu. Artık sitedeki ikincil metin dili: açıkta ink-600,
+            koyuda ink-300. Kenarlık da diğer yüzeylerle aynı (`white/10`).
+          */}
+          <div className="rounded-lg border border-ink-200 bg-white/80 px-4 py-2.5 text-center text-xs tracking-wide text-ink-600 shadow-sm dark:border-white/10 dark:bg-ink-900/60 dark:text-ink-300">
             {/* U-05: bu değer sunucunun son kontrol anı, bültenin tarihi değil. */}
             {`${t("lastChecked")}: ${new Date(lastUpdated).toLocaleDateString(localeCode)} - ${new Date(lastUpdated).toLocaleTimeString(localeCode)}`}
           </div>
@@ -2498,8 +2535,8 @@ export function V0FinancialDashboard() {
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </div>
-              <h3 className="text-center text-lg font-bold text-white sm:text-xl">Çıkış Yapılıyor...</h3>
-              <p className="mt-2 text-center text-sm text-ink-300">Anasayfaya yönlendiriliyorsunuz</p>
+              <h3 className="text-center text-lg font-bold text-white sm:text-xl">{t("logoutInProgress")}</h3>
+              <p className="mt-2 text-center text-sm text-ink-300">{t("logoutRedirecting")}</p>
             </div>
           </div>
         )}

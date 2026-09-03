@@ -146,6 +146,11 @@ export function GooeySearchBar({
   resultIcon: ResultIcon = Building2,
   hideOrb = false,
   neutralSelectedId,
+  /**
+   * Kökteki `title` — devre dışıyken sebebini imleçle göstermek için.
+   * Uyarıyı düğmenin ETİKETİ yapmak, kontrolün ne olduğunu okunmaz kılıyordu.
+   */
+  title,
   "aria-label": ariaLabel,
 }) {
   const reactId = useId().replace(/:/g, "");
@@ -342,6 +347,7 @@ export function GooeySearchBar({
       )}
       data-placement={placement}
       data-expanded={expanded ? "" : undefined}
+      title={title}
       style={isUnsupported ? undefined : { filter: `url(#${filterId})` }}
     >
       <GooeyFilter id={filterId} />
@@ -369,8 +375,33 @@ export function GooeySearchBar({
                     ? { "--gooey-scroll-max": scrollMax, "--gooey-stack-height": `${stackInnerHeight}px` }
                     : undefined
                 }
-                exit={reduceMotion ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
-                transition={{ delay: reduceMotion || isUnsupported ? 0.05 : 0.35, duration: 0.35 }}
+                /*
+                  Açılış ve kapanış artık BİRBİRİNİN AYNASI.
+
+                  Eskiden `initial`/`animate` hiç yoktu — liste açılışta
+                  animasyonsuz beliriyordu. Tek `transition` ise hem girişe hem
+                  ÇIKIŞA uygulanıyordu ve içinde `delay: 0.35` vardı: kapanırken
+                  liste önce 350 ms hiçbir şey yapmadan duruyor, sonra birden
+                  siliniyordu. Gecikmenin sebebi girişte düğmenin önce genişlemesi;
+                  çıkışta ise ters sıra gerekiyor — önce liste küçülsün.
+
+                  Gecikme bu yüzden `transition` yerine durumların İÇİNE taşındı:
+                  girişte var, çıkışta yok.
+                */
+                initial={reduceMotion ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
+                animate={{
+                  scale: 1,
+                  opacity: 1,
+                  transition: {
+                    delay: reduceMotion || isUnsupported ? 0.05 : 0.35,
+                    duration: reduceMotion ? 0.15 : 0.35,
+                  },
+                }}
+                exit={
+                  reduceMotion
+                    ? { opacity: 0, transition: { duration: 0.12 } }
+                    : { scale: 0.6, opacity: 0, transition: { delay: 0, duration: 0.24 } }
+                }
               >
                 {useScrollList ? (
                   <div className="gooey-search__stack-inner" style={{ height: `${stackInnerHeight}px` }}>

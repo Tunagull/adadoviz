@@ -75,6 +75,36 @@ function bucketByDay(rawRows) {
 }
 
 /**
+ * ── Piyasa geçmişi önbelleği ────────────────────────────────────────────
+ *
+ * `getMarketHistoricalRates` her çağrıda para birimi başına ALTI ardışık
+ * Supabase turu yapıyordu (sayfalı arşiv + earliest + past + current) ve
+ * ~227 KB döndürüyordu. Ana sayfa üç para birimi için üçünü birden çağırdığı
+ * için ilk açılış tek başına ~680 KB ve yerelde ~2 sn; uzak veritabanıyla çok
+ * daha fazlaydı.
+ *
+ * Kurlar en fazla saatte bir değiştiği için sonucu kısa süre tutmak veriyi
+ * bayatlatmıyor; ilk istek dışındaki her istek Supabase'e hiç gitmiyor.
+ *
+ * Uçuştaki istek de paylaşılıyor (`pending`): üç kart aynı anda açıldığında
+ * aynı sorgu üç kez başlatılmıyor, ilkinin sonucu bekleniyor.
+ */
+/**
+ * TTL uzun tutulabiliyor çünkü tazelik ondan gelmiyor: yeni kur yazıldığında
+ * `insertHistoricalRate` önbelleği zaten boşaltıyor. TTL yalnızca emniyet
+ * supabı — kaçırılan bir yazma olursa veri en fazla bu kadar bayat kalır.
+ */
+const MARKET_HISTORY_TTL_MS = 5 * 60_000;
+const marketHistoryCache = new Map();
+const marketHistoryPending = new Map();
+
+/** Yeni kur yazıldığında veya testte önbelleği elle boşaltmak için. */
+function clearMarketHistoryCache() {
+  marketHistoryCache.clear();
+  marketHistoryPending.clear();
+}
+
+/**
  * Supabase PostgREST varsayılan limiti 1000 satır.
  * Tüm sayfaları çekerek tam sonuç döndürür.
  */
@@ -112,6 +142,10 @@ async function insertHistoricalRate(currency, buy_rate, sell_rate, recorded_at) 
     throw new Error(`Failed to insert rate: ${error.message}`);
   }
 
+  // Yeni kur geldi: önbellek beklemeden düşsün, yoksa grafik TTL kadar
+  // (60 sn) eski kalırdı.
+  clearMarketHistoryCache();
+
   return data;
 }
 
@@ -122,6 +156,31 @@ async function insertHistoricalRate(currency, buy_rate, sell_rate, recorded_at) 
  * yıllar geriye gidilebilir (Yıllık ile aynı UX).
  */
 async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
+  const key = `${period}|${currency}`;
+
+  const cached = marketHistoryCache.get(key);
+  if (cached && Date.now() - cached.at < MARKET_HISTORY_TTL_MS) {
+    return cached.value;
+  }
+
+  const inFlight = marketHistoryPending.get(key);
+  if (inFlight) return inFlight;
+
+  const work = fetchMarketHistoricalRates(period, currency)
+    .then((value) => {
+      marketHistoryCache.set(key, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => {
+      marketHistoryPending.delete(key);
+    });
+
+  marketHistoryPending.set(key, work);
+  return work;
+}
+
+/** Önbelleksiz asıl sorgu — yalnızca `getMarketHistoricalRates` çağırır. */
+async function fetchMarketHistoricalRates(period, currency) {
   const spec = resolvePeriodSpec(period);
   const viewHours = spec.viewHours;
   const pctHours = spec.pctHours;
@@ -429,6 +488,7 @@ module.exports = {
   supabase,
   insertHistoricalRate,
   getMarketHistoricalRates,
+  clearMarketHistoryCache,
   getBusinessRateHistory,
   insertMarginHistory,
   fetchMarginHistory,
