@@ -960,25 +960,47 @@ button.float-field__control {
   pointer-events: none;
 }
 
+/**
+ * Devre dışı yüzey: SÖNÜK ama GÖRÜNÜR.
+ *
+ * Bir ara tamamen saydam yapılmıştı ("Tutar" alanıyla aynı dil olsun diye);
+ * ama onun dışarıda bir etiketi var, bu ise çıplak bir hap — zeminde büsbütün
+ * kayboldu. Dolgu geri geldi, "Şu An Açık" anahtarının kapalı hâliyle aynı
+ * tonlarda; kenarlık sınırları okutuyor.
+ */
 .gooey-search--disabled .gooey-search__btn {
-  background: transparent;
-  color: rgb(107 114 128);
-  box-shadow: inset 0 0 0 1px rgb(229 231 235);
+  background: #e4e4e7;
+  color: rgb(82 82 91);
+  box-shadow: inset 0 0 0 1px rgb(212 212 216);
 }
 
 .dark .gooey-search--disabled .gooey-search__btn {
+  background: #0a0a0c;
   color: rgb(161 161 170);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
 }
 
 .gooey-search__results.is-stack-scroll {
   inset: 0 auto auto 0;
   z-index: 1;
   width: 100%;
+  /*
+    Yükseklik tam olarak `--gooey-scroll-max` kadar baloncuk gösteriyor:
+    öğeler 50 px aralıkla diziliyor (STACK_STEP_PX), sonuncusunun 2.75rem'lik
+    gövdesi de sığsın diye buton yüksekliği ekleniyor. Varsayılan 4.
+  */
   max-height: calc(2.75rem + var(--gooey-scroll-max, 4) * 50px);
   overflow-x: hidden;
   overflow-y: auto;
-  pointer-events: none;
+  /*
+    `pointer-events: none` İDİ. Öğelerin kendisi `auto` olduğu için tıklama
+    çalışıyordu ama KAP olayları almadığından kaydırma çubuğu tutulamıyor,
+    tekerlek olayı da listenin üstünden sayfaya kaçıyordu — liste dört
+    baloncukta kilitli görünüyordu. Kaydırılabilir bir kabın olayları alması
+    gerekir.
+  */
+  pointer-events: auto;
+  overscroll-behavior: contain;
   padding-right: 2px;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--gooey-ink) 35%, transparent) transparent;

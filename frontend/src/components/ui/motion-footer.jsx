@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { ArrowUp, BarChart3, Building2, LineChart, MessageCircle } from "lucide-react";
+import { ArrowUp, BarChart3, Building2, LineChart, Mail, MessageCircle, Tag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
 import { contactLinks } from "../../lib/contact";
@@ -59,6 +59,8 @@ export function MagneticButton({
   const ref = useRef(null);
   const frameRef = useRef(0);
   const pointerRef = useRef(null);
+  /** İmleç girdiğinde, transform sıfırken alınan referans kutu. */
+  const baseRectRef = useRef(null);
 
   const flush = useCallback(() => {
     frameRef.current = 0;
@@ -66,7 +68,17 @@ export function MagneticButton({
     const pointer = pointerRef.current;
     if (!el || !pointer) return;
 
-    const rect = el.getBoundingClientRect();
+    /*
+      ⚠️ HATA DÜZELTMESİ: Ölçüm `el.getBoundingClientRect()` ile yapılıyordu ve
+      o kutu MEVCUT transform'u içeriyor. Yani düğme her karede kendi kaydığı
+      yerden yeniden ölçülüyor, sapma birikiyor ve düğme imleci kovalayarak
+      yerinden sürükleniyordu. Nişan alırken düğme altından kaçtığı için
+      tıklamalar yanına düşüyordu — "footer butonları çalışmıyor".
+
+      Referans artık imleç girdiği anda BİR KEZ, transform sıfırken alınan
+      temel kutu; sapma birikmiyor, düğme öngörülebilir bir yay kadar oynuyor.
+    */
+    const rect = baseRectRef.current || el.getBoundingClientRect();
     const dx = pointer.x - (rect.left + rect.width / 2);
     const dy = pointer.y - (rect.top + rect.height / 2);
 
@@ -88,6 +100,8 @@ export function MagneticButton({
       if (event.pointerType === "touch" || prefersReducedMotion()) return;
       const el = ref.current;
       if (!el) return;
+      // İlk harekette, düğme henüz yerinden oynamamışken ölç.
+      if (!baseRectRef.current) baseRectRef.current = el.getBoundingClientRect();
       el.dataset.magnet = "track";
       pointerRef.current = { x: event.clientX, y: event.clientY };
       if (!frameRef.current) frameRef.current = requestAnimationFrame(flush);
@@ -106,6 +120,9 @@ export function MagneticButton({
       }
       el.dataset.magnet = "release";
       el.style.transform = "";
+      // Bir sonraki girişte yeniden ölçülsün: sayfa kaymış/yeniden
+      // boyutlanmış olabilir.
+      baseRectRef.current = null;
     },
     [onPointerLeave]
   );
@@ -307,6 +324,34 @@ export function CinematicFooter() {
               >
                 <LineChart className="size-4" aria-hidden="true" />
                 {t("navRates")}
+              </MagneticButton>
+
+              {/*
+                Footer sitenin ESKİ yapısını gösteriyordu: gezinme yalnızca
+                Kurlar + WhatsApp + Instagram'dı. Üst gezinme çoktan dört
+                sekmeye çıkmıştı (Kurlar / Kıyasla / Paketler / İletişim);
+                eksik ikisi buraya eklendi.
+              */}
+              <MagneticButton
+                as="button"
+                type="button"
+                onClick={() => navigate("/paketler")}
+                strength={0.25}
+                className={`cursor-pointer ${pillLink}`}
+              >
+                <Tag className="size-4" aria-hidden="true" />
+                {t("navPricing")}
+              </MagneticButton>
+
+              <MagneticButton
+                as="button"
+                type="button"
+                onClick={() => navigate("/iletisim")}
+                strength={0.25}
+                className={`cursor-pointer ${pillLink}`}
+              >
+                <Mail className="size-4" aria-hidden="true" />
+                {t("navContact")}
               </MagneticButton>
 
               <MagneticButton

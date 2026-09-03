@@ -2121,6 +2121,10 @@ export function V0FinancialDashboard() {
                 ne olduğu (döviz bürosu seçici) hiç okunmuyordu ve uzun metin
                 hapı komşu alanlardan farklı gösteriyordu. Etiket artık her
                 hâlde "Döviz Bürosu"; sebep `title` ile imleçte veriliyor.
+
+                `maxResults` 8 değil 16: 16 büro var, 8'de kesmek kaydırsan da
+                geri kalanını ulaşılmaz kılıyordu. Görünen baloncuk sayısı yine
+                4 (`scrollMax`), gerisi kaydırmayla geliyor.
               */}
               <GooeySearchBar
                 mode="select"
@@ -2152,7 +2156,7 @@ export function V0FinancialDashboard() {
                 placeholder={t("selectExchangeOffice")}
                 title={!exchangeCurrency ? t("selectCurrencyFirst") : undefined}
                 emptyLabel={t("noResults")}
-                maxResults={8}
+                maxResults={16}
                 scrollMax={4}
                 aria-label={t("selectBank")}
               />
