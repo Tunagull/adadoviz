@@ -2366,41 +2366,37 @@ export function SuperAdminDashboard() {
             </h3>
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <label className="block">
-                <span className="field-label">{t("revBusiness")}</span>
-                <select
-                  className="field"
-                  required
+              {/*
+                R-… Native <select> yerine SearchableSelect: dosyadaki diğer
+                sekiz kullanımla aynı — animasyonlu açılır menü, aranabilir,
+                klavye gezinmeli. `required` kaldırıldı; gönderim zaten
+                `if (!payForm.institution_id || !payForm.plan_code) return`
+                ile korunuyor.
+              */}
+              <div className="block">
+                <SearchableSelect
+                  label={t("revBusiness")}
                   value={payForm.institution_id}
-                  onChange={(e) =>
-                    setPayForm((f) => ({ ...f, institution_id: e.target.value }))
+                  onChange={(value) =>
+                    setPayForm((f) => ({ ...f, institution_id: value }))
                   }
-                >
-                  <option value="">{t("revPickBusiness")}</option>
-                  {businesses.map((b) => (
-                    <option key={b.institution_id} value={b.institution_id}>
-                      {b.institution_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  options={businesses.map((b) => ({
+                    value: b.institution_id,
+                    label: b.institution_name,
+                  }))}
+                  placeholder={t("revPickBusiness")}
+                />
+              </div>
 
-              <label className="block">
-                <span className="field-label">{t("revPlan")}</span>
-                <select
-                  className="field"
-                  required
+              <div className="block">
+                <SearchableSelect
+                  label={t("revPlan")}
                   value={payForm.plan_code}
-                  onChange={(e) => setPayForm((f) => ({ ...f, plan_code: e.target.value }))}
-                >
-                  <option value="">{t("revPickPlan")}</option>
-                  {plans.map((p) => (
-                    <option key={p.code} value={p.code}>
-                      {p.ad}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={(value) => setPayForm((f) => ({ ...f, plan_code: value }))}
+                  options={plans.map((p) => ({ value: p.code, label: p.ad }))}
+                  placeholder={t("revPickPlan")}
+                />
+              </div>
 
               <label className="block">
                 <span className="field-label">{t("revAmount")}</span>

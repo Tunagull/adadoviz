@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LazyMotion, m, useReducedMotion } from "framer-motion";
 import clsx from "clsx";
-import { Building2, Loader2, Search } from "lucide-react";
+import { Building2, Check, Loader2, Search } from "lucide-react";
 
 /*
   ⚠️ PERF: `motion` (tam) yerine `m` (mini) + LazyMotion. `motion` HER zaman
@@ -42,80 +42,39 @@ export function isUnsupportedBrowser() {
   return isSafari || isChromeOniOS;
 }
 
-function GooeyFilter({ id }) {
-  return (
-    <svg className="gooey-search__svg" aria-hidden="true" width="0" height="0">
-      <defs>
-        <filter id={id}>
-          <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
-          <feColorMatrix
-            in="blur"
-            type="matrix"
-            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -15"
-            result="goo"
-          />
-          <feComposite in="SourceGraphic" in2="goo" operator="atop" />
-        </filter>
-      </defs>
-    </svg>
-  );
-}
-
+/*
+  Sonuç satırı animasyonu — kaynaktan alınan açılır menü diliyle aynı:
+  soldan kısa bir kayma + solma, satır sırasına göre kademeli gecikme.
+  Eski "baloncuk yığını" (her öğe 50 px arayla, yaylı) yerine düz liste.
+  `isUnsupported` artık kullanılmıyor (gooey SVG filtresi menüden kaldırıldı).
+*/
 function getResultItemVariants(index, isUnsupported, placement, reduceMotion, scrollMax = 0) {
-  const stack = (index + 1) * STACK_STEP_PX;
-  const y = placement === "up" ? -stack : stack;
-  const skipStackMotion = scrollMax > 0 && index >= scrollMax;
-
-  if (reduceMotion || skipStackMotion) {
-    return {
-      initial: { y, opacity: 0 },
-      animate: { y, opacity: 1 },
-      exit: { opacity: 0 },
-    };
-  }
-  /*
-    ⚠️ PERF: Her sonuç baloncuğu ayrıca `filter: blur(10px) → blur(0)` anime
-    ediyordu. Kök `<div>` zaten SVG `feGaussianBlur` filtresi altında olduğu
-    için bu, her karede filtre grafiğinin öğe başına + kapsayıcı olmak üzere
-    İKİ KEZ CPU'da yeniden rasterize edilmesi demekti — açılışta takılmanın
-    baş sebebi. "Gooey" birleşme efekti zaten kapsayıcı filtresinden geliyor;
-    öğe başına blur'u kaldırmak efekti bozmaz, kare maliyetini düşürür.
-    Kalan hareket y + scale + opacity — üçü de compositable.
-  */
   void isUnsupported;
+  void scrollMax;
+  if (reduceMotion) {
+    return { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } };
+  }
+  const x = placement === "up" ? 12 : -12;
   return {
-    initial: { y: 0, scale: 0.3, opacity: 0.6 },
-    animate: { y, scale: 1, opacity: 1 },
-    exit: {
-      y: placement === "up" ? 4 : -4,
-      scale: 0.8,
-      opacity: 0,
-    },
+    initial: { opacity: 0, x },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: x / 2 },
   };
 }
 
 function getResultItemTransition(index, reduceMotion, scrollMax = 0) {
-  if (reduceMotion) return { duration: 0.15 };
-  if (scrollMax > 0 && index >= scrollMax) {
-    return { duration: 0.12, delay: 0 };
-  }
+  if (reduceMotion) return { duration: 0.12 };
+  // Katlamanın altındaki satırlar (kaydırmalı listede) gecikmesiz gelsin.
+  const belowFold = scrollMax > 0 && index >= scrollMax;
   return {
-    duration: 0.75,
-    delay: index * 0.08,
-    type: "spring",
-    bounce: 0.35,
-    exit: { duration: Math.min(index * 0.08, 0.24) },
+    duration: 0.14,
+    ease: "easeOut",
+    delay: belowFold ? 0 : Math.min(index, 6) * 0.025,
   };
 }
 
 function collapsedWidthFor(label) {
   return Math.min(220, Math.max(118, String(label || "").length * 9 + 36));
-}
-
-const STACK_STEP_PX = 50;
-
-function getStackInnerHeight(count) {
-  return Math.max(count, 1) * STACK_STEP_PX;
 }
 
 /**
@@ -166,26 +125,16 @@ export function GooeySearchBar({
   title,
   "aria-label": ariaLabel,
 }) {
-  const reactId = useId().replace(/:/g, "");
-  const filterId = `goo-effect-${reactId}`;
   const inputRef = useRef(null);
   const rootRef = useRef(null);
   const reduceMotion = useReducedMotion();
+  // Safari/iOS Chrome tespiti — artık yalnızca menü giriş gecikmesini kısaltmak için.
   const isUnsupported = useMemo(() => isUnsupportedBrowser(), []);
   const isSelect = mode === "select";
 
   const [step, setStep] = useState(1);
   const [innerText, setInnerText] = useState(value ?? "");
   const [highlight, setHighlight] = useState(0);
-  /*
-    ⚠️ PERF: SVG gooey filtresi (`filter: url(#…)`) GPU'da compose edilemez —
-    kapsadığı ağaç her karede CPU'da yeniden rasterize edilir. Sayfada birden
-    çok GooeySearchBar var; hepsinin filtresi boşta dururken bile sürekli
-    açık kalması ana sayfayı ağırlaştırıyordu. Filtre yalnızca kullanıcı
-    kutuyla etkileşirken (açılış + kapanış animasyonu boyunca) aktif; kapalı
-    tek hap durumdayken zaten hiçbir şeyi "birleştirmediği" için gereksiz.
-  */
-  const [filterActive, setFilterActive] = useState(false);
 
   const searchText = isSelect ? innerText : value !== undefined ? value : innerText;
 
@@ -209,21 +158,10 @@ export function GooeySearchBar({
 
   useEffect(() => {
     if (step === 2) {
-      const t = window.setTimeout(() => inputRef.current?.focus(), 120);
+      const t = window.setTimeout(() => inputRef.current?.focus(), 40);
       return () => window.clearTimeout(t);
     }
     return undefined;
-  }, [step]);
-
-  // Filtreyi etkileşim penceresiyle sınırla: açılırken hemen aç, kapanırken
-  // çıkış animasyonu bitene kadar (≈400 ms) açık tut, sonra kapat.
-  useEffect(() => {
-    if (step === 2) {
-      setFilterActive(true);
-      return undefined;
-    }
-    const t = window.setTimeout(() => setFilterActive(false), 420);
-    return () => window.clearTimeout(t);
   }, [step]);
 
   useEffect(() => {
@@ -306,7 +244,6 @@ export function GooeySearchBar({
   const btnCollapsedWidth = fill ? "100%" : collapsedWidthFor(collapsedText);
   const btnExpandedWidth = fill ? "100%" : expandedWidth;
   const useScrollList = Number(scrollMax) > 0;
-  const stackInnerHeight = getStackInnerHeight(results.length);
 
   const openBar = () => {
     if (disabled || expanded) return;
@@ -337,7 +274,11 @@ export function GooeySearchBar({
             animate="animate"
             exit="exit"
             transition={getResultItemTransition(index, reduceMotion, useScrollList ? scrollMax : 0)}
-            className={clsx("gooey-search__result", index === highlight && "is-active")}
+            className={clsx(
+              "gooey-search__result",
+              index === highlight && "is-active",
+              isSelect && String(item.id) === String(selectedId) && "is-selected"
+            )}
             role="option"
             aria-selected={index === highlight}
             onMouseEnter={() => setHighlight(index)}
@@ -346,6 +287,20 @@ export function GooeySearchBar({
             {ResultIcon ? <ResultIcon className="gooey-search__info" aria-hidden="true" /> : null}
             <span className="gooey-search__result-label">{item.label}</span>
             {item.hint ? <span className="gooey-search__result-hint">{item.hint}</span> : null}
+            {isSelect && String(item.id) === String(selectedId) ? (
+              <m.span
+                className="gooey-search__result-check"
+                initial={reduceMotion ? false : { scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={
+                  reduceMotion
+                    ? { duration: 0 }
+                    : { type: "spring", stiffness: 500, damping: 30 }
+                }
+              >
+                <Check aria-hidden="true" />
+              </m.span>
+            ) : null}
           </m.button>
         ))}
       </AnimatePresence>
@@ -377,19 +332,14 @@ export function GooeySearchBar({
       ref={rootRef}
       className={clsx(
         "gooey-search",
-        isUnsupported && "no-goo",
         fill && "gooey-search--fill",
         disabled && "gooey-search--disabled",
-        useScrollList && "gooey-search--stack-scroll",
         className
       )}
       data-placement={placement}
       data-expanded={expanded ? "" : undefined}
       title={title}
-      style={isUnsupported || !filterActive ? undefined : { filter: `url(#${filterId})` }}
     >
-      <GooeyFilter id={filterId} />
-
       <div className="gooey-search__stage">
         <m.div
           className="gooey-search__inner"
@@ -397,57 +347,51 @@ export function GooeySearchBar({
           animate={expanded ? "step2" : "step1"}
           transition={
             reduceMotion
-              ? { duration: 0.15 }
-              : { duration: 0.75, type: "spring", bounce: 0.15 }
+              ? { duration: 0.12 }
+              : { type: "spring", stiffness: 420, damping: 34 }
           }
         >
           <AnimatePresence mode="popLayout">
             {expanded ? (
               <m.div
                 key="search-results"
-                className={clsx("gooey-search__results", useScrollList && "is-stack-scroll")}
+                className="gooey-search__results"
                 role="listbox"
                 aria-label={ariaLabel || collapsedLabel}
-                style={
-                  useScrollList
-                    ? { "--gooey-scroll-max": scrollMax, "--gooey-stack-height": `${stackInnerHeight}px` }
-                    : undefined
-                }
+                style={{ "--gooey-scroll-max": Number(scrollMax) > 0 ? scrollMax : 5 }}
                 /*
-                  Açılış ve kapanış artık BİRBİRİNİN AYNASI.
-
-                  Eskiden `initial`/`animate` hiç yoktu — liste açılışta
-                  animasyonsuz beliriyordu. Tek `transition` ise hem girişe hem
-                  ÇIKIŞA uygulanıyordu ve içinde `delay: 0.35` vardı: kapanırken
-                  liste önce 350 ms hiçbir şey yapmadan duruyor, sonra birden
-                  siliniyordu. Gecikmenin sebebi girişte düğmenin önce genişlemesi;
-                  çıkışta ise ters sıra gerekiyor — önce liste küçülsün.
-
-                  Gecikme bu yüzden `transition` yerine durumların İÇİNE taşındı:
-                  girişte var, çıkışta yok.
+                  Açılır panel artık kaynaktaki sade dil: aşağı (ya da `up`'ta
+                  yukarı) doğru kısa bir kayma + solma. Giriş, düğme genişledikten
+                  SONRA (gecikme durumun içinde); çıkış gecikmesiz — açılış/kapanış
+                  yine birbirinin aynası, sadece yön ve süre sadeleşti.
                 */
-                initial={reduceMotion ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
+                initial={
+                  reduceMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: placement === "up" ? 8 : -8 }
+                }
                 animate={{
-                  scale: 1,
                   opacity: 1,
+                  y: 0,
                   transition: {
-                    delay: reduceMotion || isUnsupported ? 0.05 : 0.35,
-                    duration: reduceMotion ? 0.15 : 0.35,
+                    // Panel, hap genişlerken hemen hemen aynı anda açılsın —
+                    // eski 0.32 sn gecikme "tıkladım, bir şey olmadı" hissi veriyordu.
+                    delay: reduceMotion || isUnsupported ? 0.02 : 0.08,
+                    duration: reduceMotion ? 0.1 : 0.16,
+                    ease: [0.16, 1, 0.3, 1],
                   },
                 }}
                 exit={
                   reduceMotion
-                    ? { opacity: 0, transition: { duration: 0.12 } }
-                    : { scale: 0.6, opacity: 0, transition: { delay: 0, duration: 0.24 } }
+                    ? { opacity: 0, transition: { duration: 0.1 } }
+                    : {
+                        opacity: 0,
+                        y: placement === "up" ? 6 : -6,
+                        transition: { duration: 0.16 },
+                      }
                 }
               >
-                {useScrollList ? (
-                  <div className="gooey-search__stack-inner" style={{ height: `${stackInnerHeight}px` }}>
-                    {renderResultItems()}
-                  </div>
-                ) : (
-                  renderResultItems()
-                )}
+                {renderResultItems()}
               </m.div>
             ) : null}
           </AnimatePresence>
@@ -500,8 +444,8 @@ export function GooeySearchBar({
                 exit={reduceMotion ? { opacity: 0 } : { x: -36, opacity: 0 }}
                 transition={
                   reduceMotion
-                    ? { duration: 0.15 }
-                    : { delay: 0.08, duration: 0.85, type: "spring", bounce: 0.15 }
+                    ? { duration: 0.12 }
+                    : { type: "spring", stiffness: 420, damping: 34 }
                 }
               >
                 {showSpinner ? (
