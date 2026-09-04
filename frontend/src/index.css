@@ -768,13 +768,6 @@ button.float-field__control {
   z-index: theme("zIndex.dropdown");
 }
 
-.gooey-search__svg {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: hidden;
-}
-
 .gooey-search__stage {
   position: relative;
   height: 2.75rem;
@@ -829,48 +822,96 @@ button.float-field__control {
   appearance: none;
 }
 
+/*
+  Açılır sonuç paneli — SearchableSelect menüsüyle aynı dil (kaynak dropdown'dan
+  uyarlandı): düğmenin ALTINA (ya da `up` yerleşiminde ÜSTÜNE) düşen, kenarlıklı,
+  yuvarlatılmış, gölgeli bir kart. Eski "baloncuk yığını" (mutlak konumlu, 999px
+  hap satırlar + gooey SVG birleşmesi) kaldırıldı; satırlar artık normal akışta.
+  --gooey-scroll-max: panelde kaydırmasız görünecek satır sayısı (JS'ten).
+*/
 .gooey-search__results {
+  --ggr-bg: #fff;
+  --ggr-border: #e0e0e3;
+  --ggr-text: #2f2f35;
+  --ggr-selected-bg: #eeeef0;
+  --ggr-invert-bg: #08080a;
+  --ggr-invert-text: #fff;
   position: absolute;
-  inset: 0 auto auto 0;
-  z-index: 1;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: theme("zIndex.dropdown");
+  display: flex;
   width: 100%;
-  pointer-events: none;
+  max-height: calc(var(--gooey-scroll-max, 5) * 2.75rem + 0.5rem);
+  flex-direction: column;
+  overflow-y: auto;
+  border: 1px solid var(--ggr-border);
+  border-radius: 0.75rem;
+  background: var(--ggr-bg);
+  padding: 0.25rem;
+  box-shadow: 0 24px 48px -16px rgb(8 8 10 / 0.35);
+  pointer-events: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ggr-text) 30%, transparent) transparent;
+}
+
+.dark .gooey-search__results {
+  --ggr-bg: #16161a;
+  --ggr-border: #2f2f35;
+  --ggr-text: #e0e0e3;
+  --ggr-selected-bg: #1e1e22;
+  --ggr-invert-bg: #fff;
+  --ggr-invert-text: #08080a;
+  box-shadow: 0 24px 48px -16px rgb(0 0 0 / 0.6);
+}
+
+.gooey-search[data-placement="up"] .gooey-search__results {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+}
+
+.gooey-search__results::-webkit-scrollbar {
+  width: 4px;
+}
+
+.gooey-search__results::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ggr-text) 30%, transparent);
 }
 
 .gooey-search__result {
   pointer-events: auto;
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
   display: flex;
   width: 100%;
-  height: 2.75rem;
+  min-height: 2.5rem;
+  flex-shrink: 0;
   align-items: center;
   gap: 0.5rem;
-  overflow: hidden;
   border: 0;
-  border-radius: 999px;
-  background: var(--gooey-blob);
-  padding: 0 1rem;
-  color: var(--gooey-ink);
+  border-radius: 0.5rem;
+  background: transparent;
+  padding: 0.5rem 0.75rem;
+  color: var(--ggr-text);
   text-align: left;
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.gooey-search__result.is-selected {
+  background: var(--ggr-selected-bg);
+}
+
+/* Vurgulanan satır — kaynaktaki gibi tam renk ters çevirme. */
+.gooey-search__result.is-active {
+  background: var(--ggr-invert-bg);
+  color: var(--ggr-invert-text);
 }
 
 .gooey-search__result.is-empty {
   cursor: default;
   opacity: 0.72;
-}
-
-/*
-  Vurgulanan (klavye ya da fare ile) sonuç. Eskiden geri bildirim yalnızca
-  Framer'ın `whileHover: scale 1.02`'siydi; o her fare hareketinde SVG
-  filtresini yeniden rasterize ettiği için kaldırıldı. Yerine ucuz bir iç
-  gölge + hafif parlaklık.
-*/
-.gooey-search__result.is-active {
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--gooey-ink) 45%, transparent);
-  filter: brightness(1.08);
 }
 
 .gooey-search__info {
@@ -884,8 +925,8 @@ button.float-field__control {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .gooey-search__result-hint {
@@ -893,9 +934,25 @@ button.float-field__control {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 600;
   opacity: 0.6;
+}
+
+.gooey-search__result-check {
+  margin-left: auto;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.gooey-search__result-check svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* İpucu VE onay birlikteyse ipucu artık kenara yapışmasın. */
+.gooey-search__result-hint + .gooey-search__result-check {
+  margin-left: 0.5rem;
 }
 
 .gooey-search__orb {
@@ -1009,80 +1066,6 @@ button.float-field__control {
   color: #6b6b74;
 }
 
-.gooey-search__results.is-stack-scroll {
-  inset: 0 auto auto 0;
-  z-index: 1;
-  width: 100%;
-  /*
-    Yükseklik tam olarak `--gooey-scroll-max` kadar baloncuk gösteriyor:
-    öğeler 50 px aralıkla diziliyor (STACK_STEP_PX), sonuncusunun 2.75rem'lik
-    gövdesi de sığsın diye buton yüksekliği ekleniyor. Varsayılan 4.
-  */
-  max-height: calc(2.75rem + var(--gooey-scroll-max, 4) * 50px);
-  overflow-x: hidden;
-  overflow-y: auto;
-  /*
-    `pointer-events: none` İDİ. Öğelerin kendisi `auto` olduğu için tıklama
-    çalışıyordu ama KAP olayları almadığından kaydırma çubuğu tutulamıyor,
-    tekerlek olayı da listenin üstünden sayfaya kaçıyordu — liste dört
-    baloncukta kilitli görünüyordu. Kaydırılabilir bir kabın olayları alması
-    gerekir.
-  */
-  pointer-events: auto;
-  overscroll-behavior: contain;
-  padding-right: 2px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--gooey-ink) 35%, transparent) transparent;
-}
-
-.gooey-search__results.is-stack-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-
-.gooey-search__results.is-stack-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--gooey-ink) 35%, transparent);
-}
-
-.gooey-search__stack-inner {
-  position: relative;
-  width: 100%;
-}
-
-.gooey-search__results.is-scroll {
-  inset: auto;
-  top: calc(2.75rem + 0.5rem);
-  left: 0;
-  z-index: 3;
-  display: flex;
-  width: 100%;
-  max-height: calc(var(--gooey-scroll-max, 4) * 2.75rem + (var(--gooey-scroll-max, 4) - 1) * 0.35rem);
-  flex-direction: column;
-  gap: 0.35rem;
-  overflow-x: hidden;
-  overflow-y: auto;
-  pointer-events: auto;
-  padding-right: 2px;
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--gooey-ink) 35%, transparent) transparent;
-}
-
-.gooey-search__results.is-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-
-.gooey-search__results.is-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--gooey-ink) 35%, transparent);
-}
-
-.gooey-search__results.is-scroll .gooey-search__result {
-  position: relative;
-  top: auto;
-  left: auto;
-  flex-shrink: 0;
-}
-
 .gooey-search__label {
   max-width: 16rem;
   overflow: hidden;
@@ -1098,31 +1081,12 @@ button.float-field__control {
   `scale` (transform DEĞİL) + opacity kullanılıyor: menünün "top"
   yerleşimindeki satır-içi `transform: translateY(-100%)` ile çakışmaz.
 */
-@keyframes ss-menu-in {
-  from {
-    opacity: 0;
-    scale: 0.97;
-  }
-  to {
-    opacity: 1;
-    scale: 1;
-  }
-}
-
-.searchable-select__menu {
-  animation: ss-menu-in 140ms theme("transitionTimingFunction.out-strong");
-  transform-origin: top center;
-}
-
-.searchable-select__menu[data-placement="top"] {
-  transform-origin: bottom center;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .searchable-select__menu {
-    animation: none;
-  }
-}
+/*
+  Menü giriş/çıkış animasyonu artık framer-motion'da (SearchableSelect.jsx):
+  AnimatePresence ile açılışta VE kapanışta opacity+kayma, seçili satırda
+  yaylı onay ikonu. Eski `ss-menu-in` CSS keyframe'i kaldırıldı — iki animasyon
+  üst üste binmesin.
+*/
 
 /* Döviz büroları filtre çubuğu — eşit genişlik ve aralık */
 .office-filters {

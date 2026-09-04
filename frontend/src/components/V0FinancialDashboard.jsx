@@ -20,6 +20,7 @@ const MarketSummaryCard = lazy(() =>
   import("./MarketSummaryCard").then((m) => ({ default: m.MarketSummaryCard }))
 );
 import { HeaderActions } from "./HeaderActions";
+import { HeaderClock } from "./HeaderClock";
 import { BrandLogo } from "./BrandLogo";
 import { SiteNav } from "./SiteNav";
 import { cityOptionsFromBranches } from "../lib/cities";
@@ -29,6 +30,7 @@ import { useRegisterOfficeSearch } from "../context/OfficeSearchContext";
 import { trackBusinessClick } from "../lib/analytics";
 import { apiUrl, cachedRatesUrl, ratesStreamUrl } from "../lib/api";
 import { buildBranchSlug, buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
+import { shouldPlayRateIntro } from "../lib/rateIntro";
 
 /** P-04: bilgilendirici log yalnızca geliştirmede. */
 const devLog = (...args) => {
@@ -380,6 +382,12 @@ export function V0FinancialDashboard() {
     }, 1000);
   };
   const [mode] = useState("exchange");
+  /*
+    Kur kartlarındaki roller sayaç YALNIZCA kullanıcı kurları ilk kez
+    gördüğünde oynar (bu tarayıcıda bir kez). Karar mount'ta bir kez alınır;
+    o oturumdaki tüm kartlar aynı bayrağı paylaşır.
+  */
+  const [introRates] = useState(shouldPlayRateIntro);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("none");
   const [openNowOnly, setOpenNowOnly] = useState(false);
@@ -1110,6 +1118,8 @@ export function V0FinancialDashboard() {
         {/* Ana gezinme: Kurlar / Kıyasla / İşletme (md ve üzeri). */}
         <SiteNav className="mr-auto ml-2" />
         <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
+          {/* Business Login'in solunda canlı saat — kendi state'inde tik atar. */}
+          <HeaderClock />
           <button
             type="button"
             onClick={() =>
@@ -1692,6 +1702,7 @@ export function V0FinancialDashboard() {
               bank={bank}
               mode={mode}
               bestRates={bestRates}
+              introRates={introRates}
               branches={
                 branchesByInstitution[bank.institutionId] ||
                 branchesByInstitution[normalizeText(bank.name)] ||

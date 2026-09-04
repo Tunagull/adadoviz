@@ -3,6 +3,7 @@ import { Award, MapPin, Phone } from "lucide-react";
 import { mediaUrl } from "../lib/api";
 import { useLanguage } from "../context/LanguageContext";
 import { GlowCard } from "./ui/spotlight-card";
+import { AnimatedRate } from "./ui/animated-counter";
 
 function getCurrencyDisplay(currency) {
   return currency;
@@ -27,17 +28,6 @@ const bankDomains = {
   "sun döviz": "sundoviz.com.tr",
 };
 
-function formatRate(rate) {
-  if (rate === null || rate === undefined || rate === "") {
-    return "—";
-  }
-  const n = typeof rate === "number" ? rate : Number.parseFloat(String(rate).replace(",", "."));
-  if (!Number.isFinite(n)) {
-    return "—";
-  }
-  return n.toFixed(2);
-}
-
 /**
  * @param {object} props
  * @param {{EUR?:{buy:number,sell:number},USD?:{buy:number,sell:number},GBP?:{buy:number,sell:number}}} [props.bestRates]
@@ -46,7 +36,7 @@ function formatRate(rate) {
  *   "büroları karşılaştır" olduğu halde ekranda hiçbir karşılaştırma
  *   işareti yoktu.
  */
-function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, bestRates = null, branches = [] }) {
+function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, bestRates = null, branches = [], introRates = false }) {
   const { t } = useLanguage();
   // ✅ ADIM 2: Flash effect durumları
   const [flashColor, setFlashColor] = useState(null); // 'green' | 'red' | null
@@ -294,7 +284,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
                                 : "text-ink-900 dark:text-white"
                         }`}
                       >
-                        {formatRate(rate.buy)}
+                        <AnimatedRate value={rate.buy} play={introRates} />
                       </span>
                     </div>
 
@@ -318,7 +308,7 @@ function V0BankCardComponent({ bank, mode, onSelect, showNearestBranch = false, 
                                 : "text-ink-900 dark:text-white"
                         }`}
                       >
-                        {formatRate(rate.sell)}
+                        <AnimatedRate value={rate.sell} play={introRates} />
                       </span>
                     </div>
                   </div>
