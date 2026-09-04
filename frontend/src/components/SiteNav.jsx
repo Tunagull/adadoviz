@@ -42,12 +42,30 @@ export function SiteNav({ compact = false, className = "" }) {
             type="button"
             onClick={() => navigate(item.to)}
             aria-current={active ? "page" : undefined}
-            className={`inline-flex items-center gap-1.5 rounded-full font-medium transition-all duration-300 ${
+            /*
+              ⚠️ DÜZELTME: Bir önceki sürüm hover'da kendi uydurduğum bir
+              kenarlık+arka plan katmanı ekliyordu — SlidingTabs'ın (Piyasa
+              Özeti / Saatlik-Günlük-Haftalık) GERÇEK hover'ı bu değil.
+              Kaynağı tekrar okudum: `.sliding-tabs__tab:hover` yalnızca
+              `color`'ı değiştiriyor (soluktan tam kontrasta), 200ms
+              `ease-out`, ne kenarlık ne zemin. Aynısı burada.
+
+              `data-no-press`: sitede HER buton için otomatik bir
+              `transition: transform 160ms ...` kuralı var (M-04,
+              `:where(button):not([data-no-press])`). `:not()` zincirinin
+              özgüllüğü tek bir class'tan yüksek çıkıyor ve rengi HİÇ
+              GEÇİŞSİZ bırakıyordu (ölçtüm: computed `transitionProperty`
+              hep "transform" çıkıyordu) — o kuraldan opt-out oluyoruz,
+              kendi geçişimizi `transition-[color,transform]` ile
+              tanımlıyoruz.
+            */
+            data-no-press
+            className={`inline-flex items-center gap-1.5 rounded-full font-medium transition-[color,transform] duration-base ease-out active:scale-[0.97] ${
               compact ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-xs"
             } ${
               active
                 ? "surface-neon shadow-sm"
-                : "text-ink-600 hover:bg-ink-100 hover:text-ink-900 dark:text-ink-300 dark:hover:bg-white/5 dark:hover:text-ink-100"
+                : "text-ink-600 hover:text-ink-950 dark:text-ink-300 dark:hover:text-white"
             }`}
           >
             <item.icon className={compact ? "size-3.5" : "size-4"} />

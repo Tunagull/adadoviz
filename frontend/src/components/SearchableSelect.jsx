@@ -83,12 +83,28 @@ export function SearchableSelect({
 
   useEffect(() => {
     if (!open) return;
-    const onResizeOrScroll = () => updateMenuPosition();
-    window.addEventListener("resize", onResizeOrScroll);
-    window.addEventListener("scroll", onResizeOrScroll, true);
+    /*
+      ⚠️ PERF: Bu dinleyici `capture` fazında ve `passive` DEĞİLDİ; sayfadaki
+      HER kaydırma olayında (menünün kendi listesini kaydırmak dahil)
+      `getBoundingClientRect()` + iki `setState` çalıştırıyordu — açık
+      dropdown'da kaydırma takılmasının sebebi buydu. Artık: passive,
+      rAF ile tek kareye indirilmiş, ve menü içi kaydırmalar yok sayılıyor.
+    */
+    let frame = 0;
+    const schedule = (e) => {
+      if (e?.type === "scroll" && menuRef.current?.contains(e.target)) return;
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        updateMenuPosition();
+      });
+    };
+    window.addEventListener("resize", schedule, { passive: true });
+    window.addEventListener("scroll", schedule, { passive: true, capture: true });
     return () => {
-      window.removeEventListener("resize", onResizeOrScroll);
-      window.removeEventListener("scroll", onResizeOrScroll, true);
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, { capture: true });
     };
   }, [open]);
 
@@ -206,7 +222,8 @@ export function SearchableSelect({
               zIndex: 9999,
               transform: placement === "top" ? "translateY(-100%)" : undefined,
             }}
-            className="overflow-hidden rounded-xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
+            data-placement={placement}
+            className="searchable-select__menu overflow-hidden rounded-xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900"
             onKeyDown={onListKeyDown}
           >
             <div className="border-b border-ink-200 px-2 pb-2 pt-3 dark:border-ink-700">

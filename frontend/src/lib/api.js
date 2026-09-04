@@ -56,6 +56,19 @@ export function ratesStreamUrl() {
   return apiUrl("/api/rates-stream");
 }
 
+/**
+ * Kur listesi URL'i — mümkünse Vercel edge-önbellekli proxy üzerinden.
+ *
+ * `VITE_API_BASE_URL` AÇIKÇA verilmemişse same-origin `/api/kurlar` döner:
+ *   - dev'de Vite proxy backend'e iletir
+ *   - production'da `frontend/api/kurlar.js` Vercel fonksiyonu devreye girer
+ *     (CDN önbelleği → Render soğuk başlatması ilk yüklemeyi bloklamaz)
+ * Açık bir API base ayarlanmışsa ona saygı gösterilir (proxy atlanır).
+ */
+export function cachedRatesUrl() {
+  return envBase ? `${envBase}/api/kurlar` : "/api/kurlar";
+}
+
 if (import.meta.env.DEV) {
   // Tek seferlik teşhis: hangi API'ye gidildiğini konsolda göster
   devLog(`[API] base = ${API_BASE}`);

@@ -5,6 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
 
+  resolve: {
+    dedupe: ["react", "react-dom", "react-is", "clsx"],
+  },
+
   /**
    * ⚠️ OPTİMİZASYON (O-01): Ana paket 993 kB / 297 kB gzip'e çıkmıştı ve Vite
    * açıkça uyarıyordu ("Some chunks are larger than 500 kB"). Satıcı
@@ -20,22 +24,46 @@ export default defineConfig({
     rollupOptions: {
       output: {
         /*
-          NOT: Vite 8 rolldown kullanıyor ve `manualChunks`'ı nesne değil
-          FONKSİYON olarak bekliyor ("Expected Function but received Object").
+          ⚠️ Rolldown'ın `manualChunks` FONKSİYON biçimi, CJS ile sarmalanan
+          çekirdek modüller (react/react-dom `require()` sarmalayıcıları) için
+          dönüş değerini yok sayıyor: React çekirdeği recharts'la aynı yığına
+          düşüyor ve o 113 kB'lık yığın `lazy()` grafiğe rağmen ana sayfada
+          preload'a giriyordu. Rolldown'ın yerel `advancedChunks` API'si bu
+          sarmalayıcıları da doğru gruba alıyor.
         */
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id))
-            return "vendor-react";
-          if (/[\\/]node_modules[\\/](recharts|d3-|victory-|internmap|delaunator|robust-predicates)/.test(id))
-            return "vendor-charts";
-          if (/[\\/]node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/.test(id))
-            return "vendor-motion";
-          if (/[\\/]node_modules[\\/](react-day-picker|date-fns)[\\/]/.test(id))
-            return "vendor-datepicker";
-          if (/[\\/]node_modules[\\/](leaflet|react-leaflet)[\\/]/.test(id))
-            return "vendor-map";
-          return undefined;
+        advancedChunks: {
+          groups: [
+            {
+              name: "vendor-react",
+              test: /[\\/]node_modules[\\/](react|react-dom|react-is|scheduler|clsx|prop-types|react-router|react-router-dom|react-helmet-async|react-fast-compare|shallowequal|invariant|object-assign|use-sync-external-store)[\\/]/,
+              priority: 100,
+            },
+            {
+              name: "vendor-icons",
+              test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+              priority: 90,
+            },
+            {
+              name: "vendor-charts",
+              test: /[\\/]node_modules[\\/](recharts|d3-|victory-|internmap|delaunator|robust-predicates)[\\/]/,
+              priority: 80,
+            },
+            {
+              name: "vendor-motion",
+              test: /[\\/]node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/,
+              priority: 80,
+            },
+            {
+              name: "vendor-datepicker",
+              test: /[\\/]node_modules[\\/](react-day-picker|date-fns)[\\/]/,
+              priority: 80,
+            },
+            {
+              name: "vendor-map",
+              test: /[\\/]node_modules[\\/](leaflet|react-leaflet)[\\/]/,
+              priority: 80,
+            },
+          ],
         },
       },
     },

@@ -48,23 +48,47 @@ export function ThemeToggle({ className = "", compact = false }) {
         e.stopPropagation();
         toggleTheme();
       }}
-      className={`inline-flex min-h-[2.75rem] items-center justify-center rounded-full px-1 ${className}`}
+      /*
+        ⚠️ DÜZELTME: Önceki sürüm dış butona hover'da kenarlık+arka plan
+        ekliyordu — bu Saatlik/Günlük/Haftalık'ın (SlidingTabs) yaptığı şey
+        değil. SlidingTabs'ta zemin/kenarlık hiç değişmiyor, yalnızca metin
+        soluktan tam kontrasta geçiyor. Buradaki karşılığı: sönük ikon
+        (`group-hover` ile aşağıda).
+
+        Basma geri bildirimi ayrıca YAZILMIYOR: sitedeki her buton için zaten
+        `transform 160ms ease-out-strong` + `:active scale-97` otomatik
+        uygulanıyor (M-04, index.css). Kendim tekrar tanımlasaydım AYNI
+        değerlere çıkardı — gereksiz tekrar.
+      */
+      className={`group inline-flex min-h-[2.75rem] items-center justify-center rounded-full px-1 ${className}`}
     >
       <span
         className={`relative flex items-center rounded-full border transition-colors duration-300 ${pill} ${
           isDark ? "border-ink-700 bg-ink-950" : "border-ink-200 bg-white"
         }`}
       >
-        {/* Sönük ikon — hangi temaya geçileceğini gösterir */}
+        {/*
+          Sönük ikon — hangi temaya geçileceğini gösterir. Hover'da SlidingTabs
+          pasif sekmesiyle AYNI davranış: soluk renk tam kontrasta geçiyor
+          (`group-hover`, 200ms `ease-out`), zemin/kenarlık değişmiyor.
+        */}
         <span
           className={`pointer-events-none absolute flex items-center justify-center transition-all duration-300 ${knob} ${
             isDark ? `left-1 ${shift}` : "left-1"
           }`}
         >
           {isDark ? (
-            <Sun className={`${icon} text-ink-500`} strokeWidth={1.75} aria-hidden="true" />
+            <Sun
+              className={`${icon} text-ink-500 transition-colors duration-base ease-out group-hover:text-white`}
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
           ) : (
-            <Moon className={`${icon} text-ink-400`} strokeWidth={1.75} aria-hidden="true" />
+            <Moon
+              className={`${icon} text-ink-400 transition-colors duration-base ease-out group-hover:text-ink-950`}
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
           )}
         </span>
 

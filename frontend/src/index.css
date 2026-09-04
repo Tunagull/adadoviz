@@ -862,6 +862,17 @@ button.float-field__control {
   opacity: 0.72;
 }
 
+/*
+  Vurgulanan (klavye ya da fare ile) sonuç. Eskiden geri bildirim yalnızca
+  Framer'ın `whileHover: scale 1.02`'siydi; o her fare hareketinde SVG
+  filtresini yeniden rasterize ettiği için kaldırıldı. Yerine ucuz bir iç
+  gölge + hafif parlaklık.
+*/
+.gooey-search__result.is-active {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--gooey-ink) 45%, transparent);
+  filter: brightness(1.08);
+}
+
 .gooey-search__info {
   width: 0.875rem;
   height: 0.875rem;
@@ -968,16 +979,34 @@ button.float-field__control {
  * kayboldu. Dolgu geri geldi, "Şu An Açık" anahtarının kapalı hâliyle aynı
  * tonlarda; kenarlık sınırları okutuyor.
  */
-.gooey-search--disabled .gooey-search__btn {
-  background: #e4e4e7;
-  color: rgb(82 82 91);
-  box-shadow: inset 0 0 0 1px rgb(212 212 216);
+/* Devre dışı seçici de komşularıyla AYNI hap: kendi dolgusunu yazmıyor,
+   `--gooey-blob`'u geri alıyor. Devre dışı olduğu, dolgudan değil kısılmış
+   etiketten okunuyor — "Satış"ın pasif yarısıyla aynı mantık. */
+.gooey-search--disabled {
+  --gooey-blob: #0a0a0c;
+  --gooey-ink: #fff;
 }
 
-.dark .gooey-search--disabled .gooey-search__btn {
-  background: #0a0a0c;
-  color: rgb(161 161 170);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
+.dark .gooey-search--disabled {
+  --gooey-blob: #fff;
+  --gooey-ink: #0a0a0c;
+}
+
+/*
+  Etiket ARTIK OPAKLIKLA SOLMUYOR. `opacity: 0.5` bu düğmenin TEK görünür
+  metnini griye batırıyordu ("silik" şikayeti buydu) — Currency'de aynı metin
+  tam kontrastta duruyor, aradaki fark göze çarpıyordu.
+
+  Sabit bir ink tonu (pill-field etiketleriyle AYNI, ink-400/500) satırdaki
+  tüm "ikincil" metinle tek sistemde: dolu değil ama gri-değil-kirli-gri de
+  değil, tanımlı bir adım.
+*/
+.gooey-search--disabled .gooey-search__label {
+  color: #97979f;
+}
+
+.dark .gooey-search--disabled .gooey-search__label {
+  color: #6b6b74;
 }
 
 .gooey-search__results.is-stack-scroll {
@@ -1060,6 +1089,39 @@ button.float-field__control {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 0 1rem;
+}
+
+/*
+  SearchableSelect portal menüsü — açılış geçişi.
+  Eskiden menü hiç animasyonsuz "pat" diye beliriyordu; alan çerçevesi
+  yumuşak açılırken menünün sertçe gelmesi bozuk/janky hissettiriyordu.
+  `scale` (transform DEĞİL) + opacity kullanılıyor: menünün "top"
+  yerleşimindeki satır-içi `transform: translateY(-100%)` ile çakışmaz.
+*/
+@keyframes ss-menu-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.searchable-select__menu {
+  animation: ss-menu-in 140ms theme("transitionTimingFunction.out-strong");
+  transform-origin: top center;
+}
+
+.searchable-select__menu[data-placement="top"] {
+  transform-origin: bottom center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .searchable-select__menu {
+    animation: none;
+  }
 }
 
 /* Döviz büroları filtre çubuğu — eşit genişlik ve aralık */
@@ -1175,46 +1237,74 @@ button.float-field__control {
   appearance: textfield;
 }
 
+/**
+ * Döviz çevirici alanları — komşularıyla (Döviz Birimi hapı, Alış/Satış
+ * anahtarı) AYNI dil: mat siyah zemin, parlak beyaz yazı.
+ *
+ * Açık temada bu alanlar açık gri hap + gri kenarlıktı; aynı satırdaki mat
+ * siyah haplarla yan yana durunca ayrı bir tasarım sisteminden gelmiş gibi
+ * okunuyordu. Koyu tema zaten siyahtı; değişen açık tema, artık iki temada da
+ * aynı yüzey. Bu yüzden `.dark` için ayrı bir kural da kalmadı.
+ */
+/**
+ * Giriş alanları — Alış/Satış anahtarıyla BİREBİR aynı yapı.
+ *
+ * Referans ölçüldü (BuySellToggle): 2.75rem ray, 1px kenarlık, 4px iç boşluk,
+ * içinde 999px yarıçaplı dolu hap; yazı 0.75rem / 700 / 0.025em. Etiket
+ * anahtarın PASİF yarısı gibi sönük, yazılan değer AKTİF yarısı gibi dolu
+ * hapın üstünde.
+ */
+/**
+ * Giriş alanları — Alış/Satış anahtarıyla BİREBİR aynı ray: `border-ink-200`/
+ * `border-ink-700`, `bg-ink-100`/`bg-ink-950`, 2.75rem yükseklik, 4px iç pay,
+ * 999px yarıçap. Aynı hex değerler (Tailwind ink ölçeğinden, uydurma değil).
+ *
+ * Bir önceki sürüm bunu Currency'nin DÜZ HAPINA (kenarlıksız, tek renk)
+ * benzetmişti. Kullanıcı bu kez "Amount/You get TRY, Buy/Sell gibi olacak"
+ * dedi — yani referans değişti: artık ray + içinde ayrı bir değer hapı olan
+ * İKİ BÖLGELİ yapı isteniyor, Currency'nin tek-renkli hapı değil.
+ */
 .gooey-pill-field {
   display: flex;
   width: 100%;
   height: 2.75rem;
   align-items: center;
-  gap: 0.5rem;
   border-radius: 999px;
-  border: 1px solid rgb(229 231 235);
-  background: rgb(243 244 246);
-  padding: 0.2rem 0.2rem 0.2rem 0.75rem;
+  border: 1px solid #e0e0e3;
+  background: #eeeef0;
+  padding: 4px;
 }
 
 .dark .gooey-pill-field {
-  border-color: rgb(38 38 42);
-  background: #0a0a0c;
+  border-color: #2f2f35;
+  background: #08080a;
 }
 
+/*
+  Etiket ("TUTAR" / "ELDE EDİLECEK TL") rayın üstünde TAM KONTRAST duruyor —
+  rayın tersi renk: koyu rayda beyaz yazı, açık rayda siyah yazı. Kullanıcının
+  tarifi buydu: "Yazı yazan kısım siyah üstüne beyaz yazı olacak" (ekran
+  görüntüsü koyu temaydı). Önceki sürüm burada ink-400/500 gibi SOLUK bir
+  ikincil renk kullanıyordu — Satış'ın pasif yarısı gibi; kullanıcı bu kez
+  soluk değil TAM kontrast istedi.
+*/
 .gooey-pill-field__label {
   flex-shrink: 0;
-  max-width: 38%;
+  max-width: 42%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.625rem;
+  padding: 0 0.7rem;
+  font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  /* "Şu An Açık" anahtarının etiketiyle aynı mürekkep: bu ikisi soluk griydi
-     ve yanlarındaki kontrollerden belirgin biçimde sönük duruyordu. */
-  color: rgb(10 10 12);
+  letter-spacing: 0.025em;
+  text-transform: none;
+  color: #0a0a0c;
+  text-shadow: none;
 }
 
-/* Koyu temada neon beyaz — `.neon-text-soft` ile aynı kısılmış ışıma. Küçük
-   punto olduğu için geniş saçılma yok; geniş hâle bu boyutta harfleri
-   bulanıklaştırıyor. */
 .dark .gooey-pill-field__label {
   color: #fff;
-  text-shadow:
-    0 0 1px rgba(255, 255, 255, 0.4),
-    0 0 10px rgba(255, 255, 255, 0.18);
 }
 
 /* ── Kayan göstergeli sekme şeridi ──────────────────────────────────────
@@ -1270,6 +1360,17 @@ button.float-field__control {
   }
 }
 
+/*
+  Değer hapının zemin/yazı rengi JSX'te eklenen `surface-neon` sınıfından
+  geliyor (bkz. animated-search-bar.jsx) — Buy/Sell'in aktif hapıyla AYNI
+  token, ikinci kez tanımlanmıyor. Burada yalnızca ölçü/düzen var.
+*/
+/*
+  ⚠️ HATA DÜZELTMESİ: `border-radius` burada UNUTULMUŞTU. Sonuç: değer kutusu
+  köşeli bir dikdörtgen olarak çiziliyor, dış hapın 999px yuvarlaklığından
+  taşıyor/kenara yapışık görünüyordu — Buy/Sell'in içindeki hap gibi
+  YUVARLAK değil. Aynı yarıçapı veriyoruz, dış hapla birebir.
+*/
 .gooey-pill-field__surface {
   display: flex;
   min-width: 0;
@@ -1278,50 +1379,15 @@ button.float-field__control {
   align-items: center;
   border-radius: 999px;
   padding: 0 0.85rem;
-  transition: background-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
 }
 
-.gooey-pill-field__surface--edit {
-  background: #fff;
-  color: #0a0a0c;
-  box-shadow: 0 0 0 1px rgba(10, 10, 12, 0.06);
-}
-
-.dark .gooey-pill-field__surface--edit {
-  background: #fff;
-  color: #0a0a0c;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 16px rgba(255, 255, 255, 0.1);
-}
-
-.gooey-pill-field.is-readonly:not(.has-value) .gooey-pill-field__surface {
-  background: transparent;
-  color: rgb(107 114 128);
-  box-shadow: inset 0 0 0 1px rgb(229 231 235);
-}
-
-.dark .gooey-pill-field.is-readonly:not(.has-value) .gooey-pill-field__surface {
-  color: rgb(161 161 170);
-  box-shadow: inset 0 0 0 1px rgb(63 63 70);
-}
-
-.gooey-pill-field__surface--active,
-.gooey-pill-field.has-value .gooey-pill-field__surface {
-  background: #fff;
-  color: #0a0a0c;
-  box-shadow: 0 0 0 1px rgba(10, 10, 12, 0.06);
-}
-
-.dark .gooey-pill-field__surface--active,
-.dark .gooey-pill-field.has-value .gooey-pill-field__surface {
-  background: #fff;
-  color: #0a0a0c;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 0 16px rgba(255, 255, 255, 0.12);
-}
-
-.gooey-pill-field.is-disabled {
-  opacity: 0.85;
-}
-
+/*
+  `is-disabled` ARTIK SOLUKLAŞTIRMIYOR. `opacity: 0.6` tüm hapı (rayı da,
+  içindeki değer hapını da) griye boyuyordu — "Amount kısmı renk açısından
+  aynı değil" şikayetinin sebebi buydu: aynı hex değerlere sahip olsalar da
+  Tutar görsel olarak diğerlerinden farklı bir tonda çiziliyordu. Devre dışı
+  olduğu artık yalnızca `cursor` ve boş değerden okunuyor.
+*/
 .gooey-pill-field.is-locked {
   cursor: not-allowed;
 }
@@ -1331,43 +1397,31 @@ button.float-field__control {
   pointer-events: none;
 }
 
-.gooey-pill-field.is-disabled .gooey-pill-field__surface--edit {
-  background: color-mix(in srgb, #fff 72%, rgb(243 244 246));
-}
-
-.dark .gooey-pill-field.is-disabled .gooey-pill-field__surface--edit {
-  background: color-mix(in srgb, #fff 88%, #0a0a0c);
-}
-
 .gooey-pill-field__input,
 .gooey-pill-field__value {
   min-width: 0;
   width: 100%;
   border: 0;
   background: transparent;
+  /* `surface-neon`'un yazı rengini devralıyor — kendi rengini yazmıyor. */
   color: inherit;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 700;
+  letter-spacing: 0.025em;
   text-align: right;
   outline: none;
 }
 
+/* Boş/yer tutucu hâli, hapın kendi mürekkebinin kısılmış hâli — tema
+   değişince ayrı bir override gerekmiyor, `currentColor` zaten flip oluyor. */
 .gooey-pill-field__value.is-placeholder {
-  font-weight: 600;
-  color: rgb(107 114 128);
-}
-
-.dark .gooey-pill-field__value.is-placeholder {
-  color: rgb(161 161 170);
+  font-weight: 700;
+  color: color-mix(in srgb, currentColor 45%, transparent);
 }
 
 .gooey-pill-field__input::placeholder {
-  color: rgb(156 163 175);
-  font-weight: 600;
-}
-
-.dark .gooey-pill-field__input::placeholder {
-  color: rgb(113 113 122);
+  color: color-mix(in srgb, currentColor 42%, transparent);
+  font-weight: 700;
 }
 
 .gooey-pill-field__value {
@@ -1387,45 +1441,35 @@ button.float-field__control {
   appearance: textfield;
 }
 
-.gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark,
-.gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark-readonly {
-  background: transparent;
-  color: rgb(107 114 128);
-  box-shadow: inset 0 0 0 1px rgb(229 231 235);
+/**
+ * ── Döviz çevirici satırı: TEK kalınlık ────────────────────────────────
+ *
+ * Satırdaki 5 kontrolden yalnızca Alış/Satış rayının kenarlığı vardı
+ * (1px, ink-200/700); Currency ve Döviz Bürosu Seç kenarlıksızdı — "aynı
+ * satırda bazısı çerçeveli bazısı çerçevesiz" görünümü buradan geliyordu.
+ * Currency/Office'e AYNI kenarlığı veriyoruz, böylece beşi de tek kalınlıkta.
+ *
+ * `.currency-converter-row` ile scope'landı: `.gooey-search__btn` sitede
+ * "Büro ara" / "Sırala" / "Konum" gibi ilgisiz aramalarda da kullanılıyor,
+ * kenarlığın yalnızca bu satıra uygulanması gerekiyordu.
+ */
+.currency-converter-row .gooey-search__btn {
+  border: 1px solid #e0e0e3;
 }
 
-.dark .gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark,
-.dark .gooey-pill-field.is-dark-tone .gooey-pill-field__surface--dark-readonly {
-  color: rgb(161 161 170);
-  box-shadow: inset 0 0 0 1px rgb(63 63 70);
+.dark .currency-converter-row .gooey-search__btn {
+  border-color: #2f2f35;
 }
 
-.gooey-pill-field.is-dark-tone.has-input-value .gooey-pill-field__surface--dark,
-.gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--dark-readonly,
-.gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--active {
-  background: transparent;
-  color: #0a0a0c;
-  box-shadow: inset 0 0 0 1px rgb(156 163 175);
-}
-
-.dark .gooey-pill-field.is-dark-tone.has-input-value .gooey-pill-field__surface--dark,
-.dark .gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--dark-readonly,
-.dark .gooey-pill-field.is-dark-tone.has-value .gooey-pill-field__surface--active {
-  color: #fff;
-  box-shadow: inset 0 0 0 1px rgb(113 113 122), 0 0 14px rgba(255, 255, 255, 0.06);
-}
-
-.gooey-pill-field.is-dark-tone.is-disabled .gooey-pill-field__surface--dark {
-  background: transparent;
-}
-
-.gooey-pill-field.is-dark-tone .gooey-pill-field__input::placeholder {
-  color: rgb(156 163 175);
-}
-
-.dark .gooey-pill-field.is-dark-tone .gooey-pill-field__input::placeholder {
-  color: rgb(113 113 122);
-}
+/*
+  `tone="dark"` artık CSS'te ayrı bir dal DEĞİL — hap zaten satırdaki tek
+  sistemi kullanıyor (`.gooey-pill-field` üzerindeki `--gooey-blob`/
+  `--gooey-ink`). Eskiden burada üç farklı görünüm vardı: boşken dolu hap,
+  değer girilince aniden şeffaf+kenarlıklı kutuya dönen ayrı bir varyant, ve
+  devre dışıyken yine başka bir ton — üçü de "çerçevelerin rengi tek yapıda
+  değil" şikayetinin kaynağıydı. Artık hap, boş/dolu/devre dışı fark etmeksizin
+  aynı kalıyor.
+*/
 
 .gooey-toggle {
   display: inline-flex;
@@ -1542,7 +1586,9 @@ button.float-field__control {
   color: var(--gooey-ink);
 }
 
-.gooey-search--disabled,
+/* `.gooey-search--disabled` bu SÖNÜK gruptan çıkarıldı: devre dışı seçicinin
+   komşu haplarla aynı dolguda kalması, farkın yalnızca kısılmış etiketten
+   okunması isteniyor (bkz. yukarıdaki kural). */
 .gooey-field.is-disabled,
 .gooey-field.is-muted,
 .gooey-field.is-readonly,
@@ -1551,7 +1597,6 @@ button.float-field__control {
   --gooey-ink: #0a0a0c;
 }
 
-.dark .gooey-search--disabled,
 .dark .gooey-field.is-disabled,
 .dark .gooey-field.is-muted,
 .dark .gooey-field.is-readonly,
@@ -1797,6 +1842,20 @@ button.float-field__control {
 
 .footer-live-dot {
   animation: footer-pulse 2.4s ease-in-out infinite;
+}
+
+/*
+  ⚠️ PERF / erişilebilirlik: Bu üç animasyon SONSUZ döngü — footer perde
+  arkada dururken bile compositor sürekli çalışıyor (`footer-pulse` ayrıca
+  `box-shadow` anime ettiği için her karede repaint). Hareketi azaltmayı
+  seçen kullanıcıda tamamen durdur.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .footer-breathe,
+  .footer-marquee-track,
+  .footer-live-dot {
+    animation: none;
+  }
 }
 
 /**

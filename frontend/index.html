@@ -7,6 +7,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!--
+      API kaynağına erken bağlan: kurlar farklı bir origin'den (Render) geliyor;
+      DNS + TLS el sıkışması sayfa çizilirken paralel başlasın diye ipucu.
+      Production'da farklı bir API host'u kullanılıyorsa burayı da güncelleyin.
+    -->
+    <link rel="preconnect" href="https://adadoviz-backend.onrender.com" crossorigin />
+    <link rel="dns-prefetch" href="https://adadoviz-backend.onrender.com" />
+    <!--
       display=optional (eskiden swap).
 
       `swap` yedek fontla çizip Inter gelince DEĞİŞTİRİYOR; her değişim bir

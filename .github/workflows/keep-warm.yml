@@ -1,0 +1,33 @@
+# Render ücretsiz katman "soğuk başlatma" önlemi.
+#
+# Render'ın ücretsiz web servisi 15 dk trafik almazsa uyur; sonraki ilk
+# istek instance'ı uyandırırken 30–60 sn bekler. Bu iş, servisi ~10 dakikada
+# bir dürterek uyanık tutar.
+#
+# ⚠️ GitHub Actions zamanlaması EN İYİ ÇABADIR — yoğun saatlerde 10–30 dk
+# gecikebilir ve repo 60 gün hareketsiz kalırsa devre dışı bırakılır. Daha
+# güvenilir seçenek: https://cron-job.org (ücretsiz, 1 dk hassasiyet) veya
+# UptimeRobot. Bu dosya yalnızca yedek / sıfır-kurulum yoludur.
+
+name: keep-warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 \
+              https://adadoviz-backend.onrender.com/api/health || echo "000")
+            echo "attempt $i -> HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          echo "backend did not return 200 after retries"
+          exit 1

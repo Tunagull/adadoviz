@@ -42,7 +42,16 @@ export function LanguageToggle({ className = "", compact = false }) {
         e.stopPropagation();
         toggleLang();
       }}
-      className={`inline-flex min-h-[2.75rem] items-center justify-center rounded-full px-1 ${className}`}
+      /*
+        ⚠️ DÜZELTME: Önceki sürüm dış butona hover'da kenarlık+arka plan
+        ekliyordu — Saatlik/Günlük/Haftalık'ın (SlidingTabs) hover'ı bu değil,
+        yalnızca metin soluktan tam kontrasta geçiyor. Pasif dil etiketi
+        (aşağıda `group-hover`) o karşılığı görüyor.
+
+        Basma geri bildirimi ayrıca YAZILMIYOR (bkz. ThemeToggle'daki aynı
+        not) — sitedeki her buton için zaten otomatik uygulanıyor (M-04).
+      */
+      className={`group inline-flex min-h-[2.75rem] items-center justify-center rounded-full px-1 ${className}`}
     >
       <span
         className={`relative flex items-center rounded-full border transition-colors duration-300 ${pill} ${
@@ -69,18 +78,31 @@ export function LanguageToggle({ className = "", compact = false }) {
           olmak zorunda: aydınlık temada siyah topuz üstünde beyaz, karanlık
           temada beyaz topuz üstünde siyah.
         */}
+        {/*
+          Pasif etiket hover'da SlidingTabs'ın pasif sekmesiyle AYNI davranışı
+          gösteriyor: soluk renk tam kontrasta geçiyor (`group-hover`), zemin/
+          kenarlık değişmiyor. Aktif etiket zaten tam kontrastta, dokunmuyor.
+        */}
         <span
           aria-hidden="true"
-          className={`pointer-events-none absolute left-1 flex items-center justify-center font-bold tracking-wide transition-colors duration-300 ${knob} ${text} ${
-            isEn ? (isDark ? "text-ink-500" : "text-ink-400") : "text-white dark:text-ink-950"
+          className={`pointer-events-none absolute left-1 flex items-center justify-center font-bold tracking-wide transition-colors duration-base ease-out ${knob} ${text} ${
+            isEn
+              ? isDark
+                ? "text-ink-500 group-hover:text-white"
+                : "text-ink-400 group-hover:text-ink-950"
+              : "text-white dark:text-ink-950"
           }`}
         >
           {t("langTr")}
         </span>
         <span
           aria-hidden="true"
-          className={`pointer-events-none absolute left-1 flex items-center justify-center font-bold tracking-wide transition-colors duration-300 ${knob} ${text} ${shift} ${
-            isEn ? "text-white dark:text-ink-950" : isDark ? "text-ink-500" : "text-ink-400"
+          className={`pointer-events-none absolute left-1 flex items-center justify-center font-bold tracking-wide transition-colors duration-base ease-out ${knob} ${text} ${shift} ${
+            isEn
+              ? "text-white dark:text-ink-950"
+              : isDark
+                ? "text-ink-500 group-hover:text-white"
+                : "text-ink-400 group-hover:text-ink-950"
           }`}
         >
           {t("langEn")}

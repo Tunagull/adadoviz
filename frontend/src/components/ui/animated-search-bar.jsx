@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, LazyMotion, m, useReducedMotion } from "framer-motion";
 import clsx from "clsx";
 import { Building2, Loader2, Search } from "lucide-react";
+
+/*
+  ⚠️ PERF: `motion` (tam) yerine `m` (mini) + LazyMotion. `motion` HER zaman
+  bütün özellik setini (layout, 3D, drag…) paketler; bu bileşen yalnızca
+  variant + AnimatePresence + hover/tap kullanıyor. `domAnimation` özellikleri
+  ilk boyamadan sonra ayrı bir parçadan yükleniyor — framer'ın ilk açılış
+  yükü ~40 kB gzip'ten belirgin şekilde iniyor. `strict` ile yanlışlıkla
+  kalan `motion.*` kullanımı çalışma anında yakalanır.
+*/
+const loadDomAnimation = () =>
+  import("framer-motion").then((mod) => mod.domAnimation);
 
 /**
  * Gooey arama çubuğu.
@@ -62,20 +73,23 @@ function getResultItemVariants(index, isUnsupported, placement, reduceMotion, sc
       exit: { opacity: 0 },
     };
   }
+  /*
+    ⚠️ PERF: Her sonuç baloncuğu ayrıca `filter: blur(10px) → blur(0)` anime
+    ediyordu. Kök `<div>` zaten SVG `feGaussianBlur` filtresi altında olduğu
+    için bu, her karede filtre grafiğinin öğe başına + kapsayıcı olmak üzere
+    İKİ KEZ CPU'da yeniden rasterize edilmesi demekti — açılışta takılmanın
+    baş sebebi. "Gooey" birleşme efekti zaten kapsayıcı filtresinden geliyor;
+    öğe başına blur'u kaldırmak efekti bozmaz, kare maliyetini düşürür.
+    Kalan hareket y + scale + opacity — üçü de compositable.
+  */
+  void isUnsupported;
   return {
-    initial: {
-      y: 0,
-      scale: 0.3,
-      filter: isUnsupported ? "none" : "blur(10px)",
-    },
-    animate: {
-      y,
-      scale: 1,
-      filter: "blur(0px)",
-    },
+    initial: { y: 0, scale: 0.3, opacity: 0.6 },
+    animate: { y, scale: 1, opacity: 1 },
     exit: {
-      y: isUnsupported ? 0 : placement === "up" ? 4 : -4,
+      y: placement === "up" ? 4 : -4,
       scale: 0.8,
+      opacity: 0,
     },
   };
 }
@@ -91,7 +105,6 @@ function getResultItemTransition(index, reduceMotion, scrollMax = 0) {
     type: "spring",
     bounce: 0.35,
     exit: { duration: Math.min(index * 0.08, 0.24) },
-    filter: { ease: "easeInOut" },
   };
 }
 
@@ -164,6 +177,15 @@ export function GooeySearchBar({
   const [step, setStep] = useState(1);
   const [innerText, setInnerText] = useState(value ?? "");
   const [highlight, setHighlight] = useState(0);
+  /*
+    ⚠️ PERF: SVG gooey filtresi (`filter: url(#…)`) GPU'da compose edilemez —
+    kapsadığı ağaç her karede CPU'da yeniden rasterize edilir. Sayfada birden
+    çok GooeySearchBar var; hepsinin filtresi boşta dururken bile sürekli
+    açık kalması ana sayfayı ağırlaştırıyordu. Filtre yalnızca kullanıcı
+    kutuyla etkileşirken (açılış + kapanış animasyonu boyunca) aktif; kapalı
+    tek hap durumdayken zaten hiçbir şeyi "birleştirmediği" için gereksiz.
+  */
+  const [filterActive, setFilterActive] = useState(false);
 
   const searchText = isSelect ? innerText : value !== undefined ? value : innerText;
 
@@ -191,6 +213,17 @@ export function GooeySearchBar({
       return () => window.clearTimeout(t);
     }
     return undefined;
+  }, [step]);
+
+  // Filtreyi etkileşim penceresiyle sınırla: açılırken hemen aç, kapanırken
+  // çıkış animasyonu bitene kadar (≈400 ms) açık tut, sonra kapat.
+  useEffect(() => {
+    if (step === 2) {
+      setFilterActive(true);
+      return undefined;
+    }
+    const t = window.setTimeout(() => setFilterActive(false), 420);
+    return () => window.clearTimeout(t);
   }, [step]);
 
   useEffect(() => {
@@ -285,10 +318,14 @@ export function GooeySearchBar({
     <>
       <AnimatePresence mode="popLayout">
         {results.map((item, index) => (
-          <motion.button
+          <m.button
             type="button"
             key={item.id || item.label}
-            whileHover={reduceMotion ? undefined : { scale: 1.02, transition: { duration: 0.2 } }}
+            /*
+              ⚠️ PERF: `whileHover={{ scale: 1.02 }}` fare her kıpırdadığında
+              SVG filtresini yeniden rasterize ediyordu. Vurgu geri bildirimi
+              zaten `onMouseEnter` → `is-active` sınıfıyla (CSS) veriliyor.
+            */
             variants={getResultItemVariants(
               index,
               isUnsupported,
@@ -309,11 +346,11 @@ export function GooeySearchBar({
             {ResultIcon ? <ResultIcon className="gooey-search__info" aria-hidden="true" /> : null}
             <span className="gooey-search__result-label">{item.label}</span>
             {item.hint ? <span className="gooey-search__result-hint">{item.hint}</span> : null}
-          </motion.button>
+          </m.button>
         ))}
       </AnimatePresence>
       {expanded && results.length === 0 && !showSpinner ? (
-        <motion.div
+        <m.div
           key="empty"
           className="gooey-search__result is-empty"
           variants={getResultItemVariants(
@@ -329,12 +366,13 @@ export function GooeySearchBar({
           transition={getResultItemTransition(0, reduceMotion, useScrollList ? scrollMax : 0)}
         >
           <span className="gooey-search__result-label">{emptyLabel}</span>
-        </motion.div>
+        </m.div>
       ) : null}
     </>
   );
 
   return (
+    <LazyMotion features={loadDomAnimation} strict>
     <div
       ref={rootRef}
       className={clsx(
@@ -348,12 +386,12 @@ export function GooeySearchBar({
       data-placement={placement}
       data-expanded={expanded ? "" : undefined}
       title={title}
-      style={isUnsupported ? undefined : { filter: `url(#${filterId})` }}
+      style={isUnsupported || !filterActive ? undefined : { filter: `url(#${filterId})` }}
     >
       <GooeyFilter id={filterId} />
 
       <div className="gooey-search__stage">
-        <motion.div
+        <m.div
           className="gooey-search__inner"
           initial={false}
           animate={expanded ? "step2" : "step1"}
@@ -365,7 +403,7 @@ export function GooeySearchBar({
         >
           <AnimatePresence mode="popLayout">
             {expanded ? (
-              <motion.div
+              <m.div
                 key="search-results"
                 className={clsx("gooey-search__results", useScrollList && "is-stack-scroll")}
                 role="listbox"
@@ -410,11 +448,11 @@ export function GooeySearchBar({
                 ) : (
                   renderResultItems()
                 )}
-              </motion.div>
+              </m.div>
             ) : null}
           </AnimatePresence>
 
-          <motion.div
+          <m.div
             className="gooey-search__btn"
             variants={{
               step1: { x: 0, width: btnCollapsedWidth },
@@ -450,11 +488,11 @@ export function GooeySearchBar({
             ) : (
               <span className="gooey-search__label">{collapsedText}</span>
             )}
-          </motion.div>
+          </m.div>
 
           <AnimatePresence mode="wait">
             {expanded && !fill && !hideOrb ? (
-              <motion.div
+              <m.div
                 key="orb"
                 className="gooey-search__orb"
                 initial={reduceMotion ? { opacity: 0 } : { x: -36, opacity: 0 }}
@@ -471,12 +509,13 @@ export function GooeySearchBar({
                 ) : (
                   <Search className="gooey-search__glyph" aria-hidden="true" />
                 )}
-              </motion.div>
+              </m.div>
             ) : null}
           </AnimatePresence>
-        </motion.div>
+        </m.div>
       </div>
     </div>
+    </LazyMotion>
   );
 }
 
@@ -518,9 +557,15 @@ export function GooeyPillField({
       title={title}
     >
       {label ? <span className="gooey-pill-field__label">{label}</span> : null}
+      {/*
+        `surface-neon` — Buy/Sell'in aktif hapıyla AYNI token: koyu temada
+        beyaz zemin + siyah yazı, açık temada siyah zemin + beyaz yazı (+neon
+        ışıma). Kullanıcı "Buy, Sell gibi olacak" dedi; bunu taklit etmek
+        yerine sitenin zaten paylaştığı vurgu yüzeyini birebir kullanıyoruz.
+      */}
       <div
         className={clsx(
-          "gooey-pill-field__surface",
+          "gooey-pill-field__surface surface-neon",
           !readOnly && "gooey-pill-field__surface--edit",
           isDarkTone && !readOnly && "gooey-pill-field__surface--dark",
           isDarkTone && readOnly && "gooey-pill-field__surface--dark-readonly",

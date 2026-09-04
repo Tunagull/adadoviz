@@ -433,11 +433,35 @@ app.get("/api/rates-stream", (req, res) => {
   }, 25000); // 25 saniyede bir (SSL timeout'ı için güvenli)
 });
 
-app.get("/api/kurlar", (_req, res) => {
+/**
+ * ⚠️ PERF (soğuk başlatma): Render ücretsiz katmanında instance 15 dk boştan
+ * sonra uyuyor; uyanınca `refreshRatesCacheWithChangeDetection()` arka planda
+ * başlıyor ama bitene kadar `/api/kurlar` 503 dönüyordu ve frontend boş ekran
+ * gösteriyordu. Artık: önbellek soğuksa isteği bekletip TEK bir prime çalıştır,
+ * eşzamanlı istekler aynı promise'i paylaşır.
+ */
+let primingRatesPromise = null;
+function primeRatesOnce() {
+  if (!primingRatesPromise) {
+    primingRatesPromise = refreshRatesCacheWithChangeDetection().finally(() => {
+      primingRatesPromise = null;
+    });
+  }
+  return primingRatesPromise;
+}
+
+app.get("/api/kurlar", async (_req, res) => {
   try {
     // MERKEZ BANKASI kurlarını base olarak kullan
     if (!cachedRates.centralBankRates || Object.keys(cachedRates.centralBankRates).length === 0) {
-      console.warn("[KURLAR] Merkez Bankası kurları hazır değil");
+      console.warn("[KURLAR] Merkez Bankası kurları hazır değil — senkron prime deneniyor");
+      try {
+        await primeRatesOnce();
+      } catch (primeErr) {
+        console.warn("[KURLAR] Prime başarısız:", primeErr.message);
+      }
+    }
+    if (!cachedRates.centralBankRates || Object.keys(cachedRates.centralBankRates).length === 0) {
       return res.status(503).json({ error: "Merkez Bankası kurları henüz yüklenmedi." });
     }
 
