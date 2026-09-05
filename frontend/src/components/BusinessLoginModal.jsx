@@ -217,11 +217,11 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               </div>
 
               {error ? (
-                <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
+                <div role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
                   {error}
                 </div>
               ) : successMessage ? (
-                <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 font-semibold dark:text-success-200">
+                <div role="status" className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 font-semibold dark:text-success-200">
                   ✓ {successMessage}
                 </div>
               ) : null}

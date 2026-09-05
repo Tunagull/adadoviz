@@ -17,10 +17,21 @@ import { useEffect } from "react";
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
+/**
+ * A-L3: `offsetParent` `position: fixed` elemanlar için her zaman null döner —
+ * bu tür focusable'lar tuzaktan düşüyordu. Görünürlüğü ölçü kutusuyla da doğrula.
+ */
+function isVisible(el) {
+  if (el === document.activeElement) return true;
+  if (el.offsetParent !== null) return true;
+  const style = window.getComputedStyle(el);
+  if (style.visibility === "hidden" || style.display === "none") return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
 function visibleItems(panel) {
-  return Array.from(panel.querySelectorAll(FOCUSABLE)).filter(
-    (el) => el.offsetParent !== null || el === document.activeElement
-  );
+  return Array.from(panel.querySelectorAll(FOCUSABLE)).filter(isVisible);
 }
 
 /** Panelin en üstteki (son açılan) hâli. */
@@ -59,7 +70,11 @@ export function ModalA11yGuard() {
     };
 
     // Açılış/kapanışı DOM değişimlerinden yakala.
-    const observer = new MutationObserver(() => {
+    // İyileştirme: gözlemci geneldi ve her DOM eklemesinde (Recharts tooltip'leri,
+    // dropdown portalları, animasyonlar) senkron çalışıyordu — rAF ile birleştir.
+    let rafId = 0;
+    const check = () => {
+      rafId = 0;
       const panel = topDialog();
       if (panel && panel !== lastPanel) {
         lastPanel = panel;
@@ -68,6 +83,9 @@ export function ModalA11yGuard() {
         lastPanel = null;
         onClose();
       }
+    };
+    const observer = new MutationObserver(() => {
+      if (!rafId) rafId = requestAnimationFrame(check);
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
@@ -119,6 +137,7 @@ export function ModalA11yGuard() {
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
       observer.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
     };
   }, []);
 

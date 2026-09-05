@@ -338,6 +338,21 @@ export function RadialOrbitalContact({ formTo = "/partnerlik" }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeId, closeNode]);
 
+  // A-M5: kanal kartı açılınca odağı içine al (klavye kullanıcısı düğümde kalıyordu).
+  const cardRef = useRef(null);
+  const triggerNodeRef = useRef(null);
+  useEffect(() => {
+    if (activeId === null) {
+      // Kapanışta odağı açan düğüme döndür.
+      triggerNodeRef.current?.focus?.({ preventScroll: true });
+      triggerNodeRef.current = null;
+      return;
+    }
+    triggerNodeRef.current = document.activeElement;
+    const id = requestAnimationFrame(() => cardRef.current?.focus?.({ preventScroll: true }));
+    return () => cancelAnimationFrame(id);
+  }, [activeId]);
+
   const copyValue = useCallback(async (channel) => {
     if (!channel.value || !navigator.clipboard) return;
     try {
@@ -444,10 +459,13 @@ export function RadialOrbitalContact({ formTo = "/partnerlik" }) {
           {activeChannel ? (
             <div
               id={activeCardId}
+              ref={cardRef}
+              tabIndex={-1}
               className="orbital-contact__card"
               style={{ "--orbital-accent": activeChannel.accent }}
               onClick={(event) => event.stopPropagation()}
-              role="presentation"
+              role="group"
+              aria-labelledby={`${activeCardId}-title`}
               {...hoverProps}
             >
               <div className="orbital-contact__card-connector" aria-hidden="true" />
@@ -455,7 +473,7 @@ export function RadialOrbitalContact({ formTo = "/partnerlik" }) {
               <span className="orbital-contact__badge">
                 {t(`contactChannel${activeChannel.key}Badge`)}
               </span>
-              <h3 className="orbital-contact__card-title">
+              <h3 id={`${activeCardId}-title`} className="orbital-contact__card-title">
                 {t(`contactChannel${activeChannel.key}Label`)}
               </h3>
               <p className="orbital-contact__card-copy">

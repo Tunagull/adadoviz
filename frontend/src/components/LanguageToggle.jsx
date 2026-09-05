@@ -29,7 +29,8 @@ export function LanguageToggle({ className = "", compact = false }) {
 
   const pill = compact ? "h-7 w-14" : "h-8 w-16";
   const knob = compact ? "size-5" : "size-6";
-  const text = compact ? "text-[9px]" : "text-[10px]";
+  // D3: 12px tabanı — kalıcı, okunabilir olması gereken etiket.
+  const text = compact ? "text-[11px]" : "text-xs";
   const shift = compact ? "translate-x-7" : "translate-x-8";
 
   return (
@@ -89,7 +90,7 @@ export function LanguageToggle({ className = "", compact = false }) {
             isEn
               ? isDark
                 ? "text-ink-500 group-hover:text-white"
-                : "text-ink-400 group-hover:text-ink-950"
+                : "text-ink-500 dark:text-ink-400 group-hover:text-ink-950"
               : "text-white dark:text-ink-950"
           }`}
         >
@@ -102,7 +103,7 @@ export function LanguageToggle({ className = "", compact = false }) {
               ? "text-white dark:text-ink-950"
               : isDark
                 ? "text-ink-500 group-hover:text-white"
-                : "text-ink-400 group-hover:text-ink-950"
+                : "text-ink-500 dark:text-ink-400 group-hover:text-ink-950"
           }`}
         >
           {t("langEn")}

@@ -72,8 +72,12 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
     <div
       className="fixed inset-0 z-dropdown flex items-center justify-center bg-ink-950/80 backdrop-blur-sm p-3 sm:p-4"
       onClick={onClose}
+      role="presentation"
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="logo-crop-title"
         className="relative rounded-2xl border border-ink-200 bg-white p-4 md:p-6 w-[95%] md:w-full max-w-lg shadow-2xl flex flex-col gap-4 dark:bg-ink-900 dark:border-ink-700"
         onClick={(e) => e.stopPropagation()}
       >
@@ -90,7 +94,7 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
         </div>
 
         <div className="pr-[7.5rem]">
-          <h3 className="text-lg font-bold text-ink-900 dark:text-ink-100">Logoyu Kırp</h3>
+          <h3 id="logo-crop-title" className="text-lg font-bold text-ink-900 dark:text-ink-100">Logoyu Kırp</h3>
           <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
             Görseli sürükleyip yakınlaştırarak yuvarlak alana oturtun.
           </p>
@@ -111,8 +115,11 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
         </div>
 
         <div className="flex flex-col gap-2">
-          <label className="text-xs font-medium text-ink-600 dark:text-ink-400">Zoom</label>
+          <label htmlFor="logo-crop-zoom" className="text-xs font-medium text-ink-600 dark:text-ink-400">
+            Zoom
+          </label>
           <input
+            id="logo-crop-zoom"
             type="range"
             min={1}
             max={3}
@@ -123,7 +130,7 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
           />
         </div>
 
-        {error && <p className="text-sm text-danger-400">{error}</p>}
+        {error && <p role="alert" className="text-sm text-danger-500 dark:text-danger-400">{error}</p>}
 
         <button
           type="button"

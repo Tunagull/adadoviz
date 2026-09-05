@@ -25,7 +25,9 @@ import { markRateIntroSeen } from "../../lib/rateIntro";
 const loadDomAnimation = () =>
   import("framer-motion").then((mod) => mod.domAnimation);
 
-const ROLL_SPRING = { stiffness: 60, damping: 14, mass: 1 };
+// M1 (uiux): kur bir yardımcının tek işi — kullanıcı sayının oturmasını
+// ~1 sn izliyordu. Daha sert yay + tek tur + kısa stagger → toplam < 500 ms.
+const ROLL_SPRING = { stiffness: 200, damping: 26, mass: 1 };
 
 function toNumber(raw) {
   if (typeof raw === "number") return raw;
@@ -106,6 +108,14 @@ export function AnimatedRate({ value, play = false, decimals = 2, className = ""
   }
 
   const fixed = num.toFixed(decimals);
+
+  // İyileştirme: roller oynamayacaksa (dönüş ziyaretçisi / reduced-motion /
+  // geçersiz) framer yığınını hiç kurma — düz metin. Ana rotadaki motion-value
+  // sayısını ~%90 düşürür.
+  if (!shouldRoll) {
+    return <span className={`tabular-nums ${className}`}>{fixed}</span>;
+  }
+
   const [intStr, decStr = ""] = fixed.replace("-", "").split(".");
   const intDigits = intStr.split("").map(Number);
   const decDigits = decStr.split("").map(Number);
@@ -125,8 +135,8 @@ export function AnimatedRate({ value, play = false, decimals = 2, className = ""
             <DigitColumn
               digit={d}
               roll={shouldRoll}
-              spins={i < dotAt ? 1 : 2}
-              delayMs={i * 70}
+              spins={1}
+              delayMs={Math.min(i, 5) * 40}
             />
           </Fragment>
         ))}

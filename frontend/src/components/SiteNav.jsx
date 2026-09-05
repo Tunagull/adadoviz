@@ -1,5 +1,5 @@
 import { BarChart3, LineChart, Mail, Tag } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useLanguage } from "../context/LanguageContext";
 import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
 
@@ -9,7 +9,6 @@ import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
  */
 export function SiteNav({ compact = false, className = "" }) {
   const { t } = useLanguage();
-  const navigate = useNavigate();
   const nav = useHomeSectionNav();
 
   const items = [
@@ -37,10 +36,9 @@ export function SiteNav({ compact = false, className = "" }) {
       {items.map((item) => {
         const active = isActive(item);
         return (
-          <button
+          <Link
             key={item.key}
-            type="button"
-            onClick={() => navigate(item.to)}
+            to={item.to}
             aria-current={active ? "page" : undefined}
             /*
               ⚠️ DÜZELTME: Bir önceki sürüm hover'da kendi uydurduğum bir
@@ -68,9 +66,9 @@ export function SiteNav({ compact = false, className = "" }) {
                 : "text-ink-600 hover:text-ink-950 dark:text-ink-300 dark:hover:text-white"
             }`}
           >
-            <item.icon className={compact ? "size-3.5" : "size-4"} />
+            <item.icon className={compact ? "size-3.5" : "size-4"} aria-hidden="true" />
             {item.label}
-          </button>
+          </Link>
         );
       })}
     </nav>

@@ -26,10 +26,38 @@ export class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     if (import.meta.env.DEV) {
       console.error("[ErrorBoundary]", error, info?.componentStack);
+    } else if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      // Prod render crash'i sessiz kalmasın — hafif beacon.
+      try {
+        const payload = JSON.stringify({
+          type: "render-error",
+          message: String(error?.message || error),
+          stack: String(info?.componentStack || "").slice(0, 2000),
+          path: typeof location !== "undefined" ? location.pathname : "",
+          ua: navigator.userAgent,
+          ts: Date.now(),
+        });
+        navigator.sendBeacon("/api/client-error", new Blob([payload], { type: "application/json" }));
+      } catch {
+        /* beacon best-effort */
+      }
+    }
+  }
+
+  componentDidUpdate(prevProps) {
+    // F-H1: rota değişince (veya resetKey değişince) hata ekranını temizle,
+    // yoksa "Ana sayfa" URL'i değiştirir ama fallback ekranda kalır.
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
     }
   }
 
   handleRetry = () => {
+    this.setState({ error: null });
+  };
+
+  handleNavigateHome = () => {
+    this.props.onNavigateHome?.();
     this.setState({ error: null });
   };
 
@@ -59,7 +87,7 @@ export class ErrorBoundary extends Component {
               Yeniden dene
             </button>
             {onNavigateHome ? (
-              <button type="button" onClick={onNavigateHome} className="btn-ghost">
+              <button type="button" onClick={this.handleNavigateHome} className="btn-ghost">
                 {homeLabel || "Ana sayfa"}
               </button>
             ) : null}

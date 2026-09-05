@@ -16,6 +16,7 @@ import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import { trackCurrencyView } from "../lib/analytics";
 import { apiUrl } from "../lib/api";
+import { useScrollLock } from "../hooks/useScrollLock";
 
 /*
   ⚠️ OPTİMİZASYON (O-01b): "Piyasa Özeti" grafiği kendi dosyasına taşındı ve
@@ -60,7 +61,7 @@ const CHART_CARD_PLACEHOLDER_CLASS =
   "bg-white p-4 backdrop-blur-md dark:border-ink-800 dark:bg-ink-900/80";
 
 const CHART_ARROW_CLASS =
-  "absolute top-1/2 z-raised flex size-7 -translate-y-1/2 items-center justify-center " +
+  "absolute top-1/2 z-raised flex size-9 -translate-y-1/2 items-center justify-center " +
   "rounded-full border transition-colors duration-fast ease-out-strong " +
   "border-ink-200 bg-white/90 text-ink-600 hover:bg-ink-100 hover:text-ink-950 " +
   "dark:border-white/10 dark:bg-ink-900/90 dark:text-ink-300 dark:hover:bg-ink-800 dark:hover:text-white " +
@@ -86,17 +87,8 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     setCustomDateRange({ start: null, end: null });
   }, [period]);
 
-  // ✅ Modal açıkken arka plan scroll kilidi
-  useEffect(() => {
-    if (isModalOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => {
-      document.body.style.overflow = 'unset';
-    };
-  }, [isModalOpen]);
+  // ✅ Modal açıkken arka plan scroll kilidi (M5: ref-sayaçlı, önceki değeri geri yükler)
+  useScrollLock(isModalOpen);
 
   // ✅ Basit fetch, period/currency değişince yenile
   useEffect(() => {
@@ -124,7 +116,11 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
     fetchData();
     trackCurrencyView(currency);
-    const interval = setInterval(fetchData, 300000); // 5 dakika
+    // M8: 5 dk → 15 dk ve yalnızca sekme görünürken (soğuk-başlangıç backend'i
+    // arka planda gereksiz uyandırmasın).
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") fetchData();
+    }, 900000);
     return () => clearInterval(interval);
   }, [currency, period]);
 
@@ -629,7 +625,11 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     const dot = hollowDot(strokeColor, skin.dotFill, isExpanded ? 6 : 5);
 
     return (
-      <div className={`relative w-full ${isExpanded ? "h-full" : ""}`}>
+      <div
+        className={`relative w-full ${isExpanded ? "h-full" : ""}`}
+        role="img"
+        aria-label={`${currency}/TRY ${t("chartDetailedAnalysis")} — ${change >= 0 ? "+" : ""}${change}% (${formatHeaderDate(timeWindow.windowStart)} – ${formatHeaderDate(timeWindow.windowEnd)})`}
+      >
         <div
           className={`w-full ${isExpanded ? "h-full" : ""}`}
           style={
@@ -791,7 +791,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           <button
             type="button"
             onClick={() => setIsModalOpen(true)}
-            className="press shrink-0 rounded-md p-1 text-ink-500 transition-colors hover:text-ink-800 dark:text-ink-400 dark:hover:text-white"
+            className="press flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:text-ink-800 dark:text-ink-400 dark:hover:text-white"
             title={t("chartDetailedAnalysis")}
             aria-label={t("chartExpand")}
           >
@@ -857,7 +857,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="rounded-full p-1 text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
+                className="flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-full text-ink-600 dark:text-ink-400 transition hover:text-danger-500"
                 aria-label={t("commonClose")}
               >
                 <X size={22} />
@@ -912,7 +912,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             <div className="flex flex-shrink-0 flex-col items-center px-3 pb-0 pt-3 sm:p-4 sm:pb-0 md:p-6 md:pb-0 md:pt-14">
               <h2 className="max-w-full truncate px-12 text-center text-lg font-bold text-ink-800 dark:text-ink-100 sm:px-16 md:text-2xl">{currency}/TRY Detaylı Analiz</h2>
               <span className={`mt-1 text-base font-bold md:text-xl ${displayPercentage >= 0 ? 'text-success-700 dark:text-success-400' : 'text-danger-700 dark:text-danger-400'}`}>
-                {displayPercentage > 0 ? '+' : ''}{displayPercentage.toFixed(2)}%
+                {displayPercentage >= 0 ? '+' : ''}{displayPercentage.toFixed(2)}%
               </span>
             </div>
 

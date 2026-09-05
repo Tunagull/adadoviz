@@ -18,7 +18,10 @@ export function ExchangeOfficePage() {
   const navigate = useNavigate();
   const { t, lang } = useLanguage();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // M2: hata kod olarak saklanır, render'da çevrilir — `t` fetch-effect
+  // bağımlılığı olmaktan çıkar (dil değişimi tüm ofis yükünü refetch etmesin).
+  const [errorCode, setErrorCode] = useState("");
+  const [serverError, setServerError] = useState("");
   const [payload, setPayload] = useState(null);
   /**
    * Ana sayfadan kart tıklanınca modal açılır (state.openDetail).
@@ -50,22 +53,27 @@ export function ExchangeOfficePage() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      setError("");
+      setErrorCode("");
+      setServerError("");
       try {
         const res = await fetch(apiUrl(`/api/doviz-burosu/${encodeURIComponent(slug)}`));
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(data?.error || t("exchangeOfficeNotFound") || "Döviz bürosu bulunamadı.");
+          if (cancelled) return;
+          setPayload(null);
+          if (data?.error) setServerError(String(data.error));
+          else setErrorCode("exchangeOfficeNotFound");
+          return;
         }
         if (cancelled) return;
         if (data.slug && data.slug !== slug) {
           navigate(exchangeOfficePath(data.slug), { replace: true });
         }
         setPayload(data);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setPayload(null);
-          setError(err.message || "Döviz bürosu bulunamadı.");
+          setErrorCode("exchangeOfficeNotFound");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -74,7 +82,7 @@ export function ExchangeOfficePage() {
     return () => {
       cancelled = true;
     };
-  }, [slug, navigate, t]);
+  }, [slug, navigate]);
 
   const business = payload?.business || null;
   /*
@@ -163,12 +171,19 @@ export function ExchangeOfficePage() {
           <p className="text-sm text-ink-500 dark:text-ink-400">
             {t("loadingShort") || "Yükleniyor..."}
           </p>
-        ) : error ? (
-          <div className="rounded-2xl border border-danger-200 bg-white p-6 dark:border-danger-900/50 dark:bg-ink-900">
+        ) : errorCode || serverError ? (
+          <div role="alert" className="rounded-2xl border border-danger-200 bg-white p-6 dark:border-danger-900/50 dark:bg-ink-900">
             <h1 className="text-lg font-semibold text-ink-900 dark:text-white">
               {lang === "en" ? "Exchange office not found" : "Döviz bürosu bulunamadı"}
             </h1>
-            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">{error}</p>
+            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
+              {serverError ||
+                (errorCode && t(errorCode) !== errorCode
+                  ? t(errorCode)
+                  : lang === "en"
+                    ? "This exchange office could not be found."
+                    : "Bu döviz bürosu bulunamadı.")}
+            </p>
             <Link to="/" className="mt-4 inline-block text-sm font-semibold text-brand-600 hover:underline">
               {lang === "en" ? "Back to live rates" : "Canlı kurlara dön"}
             </Link>
@@ -266,7 +281,7 @@ export function ExchangeOfficePage() {
         )}
       </div>
 
-      {business && !loading && !error && detailOpen ? (
+      {business && !loading && !errorCode && !serverError && detailOpen ? (
         <BusinessDetailModal
           business={business}
           initialBranchId={payload?.matchedBranchId ?? null}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AnimatePresence, LazyMotion, m, useReducedMotion } from "framer-motion";
 import clsx from "clsx";
 import { Building2, Check, Loader2, Search } from "lucide-react";
@@ -127,7 +127,15 @@ export function GooeySearchBar({
 }) {
   const inputRef = useRef(null);
   const rootRef = useRef(null);
+  const btnRef = useRef(null);
+  const reactId = useId();
+  const listId = `gooey-list-${reactId}`;
+  const optionId = (index) => `${listId}-opt-${index}`;
   const reduceMotion = useReducedMotion();
+  /** A-C3: kapanış yollarında (Esc / seçim) odağı tetikleyiciye döndür. */
+  const focusTrigger = useCallback(() => {
+    requestAnimationFrame(() => btnRef.current?.focus());
+  }, []);
   // Safari/iOS Chrome tespiti — artık yalnızca menü giriş gecikmesini kısaltmak için.
   const isUnsupported = useMemo(() => isUnsupportedBrowser(), []);
   const isSelect = mode === "select";
@@ -135,6 +143,8 @@ export function GooeySearchBar({
   const [step, setStep] = useState(1);
   const [innerText, setInnerText] = useState(value ?? "");
   const [highlight, setHighlight] = useState(0);
+  /** D9: klavye seçimi tam-vurgu; fare üzerinde gezinme hafif vurgu. */
+  const [navMode, setNavMode] = useState("ptr");
 
   const searchText = isSelect ? innerText : value !== undefined ? value : innerText;
 
@@ -174,6 +184,7 @@ export function GooeySearchBar({
       if (event.key === "Escape") {
         event.preventDefault();
         setStep(1);
+        focusTrigger();
       }
     };
     document.addEventListener("mousedown", onDoc);
@@ -182,7 +193,7 @@ export function GooeySearchBar({
       document.removeEventListener("mousedown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
-  }, [step]);
+  }, [step, focusTrigger]);
 
   const selectedItem = useMemo(() => {
     if (!isSelect) return null;
@@ -206,14 +217,16 @@ export function GooeySearchBar({
         onSelect?.(item);
         onChange?.(item.id);
         setStep(1);
+        focusTrigger();
         return;
       }
       if (value === undefined) setInnerText(item.label);
       onChange?.(item.label);
       onSelect?.(item);
       setStep(1);
+      focusTrigger();
     },
-    [isSelect, onChange, onSelect, value]
+    [isSelect, onChange, onSelect, value, focusTrigger]
   );
 
   const handleSearch = (event) => {
@@ -225,11 +238,13 @@ export function GooeySearchBar({
   const onInputKeyDown = (event) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
+      setNavMode("kbd");
       setHighlight((h) => Math.min(h + 1, Math.max(results.length - 1, 0)));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      setNavMode("kbd");
       setHighlight((h) => Math.max(h - 1, 0));
       return;
     }
@@ -255,9 +270,10 @@ export function GooeySearchBar({
     <>
       <AnimatePresence mode="popLayout">
         {results.map((item, index) => (
-          <m.button
-            type="button"
+          <m.div
             key={item.id || item.label}
+            id={optionId(index)}
+            tabIndex={-1}
             /*
               ⚠️ PERF: `whileHover={{ scale: 1.02 }}` fare her kıpırdadığında
               SVG filtresini yeniden rasterize ediyordu. Vurgu geri bildirimi
@@ -277,11 +293,15 @@ export function GooeySearchBar({
             className={clsx(
               "gooey-search__result",
               index === highlight && "is-active",
+              index === highlight && navMode === "kbd" && "is-active--kbd",
               isSelect && String(item.id) === String(selectedId) && "is-selected"
             )}
             role="option"
             aria-selected={index === highlight}
-            onMouseEnter={() => setHighlight(index)}
+            onMouseEnter={() => {
+              setNavMode("ptr");
+              setHighlight(index);
+            }}
             onClick={() => commit(item)}
           >
             {ResultIcon ? <ResultIcon className="gooey-search__info" aria-hidden="true" /> : null}
@@ -301,7 +321,7 @@ export function GooeySearchBar({
                 <Check aria-hidden="true" />
               </m.span>
             ) : null}
-          </m.button>
+          </m.div>
         ))}
       </AnimatePresence>
       {expanded && results.length === 0 && !showSpinner ? (
@@ -355,6 +375,7 @@ export function GooeySearchBar({
             {expanded ? (
               <m.div
                 key="search-results"
+                id={listId}
                 className="gooey-search__results"
                 role="listbox"
                 aria-label={ariaLabel || collapsedLabel}
@@ -397,6 +418,7 @@ export function GooeySearchBar({
           </AnimatePresence>
 
           <m.div
+            ref={btnRef}
             className="gooey-search__btn"
             variants={{
               step1: { x: 0, width: btnCollapsedWidth },
@@ -419,11 +441,17 @@ export function GooeySearchBar({
             {expanded ? (
               <input
                 ref={inputRef}
-                type="search"
+                type="text"
+                role="combobox"
                 className="gooey-search__input"
                 placeholder={placeholder}
                 aria-label={ariaLabel || collapsedLabel}
                 aria-expanded={expanded}
+                aria-controls={listId}
+                aria-autocomplete="list"
+                aria-activedescendant={
+                  results.length > 0 && results[highlight] ? optionId(highlight) : undefined
+                }
                 autoComplete="off"
                 value={searchText}
                 onChange={handleSearch}

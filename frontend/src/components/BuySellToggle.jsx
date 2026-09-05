@@ -35,7 +35,7 @@ export function BuySellToggle({ value = "buy", onChange, className = "" }) {
             ? "text-white dark:text-ink-950"
             : isDark
               ? "text-ink-500"
-              : "text-ink-400"
+              : "text-ink-600"
         }`}
       >
         {t("buy")}
@@ -49,7 +49,7 @@ export function BuySellToggle({ value = "buy", onChange, className = "" }) {
             ? "text-white dark:text-ink-950"
             : isDark
               ? "text-ink-500"
-              : "text-ink-400"
+              : "text-ink-600"
         }`}
       >
         {t("sell")}
