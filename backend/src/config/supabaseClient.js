@@ -138,6 +138,11 @@ async function insertHistoricalRate(currency, buy_rate, sell_rate, recorded_at) 
   ]);
 
   if (error) {
+    // B-H3: 0002 migration'ından sonra (currency, recorded_at) tekil. Aynı bülten
+    // damgası tekrar yazılmaya çalışılırsa bu bir hata değil — idempotent atla.
+    if (error.code === "23505" || /duplicate key|unique constraint/i.test(error.message || "")) {
+      return null;
+    }
     console.error("[Supabase] Insert error:", error.message);
     throw new Error(`Failed to insert rate: ${error.message}`);
   }
@@ -150,13 +155,84 @@ async function insertHistoricalRate(currency, buy_rate, sell_rate, recorded_at) 
 }
 
 /**
+ * B-H2: Toplu geçmiş kur ekleme (legacy import / backfill için).
+ * `rows`: { currency, buy_rate, sell_rate, recorded_at }[] — recorded_at UTC ISO.
+ * 500'lük parçalarla insert; unique index çakışmalarını (23505) sessizce atlar.
+ */
+async function bulkInsertSupabaseHistoricalRates(rows) {
+  const clean = (Array.isArray(rows) ? rows : [])
+    .map((r) => ({
+      currency: String(r.currency || "").toUpperCase(),
+      buy_rate: Number(r.buy_rate),
+      sell_rate: Number(r.sell_rate),
+      recorded_at: r.recorded_at ? new Date(r.recorded_at).toISOString() : null,
+      created_at: new Date().toISOString(),
+    }))
+    .filter((r) => r.currency && r.buy_rate > 0 && r.sell_rate > 0 && r.recorded_at);
+
+  let inserted = 0;
+  for (let i = 0; i < clean.length; i += 500) {
+    const chunk = clean.slice(i, i + 500);
+    const { error } = await supabase
+      .from("historical_rates")
+      .upsert(chunk, { onConflict: "currency,recorded_at", ignoreDuplicates: true });
+    if (error) {
+      if (error.code === "23505" || /duplicate key|unique constraint/i.test(error.message || "")) {
+        continue;
+      }
+      // onConflict hedefi yoksa (0002 migration çalışmamış) plain insert dene.
+      const retry = await supabase.from("historical_rates").insert(chunk);
+      if (retry.error && retry.error.code !== "23505") {
+        throw new Error(retry.error.message);
+      }
+    }
+    inserted += chunk.length;
+  }
+  if (inserted > 0) clearMarketHistoryCache();
+  return { attempted: clean.length, inserted };
+}
+
+/**
+ * B-H3: Supabase'teki EN SON kur anlık görüntüsü (para birimi başına son satır).
+ * Sunucu açılışında `previousRates` bununla tohumlanır — SQLite historical_rates
+ * Render'da her boot'ta boş olduğu için değişim tespiti hep "değişti" sanıyordu.
+ * @returns {Promise<{rates: Record<string,{buy:number,sell:number}>, recordedAt: string|null}|null>}
+ */
+async function getLatestSupabaseRatesSnapshot(currencies = ["USD", "EUR", "GBP"]) {
+  const rates = {};
+  let newest = null;
+  let newestMs = -Infinity;
+  for (const currency of currencies) {
+    const { data, error } = await supabase
+      .from("historical_rates")
+      .select("buy_rate, sell_rate, recorded_at")
+      .eq("currency", currency)
+      .order("recorded_at", { ascending: false })
+      .limit(1);
+    if (error) throw new Error(error.message);
+    const row = data?.[0];
+    if (!row) continue;
+    rates[currency] = { buy: Number(row.buy_rate), sell: Number(row.sell_rate) };
+    const ms = Date.parse(row.recorded_at);
+    if (Number.isFinite(ms) && ms > newestMs) {
+      newestMs = ms;
+      newest = new Date(ms).toISOString();
+    }
+  }
+  if (Object.keys(rates).length === 0) return null;
+  return { rates, recordedAt: newest };
+}
+
+/**
  * Piyasa Özeti grafikleri.
  * period yalnızca agregasyon yoğunluğunu belirler; veri derinliği her zaman
  * tam arşivdir — böylece Saatlik/Günlük/Haftalık/Aylık'te de soldaki ok ile
  * yıllar geriye gidilebilir (Yıllık ile aynı UX).
  */
-async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
-  const key = `${period}|${currency}`;
+async function getMarketHistoricalRates(period = "Günlük", currency = "USD", opts = {}) {
+  const fromIso = opts.from ? new Date(opts.from).toISOString() : null;
+  const toIso = opts.to ? new Date(opts.to).toISOString() : null;
+  const key = `${period}|${currency}|${fromIso || ""}|${toIso || ""}`;
 
   const cached = marketHistoryCache.get(key);
   if (cached && Date.now() - cached.at < MARKET_HISTORY_TTL_MS) {
@@ -166,7 +242,7 @@ async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
   const inFlight = marketHistoryPending.get(key);
   if (inFlight) return inFlight;
 
-  const work = fetchMarketHistoricalRates(period, currency)
+  const work = fetchMarketHistoricalRates(period, currency, { from: fromIso, to: toIso })
     .then((value) => {
       marketHistoryCache.set(key, { at: Date.now(), value });
       return value;
@@ -180,22 +256,30 @@ async function getMarketHistoricalRates(period = "Günlük", currency = "USD") {
 }
 
 /** Önbelleksiz asıl sorgu — yalnızca `getMarketHistoricalRates` çağırır. */
-async function fetchMarketHistoricalRates(period, currency) {
+async function fetchMarketHistoricalRates(period, currency, opts = {}) {
   const spec = resolvePeriodSpec(period);
   const viewHours = spec.viewHours;
   const pctHours = spec.pctHours;
-  const cutoffTime = new Date(Date.now() - MARKET_ARCHIVE_HOURS * 60 * 60 * 1000).toISOString();
+
+  // B-M3: Normal render yalnızca periyodun `fetchHours` derinliğini çeker.
+  // Derin arşiv (sol ok navigasyonu) yalnızca açık ?from=&to= ile gelir.
+  const explicitRange = Boolean(opts.from || opts.to);
+  const boundedFetchHours = Math.min(spec.fetchHours, MARKET_ARCHIVE_HOURS);
+  const cutoffTime = explicitRange
+    ? new Date(opts.from || Date.now() - MARKET_ARCHIVE_HOURS * 3600 * 1000).toISOString()
+    : new Date(Date.now() - boundedFetchHours * 3600 * 1000).toISOString();
+  const upperTime = explicitRange && opts.to ? new Date(opts.to).toISOString() : null;
   const viewCutoffTime = new Date(Date.now() - pctHours * 60 * 60 * 1000).toISOString();
 
-  const rawRows = await fetchAllPages((from, to) =>
-    supabase
+  const rawRows = await fetchAllPages((from, to) => {
+    let q = supabase
       .from("historical_rates")
       .select("currency, buy_rate, sell_rate, recorded_at")
       .eq("currency", currency)
-      .gte("recorded_at", cutoffTime)
-      .order("recorded_at", { ascending: true })
-      .range(from, to)
-  );
+      .gte("recorded_at", cutoffTime);
+    if (upperTime) q = q.lte("recorded_at", upperTime);
+    return q.order("recorded_at", { ascending: true }).range(from, to);
+  });
 
   // Agregasyon: PERIOD_SPEC.bucket (hour | day)
   const rows =
@@ -450,6 +534,11 @@ async function insertMarginHistory(entry) {
   const { error } = await supabase.from("margin_history").insert([payload]);
 
   if (error) {
+    // B-C1: 0002 migration'ından sonra (institution_id, currency, margin_type,
+    // recorded_at) tekil. Aynı olay tekrar yazılırsa idempotent atla.
+    if (error.code === "23505" || /duplicate key|unique constraint/i.test(error.message || "")) {
+      return true;
+    }
     // Tablo yoksa sessizce geç — SQLite yedek olarak kalır
     console.warn("[Supabase] margin_history insert:", error.message);
     return false;
@@ -486,8 +575,11 @@ async function fetchMarginHistory(institutionId, currency, type) {
 
 module.exports = {
   supabase,
+  fetchAllPages,
   insertHistoricalRate,
+  bulkInsertSupabaseHistoricalRates,
   getMarketHistoricalRates,
+  getLatestSupabaseRatesSnapshot,
   clearMarketHistoryCache,
   getBusinessRateHistory,
   insertMarginHistory,

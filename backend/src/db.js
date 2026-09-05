@@ -1,6 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { DatabaseSync } = require("node:sqlite");
 const bcrypt = require("bcryptjs");
 const { INSTITUTIONS, CURRENCIES, findInstitutionByName } = require("./institutions");
@@ -8,8 +9,55 @@ const { periodToHoursBack } = require("./periodSpec");
 const {
   enforceSellGteBuy,
   normalizeKind,
+  normalizeSide,
   baselineRecordedAtIso,
+  fromSupabaseMarginHistoryRow,
 } = require("./marginSchema");
+
+/**
+ * B-H4: Karışık zaman damgası formatlarını (yerel "YYYY-MM-DD HH:MM:SS" vs
+ * ISO-Zulu) tek biçime indirger. Boşluklu form UTC kabul edilir (Render zaten
+ * UTC çalışır; eski datetime('now') yazımları bu varsayımı doğrular).
+ * @returns {string|null} ISO-8601 UTC dizesi
+ */
+function toIsoUtc(value) {
+  if (value == null || value === "") return null;
+  const s = String(value).trim();
+  const hasTz = /[zZ]$/.test(s) || /[+-]\d{2}:?\d{2}$/.test(s);
+  const candidate = s.includes("T") || hasTz ? s : `${s.replace(" ", "T")}Z`;
+  const d = new Date(candidate);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/**
+ * S-C1: Seed hesapları için parola çözümü.
+ *  - superadmin: SUPERADMIN_INITIAL_PASSWORD varsa onu kullan; yoksa
+ *    crypto.randomBytes(12) üret ve BİR KEZ WARN logla (asla "123").
+ *  - katalog / varsayılan işletme: bilinemez rastgele bir hash — giriş fiilen
+ *    KAPALIDIR. Ofis "şifremi unuttum" akışıyla (kayıtlı e-posta) veya superadmin
+ *    panelden yeni şifre atar. Böylece taze deploy'da <slug>/123 diye bir
+ *    kimlik bilgisi hiç oluşmaz.
+ */
+let _superadminSeedPasswordLogged = false;
+function resolveSuperadminSeedPassword() {
+  const env = String(process.env.SUPERADMIN_INITIAL_PASSWORD || "").trim();
+  if (env) return env;
+  const generated = crypto.randomBytes(12).toString("base64url");
+  if (!_superadminSeedPasswordLogged) {
+    console.warn(
+      `[SECURITY] SUPERADMIN_INITIAL_PASSWORD tanımlı değil — geçici superadmin şifresi üretildi: ${generated}`
+    );
+    console.warn(
+      "[SECURITY] Bu şifre YALNIZCA şimdi loglanır. Giriş yapıp panelden derhal değiştirin."
+    );
+    _superadminSeedPasswordLogged = true;
+  }
+  return generated;
+}
+function disabledLoginHash() {
+  // Kimsenin bilmediği rastgele parolanın bcrypt hash'i → compareSync daima false.
+  return bcrypt.hashSync(crypto.randomBytes(32).toString("hex"), 10);
+}
 
 const DATA_DIR = path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DATA_DIR, "finsight.db");
@@ -86,6 +134,65 @@ function dedupeHistoricalRates() {
 }
 
 /**
+ * B-H4: historical_rates.recorded_at içindeki yerel-biçim ("YYYY-MM-DD HH:MM:SS")
+ * satırlarını UTC ISO'ya çevirir. SQLite ephemeral olduğu için bu bir kerelik
+ * onarımdır; tekillik indeksinden ve dedupe'den ÖNCE çalışır ki karşılaştırma
+ * tek biçim üzerinden yapılsın.
+ */
+function normalizeHistoricalRateTimestamps() {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id, recorded_at FROM historical_rates
+         WHERE recorded_at NOT LIKE '%T%' OR recorded_at NOT LIKE '%Z'`
+      )
+      .all();
+    if (!rows.length) return;
+    const upd = db.prepare(`UPDATE historical_rates SET recorded_at = ? WHERE id = ?`);
+    let fixed = 0;
+    runInTransaction(() => {
+      for (const row of rows) {
+        const iso = toIsoUtc(row.recorded_at);
+        if (iso && iso !== row.recorded_at) {
+          upd.run(iso, row.id);
+          fixed += 1;
+        }
+      }
+    });
+    if (fixed > 0) console.log(`[DB] ✅ ${fixed} historical_rates damgası UTC ISO'ya normalize edildi.`);
+  } catch (err) {
+    console.warn("[DB] historical_rates damga normalizasyonu başarısız:", err.message);
+  }
+}
+
+/** B-H4: margin_history.recorded_at için aynı bir kerelik ISO onarımı. */
+function normalizeMarginHistoryTimestamps() {
+  try {
+    const rows = db
+      .prepare(
+        `SELECT id, recorded_at FROM margin_history
+         WHERE recorded_at NOT LIKE '%T%' OR recorded_at NOT LIKE '%Z'`
+      )
+      .all();
+    if (!rows.length) return;
+    const upd = db.prepare(`UPDATE margin_history SET recorded_at = ? WHERE id = ?`);
+    let fixed = 0;
+    runInTransaction(() => {
+      for (const row of rows) {
+        const iso = toIsoUtc(row.recorded_at);
+        if (iso && iso !== row.recorded_at) {
+          upd.run(iso, row.id);
+          fixed += 1;
+        }
+      }
+    });
+    if (fixed > 0) console.log(`[DB] ✅ ${fixed} margin_history damgası UTC ISO'ya normalize edildi.`);
+  } catch (err) {
+    console.warn("[DB] margin_history damga normalizasyonu başarısız:", err.message);
+  }
+}
+
+/**
  * Y-05: Sunucu açılışında değişim tespitini beslemek için diskteki EN SON kur
  * anlık görüntüsü. Önceden previousRates yalnızca bellekteydi; her restart'ta
  * null olduğundan ilk döngü "değişim var" sayılıyor ve müşteri panosundaki
@@ -96,20 +203,35 @@ function dedupeHistoricalRates() {
 function getLatestHistoricalRatesSnapshot(currencies = ["USD", "EUR", "GBP"]) {
   try {
     const rates = {};
+    let newestMs = -Infinity;
     let newest = null;
     for (const currency of currencies) {
-      const row = db
+      // B-H4: recorded_at karışık formatlı olabilir; lexical ORDER BY yanlış
+      // "en yeni" seçebilir. Son birkaç satırı çekip SAYISAL olarak karşılaştır.
+      const candidates = db
         .prepare(
           `SELECT currency, buy_rate, sell_rate, recorded_at
            FROM historical_rates
            WHERE currency = ?
            ORDER BY recorded_at DESC
-           LIMIT 1`
+           LIMIT 8`
         )
-        .get(currency);
-      if (!row) continue;
-      rates[currency] = { buy: Number(row.buy_rate), sell: Number(row.sell_rate) };
-      if (!newest || String(row.recorded_at) > String(newest)) newest = row.recorded_at;
+        .all(currency);
+      let best = null;
+      let bestMs = -Infinity;
+      for (const row of candidates) {
+        const ms = Date.parse(toIsoUtc(row.recorded_at) || row.recorded_at);
+        if (Number.isFinite(ms) && ms > bestMs) {
+          bestMs = ms;
+          best = row;
+        }
+      }
+      if (!best) continue;
+      rates[currency] = { buy: Number(best.buy_rate), sell: Number(best.sell_rate) };
+      if (bestMs > newestMs) {
+        newestMs = bestMs;
+        newest = toIsoUtc(best.recorded_at) || best.recorded_at;
+      }
     }
     if (Object.keys(rates).length === 0) return null;
     return { rates, recordedAt: newest };
@@ -368,7 +490,9 @@ function initDb({ skipBusinessSeed = false } = {}) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_payments_donem ON payments(donem_bitis)`);
   seedPlansIfNeeded();
 
+  normalizeHistoricalRateTimestamps();
   dedupeHistoricalRates();
+  normalizeMarginHistoryTimestamps();
   try {
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_historical_rates_unique
@@ -445,6 +569,15 @@ function initDb({ skipBusinessSeed = false } = {}) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+  // S-M4: tamper-evident zincir — her satırın row_hash'i bir öncekinin
+  // row_hash'ini (prev_hash) içerir. Bir satır eklen, silinir veya değiştirilirse
+  // zincir kopar ve verifyAuditChain() bunu tespit eder.
+  if (!columnExists("audit_log", "prev_hash")) {
+    db.exec(`ALTER TABLE audit_log ADD COLUMN prev_hash TEXT`);
+  }
+  if (!columnExists("audit_log", "row_hash")) {
+    db.exec(`ALTER TABLE audit_log ADD COLUMN row_hash TEXT`);
+  }
   if (!columnExists("branch_requests", "request_type")) {
     db.exec(
       `ALTER TABLE branch_requests ADD COLUMN request_type TEXT NOT NULL DEFAULT 'new'`
@@ -570,7 +703,6 @@ function migrateBankAdminsToInstitutions() {
 }
 
 function seedAdminsIfNeeded() {
-  const passwordHash = bcrypt.hashSync("123", 10);
   const customInsts = [
     { username: "banka1", institution_id: "akbank", name: "Akbank" },
     { username: "banka2", institution_id: "banka2", name: "Banka 2" },
@@ -586,8 +718,10 @@ function seedAdminsIfNeeded() {
     VALUES (?, ?, ?, ?)
   `);
 
+  // S-C1: her kurum için ayrı, bilinemez rastgele hash → giriş kapalı.
   runInTransaction(() => {
     for (const inst of customInsts) {
+      const passwordHash = disabledLoginHash();
       insert.run(inst.username, passwordHash, inst.institution_id, inst.name);
       insertLegacy.run(inst.username, passwordHash, inst.institution_id, inst.name);
     }
@@ -597,7 +731,7 @@ function seedAdminsIfNeeded() {
   if (count === 3) {
     console.log("[DB] Banka 1, 2, 3 zaten mevcut.");
   } else {
-    console.log("[DB] Custom institutions eklendi (şifre: 123).");
+    console.log("[DB] Custom institutions eklendi (giriş kapalı — şifre reset/panel ile atanır).");
   }
 
   // MIGRATION: banka1 -> akbank institution_id
@@ -619,7 +753,6 @@ function seedAdminsIfNeeded() {
  * Mevcut kayıtlar (username/password) korunur — INSERT OR IGNORE.
  */
 function seedCatalogInstitutionsIfNeeded() {
-  const passwordHash = bcrypt.hashSync("123", 10);
   const endDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
 
   const insert = db.prepare(`
@@ -634,22 +767,26 @@ function seedCatalogInstitutionsIfNeeded() {
     for (const inst of INSTITUTIONS) {
       // akbank zaten banka1 username ile var — institution_id çakışmasında IGNORE
       const username = inst.id === "akbank" ? "banka1" : inst.id;
-      const info = insert.run(username, passwordHash, inst.id, inst.name, endDate);
+      // S-C1: her katalog ofisi bilinemez rastgele hash ile eklenir → giriş kapalı.
+      const info = insert.run(username, disabledLoginHash(), inst.id, inst.name, endDate);
       if (info.changes > 0) added += 1;
     }
   });
 
   if (added > 0) {
-    console.log(`[DB] Katalog işletmeleri eklendi: +${added} (şifre: 123)`);
+    console.log(
+      `[DB] Katalog işletmeleri eklendi: +${added} (giriş kapalı — şifre reset/panel ile atanır)`
+    );
   } else {
     console.log("[DB] Katalog işletmeleri zaten mevcut.");
   }
 }
 
 /**
- * Super admin hesabını hazırlar.
- * Varsayılan: kullanıcı adı "tuna", şifre "123"
- * (SUPERADMIN_USERNAME / SUPERADMIN_INITIAL_PASSWORD ile override edilebilir).
+ * Super admin hesabını hazırlar (yalnızca hesap YOKSA).
+ * Kullanıcı adı: SUPERADMIN_USERNAME (varsayılan "tuna").
+ * Şifre: SUPERADMIN_INITIAL_PASSWORD; boşsa rastgele üretilir ve BİR KEZ
+ * WARN log'una yazılır (S-C1). Mevcut hesabın şifresine boot'ta dokunulmaz.
  */
 function seedSuperAdminIfNeeded() {
   const username = process.env.SUPERADMIN_USERNAME || "tuna";
@@ -670,7 +807,7 @@ function seedSuperAdminIfNeeded() {
     return;
   }
 
-  const password = process.env.SUPERADMIN_INITIAL_PASSWORD || "123";
+  const password = resolveSuperadminSeedPassword();
   const passwordHash = bcrypt.hashSync(password, 10);
   db.prepare(`
     INSERT INTO institutions (username, password_hash, institution_id, institution_name, role, subscription)
@@ -1084,19 +1221,68 @@ function mapBusinessRow(row) {
   };
 }
 
+/**
+ * S-H3: Logo yalnızca RASTER görsel olabilir. `image/svg+xml` reddedilir
+ * (stored XSS vektörü); MIME etiketine güvenilmez — base64 gövdesinin ilk
+ * baytları (magic number) beklenen türle eşleşmelidir.
+ */
+const LOGO_ALLOWED_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+]);
+
+function sniffImageMime(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return "image/gif";
+  if (
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
 function sanitizeLogoUrl(raw) {
   if (raw === undefined) return undefined; // güncellemede dokunma
   if (raw === null || raw === "") return null;
   const s = String(raw).trim();
   if (!s) return null;
-  if (!s.startsWith("data:image/")) {
-    throw new Error("Logo yalnızca görsel (data:image) formatında olmalıdır.");
-  }
   // ~900KB base64 sınırı
   if (s.length > 900_000) {
     throw new Error("Logo dosyası çok büyük. Lütfen daha küçük bir görsel kullanın.");
   }
-  return s;
+  const m = s.match(/^data:([^;,]+)(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i);
+  if (!m) {
+    throw new Error("Logo yalnızca base64 kodlu görsel (data:image/...;base64,) olabilir.");
+  }
+  const declaredMime = String(m[1] || "").toLowerCase().trim();
+  if (declaredMime === "image/svg+xml" || declaredMime.includes("svg")) {
+    throw new Error("SVG logo kabul edilmez. PNG, JPEG, WEBP veya GIF kullanın.");
+  }
+  if (!LOGO_ALLOWED_MIME.has(declaredMime)) {
+    throw new Error("Desteklenmeyen logo türü. PNG, JPEG, WEBP veya GIF kullanın.");
+  }
+  let buf;
+  try {
+    buf = Buffer.from(m[2], "base64");
+  } catch (_e) {
+    throw new Error("Logo verisi çözülemedi.");
+  }
+  const sniffed = sniffImageMime(buf);
+  if (!sniffed) {
+    throw new Error("Logo içeriği geçerli bir görsel değil (PNG/JPEG/WEBP/GIF).");
+  }
+  const norm = (x) => (x === "image/jpg" ? "image/jpeg" : x);
+  if (norm(sniffed) !== norm(declaredMime)) {
+    throw new Error("Logo türü ile içeriği uyuşmuyor.");
+  }
+  return `data:${norm(sniffed)};base64,${buf.toString("base64")}`;
 }
 
 function backfillSubscriptionFieldsIfNeeded() {
@@ -2348,16 +2534,16 @@ function upsertAdjustments(institutionId, adjustments) {
           const baselineRecordedAt = baselineRecordedAtIso();
           db.prepare(`
             INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now', '-10 years'))
-          `).run(trimmedInstitutionId, currency, type, baselineType, baselineValue);
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(trimmedInstitutionId, currency, type, baselineType, baselineValue, baselineRecordedAt);
           baselineWrite = { margin_type: baselineType, margin_value: baselineValue, recorded_at: baselineRecordedAt };
         }
 
         const newRecordedAt = new Date().toISOString();
         db.prepare(`
           INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
-          VALUES (?, ?, ?, ?, ?, datetime('now'))
-        `).run(trimmedInstitutionId, currency, type, marginType, marginValue);
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(trimmedInstitutionId, currency, type, marginType, marginValue, newRecordedAt);
         console.log(`[DB] 🕒 Marj tarihçesi kaydedildi: ${trimmedInstitutionId}/${currency}/${type} = ${marginValue} (${marginType})`);
 
         historyWrites.push({
@@ -2377,18 +2563,26 @@ function upsertAdjustments(institutionId, adjustments) {
  * Gerçek kur verilerini geçmiş veriler tablosuna kaydet
  * @param {Array} rates - { currency, buy_rate, sell_rate } formatında kurlar
  */
-function recordHistoricalRates(rates) {
+/**
+ * @param {Array} rates - { currency, buy_rate, sell_rate }
+ * @param {string} [recordedAt] - Impr-3 / B-H4: her iki depoda (SQLite + Supabase)
+ *   AYNI olay için AYNI UTC ISO zaman damgası. Verilmezse now() ISO.
+ */
+function recordHistoricalRates(rates, recordedAt) {
   if (!Array.isArray(rates) || rates.length === 0) return;
+  const stamp = toIsoUtc(recordedAt) || new Date().toISOString();
 
   runInTransaction(() => {
+    // B-H3: idx_historical_rates_unique(currency, recorded_at) ile birlikte
+    // aynı bülten damgası tekrar yazılmaya çalışılırsa sessizce atlanır.
     const insert = db.prepare(`
-      INSERT INTO historical_rates (currency, buy_rate, sell_rate, recorded_at)
-      VALUES (?, ?, ?, datetime('now'))
+      INSERT OR IGNORE INTO historical_rates (currency, buy_rate, sell_rate, recorded_at)
+      VALUES (?, ?, ?, ?)
     `);
 
     for (const rate of rates) {
       if (rate.currency && typeof rate.buy_rate === 'number' && typeof rate.sell_rate === 'number') {
-        insert.run(rate.currency, rate.buy_rate, rate.sell_rate);
+        insert.run(rate.currency, rate.buy_rate, rate.sell_rate, stamp);
       }
     }
   });
@@ -2519,7 +2713,8 @@ function bulkInsertHistoricalRates(currency, rows) {
     for (const row of rows) {
       const buy = Number(row.buy_rate);
       const sell = Number(row.sell_rate);
-      const recordedAt = row.recorded_at;
+      // B-H4: gelen damgayı tek biçime (UTC ISO) indir.
+      const recordedAt = toIsoUtc(row.recorded_at);
       if (!(buy > 0) || !(sell > 0) || !recordedAt) {
         skipped += 1;
         continue;
@@ -2885,6 +3080,14 @@ function findInstitutionForPasswordReset(identifier) {
   );
 }
 
+/**
+ * S-H1: Şifre sıfırlama token'ı DÜZ METİN saklanmaz. Yalnızca sha256(token)
+ * saklanır ve karşılaştırılır; ham token yalnızca e-posta linkinde yaşar.
+ */
+function hashResetToken(token) {
+  return crypto.createHash("sha256").update(String(token || "").trim()).digest("hex");
+}
+
 function createPasswordResetToken({ institutionId, email, token, expiresAt }) {
   db.prepare(
     `UPDATE password_resets SET used = 1
@@ -2896,7 +3099,7 @@ function createPasswordResetToken({ institutionId, email, token, expiresAt }) {
       `INSERT INTO password_resets (institution_id, email, token, expires_at, used)
        VALUES (?, ?, ?, ?, 0)`
     )
-    .run(institutionId, email, token, expiresAt);
+    .run(institutionId, email, hashResetToken(token), expiresAt);
 
   return result.lastInsertRowid;
 }
@@ -2913,7 +3116,7 @@ function findValidPasswordReset(token) {
          WHERE token = ? AND used = 0
          LIMIT 1`
       )
-      .get(value) || null
+      .get(hashResetToken(value)) || null
   );
 }
 
@@ -3093,6 +3296,15 @@ function applySupabaseInstitutionRow(row) {
       row.institution_id
     );
   } else {
+    // Impr-5: password_hash olmadan gelen bir Supabase satırı için "123" gibi
+    // zayıf bir kimlik ÜRETME — satırı atla ve logla (kolon Supabase'te NOT NULL
+    // olduğundan bu yol normalde tetiklenmez).
+    if (!row.password_hash) {
+      console.warn(
+        `[HYDRATE] institutions satırı password_hash olmadan geldi — INSERT atlandı: ${row.institution_id}`
+      );
+      return;
+    }
     db.prepare(
       `INSERT INTO institutions
         (username, password_hash, institution_id, institution_name, role, subscription,
@@ -3100,7 +3312,7 @@ function applySupabaseInstitutionRow(row) {
        VALUES (?, ?, ?, ?, 'business', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       row.username || row.institution_id,
-      row.password_hash || bcrypt.hashSync("123", 10),
+      row.password_hash,
       row.institution_id,
       row.institution_name || row.institution_id,
       row.subscription || "Yıllık",
@@ -3221,6 +3433,122 @@ function applySupabaseAdjustmentRow(row) {
     row.type,
     row.margin_type || "fixed",
     Number(row.margin_value) || 0
+  );
+}
+
+/**
+ * B-C1: Supabase margin_history satırını SQLite'a yaz (dedupe'li).
+ * Böylece redeploy sonrası `upsertAdjustments` içindeki `hasPriorHistory`
+ * kontrolü DOĞRU çalışır ve sahte ~10 yıl öncesi baseline ASLA yazılmaz.
+ */
+function applySupabaseMarginHistoryRow(row) {
+  const canonical = fromSupabaseMarginHistoryRow(row);
+  if (!row?.institution_id || !row?.currency || !canonical?.side) return;
+  const instId = String(row.institution_id).trim().toLowerCase();
+  const currency = String(row.currency).toUpperCase();
+  const recordedAt = toIsoUtc(canonical.recorded_at) || canonical.recorded_at;
+  if (!recordedAt) return;
+  const dup = db
+    .prepare(
+      `SELECT id FROM margin_history
+       WHERE institution_id = ? AND currency = ? AND type = ? AND recorded_at = ?
+       LIMIT 1`
+    )
+    .get(instId, currency, canonical.side, recordedAt);
+  if (dup) return;
+  db.prepare(
+    `INSERT INTO margin_history (institution_id, currency, type, margin_type, margin_value, recorded_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    instId,
+    currency,
+    canonical.side,
+    normalizeKind(canonical.kind),
+    Number(canonical.margin_value) || 0,
+    recordedAt
+  );
+}
+
+/**
+ * B-H2/B-H3: Supabase historical_rates satırlarını (para birimine göre gruplu)
+ * SQLite'a yükler. INSERT OR IGNORE + idx_historical_rates_unique → idempotent.
+ */
+function applySupabaseHistoricalRatesRows(rows) {
+  const byCurrency = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const cur = String(row?.currency || "").toUpperCase();
+    if (!cur) continue;
+    if (!byCurrency.has(cur)) byCurrency.set(cur, []);
+    byCurrency.get(cur).push(row);
+  }
+  let inserted = 0;
+  for (const [currency, list] of byCurrency) {
+    const res = bulkInsertHistoricalRates(currency, list);
+    inserted += res.inserted;
+  }
+  return { inserted };
+}
+
+/** B-H1: Supabase plans satırını SQLite'a yaz (code birincil anahtar). */
+function applySupabasePlanRow(row) {
+  if (!row?.code) return;
+  db.prepare(
+    `INSERT INTO plans (code, ad, sure_gun, fiyat, kdv_orani, aktif, sira)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(code) DO UPDATE SET
+       ad = excluded.ad, sure_gun = excluded.sure_gun, fiyat = excluded.fiyat,
+       kdv_orani = excluded.kdv_orani, aktif = excluded.aktif, sira = excluded.sira`
+  ).run(
+    String(row.code),
+    String(row.ad || row.code),
+    Math.max(0, parseInt(row.sure_gun, 10) || 0),
+    Math.max(0, Number(row.fiyat) || 0),
+    Math.max(0, Number(row.kdv_orani) || 0),
+    row.aktif === false || row.aktif === 0 ? 0 : 1,
+    parseInt(row.sira, 10) || 0
+  );
+}
+
+/** B-H1: Supabase payments satırını SQLite'a yaz (dedupe'li). */
+function applySupabasePaymentRow(row) {
+  if (!row?.institution_id || !row?.plan_code) return;
+  const odeme = toIsoUtc(row.odeme_tarihi) || row.odeme_tarihi;
+  if (!odeme) return;
+  const tutar = Number(row.tutar) || 0;
+  // local_id varsa onunla, yoksa doğal anahtarla dedupe et.
+  if (row.local_id != null) {
+    const dup = db.prepare(`SELECT id FROM payments WHERE id = ?`).get(Number(row.local_id));
+    if (dup) return;
+  } else {
+    const dup = db
+      .prepare(
+        `SELECT id FROM payments
+         WHERE institution_id = ? AND plan_code = ? AND odeme_tarihi = ? AND tutar = ?
+         LIMIT 1`
+      )
+      .get(String(row.institution_id), String(row.plan_code), odeme, tutar);
+    if (dup) return;
+  }
+  db.prepare(
+    `INSERT INTO payments
+       (institution_id, plan_code, tutar, kdv, para_birimi, odeme_tarihi, donem_baslangic,
+        donem_bitis, yontem, durum, fatura_no, aciklama, olusturan, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    String(row.institution_id),
+    String(row.plan_code),
+    tutar,
+    Number(row.kdv) || 0,
+    row.para_birimi || "TRY",
+    odeme,
+    String(row.donem_baslangic || "").slice(0, 10) || isoDay(odeme),
+    String(row.donem_bitis || "").slice(0, 10) || isoDay(odeme),
+    row.yontem || null,
+    row.durum || "odendi",
+    row.fatura_no || null,
+    row.aciklama || null,
+    row.olusturan || null,
+    toIsoUtc(row.created_at) || new Date().toISOString()
   );
 }
 
@@ -3621,30 +3949,44 @@ function touchLastLogin(username) {
   return at;
 }
 
+/** S-M4: audit zinciri için sunucu-özel HMAC anahtarı. */
+const AUDIT_HMAC_KEY =
+  process.env.AUDIT_HMAC_KEY || process.env.JWT_SECRET || "adadoviz-audit-local-key";
+
+function auditRowHash({ prev_hash, action, actor, institution_id, institution_name, detail, created_at }) {
+  const material = [
+    prev_hash || "",
+    action || "",
+    actor || "",
+    institution_id || "",
+    institution_name || "",
+    detail || "",
+    created_at || "",
+  ].join("|");
+  return crypto.createHmac("sha256", AUDIT_HMAC_KEY).update(material).digest("hex");
+}
+
+function lastAuditRowHash() {
+  const row = db.prepare(`SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1`).get();
+  return row?.row_hash || "GENESIS";
+}
+
 function insertAuditLog({
   action,
   actor = null,
   institution_id = null,
   institution_name = null,
   detail = null,
+  created_at = null,
+  prev_hash = null,
+  row_hash = null,
 } = {}) {
   if (!action) return null;
-  const createdAt = new Date().toISOString();
-  const info = db
-    .prepare(
-      `INSERT INTO audit_log (action, actor, institution_id, institution_name, detail, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      String(action),
-      actor || null,
-      institution_id || null,
-      institution_name || null,
-      detail || null,
-      createdAt
-    );
-  return {
-    id: Number(info.lastInsertRowid),
+  const createdAt = created_at || new Date().toISOString();
+  // S-M4: hydrate sırasında Supabase satırı kendi hash'lerini taşır; yerelde
+  // yeni satır için zinciri buradan hesapla.
+  const prevHash = prev_hash || lastAuditRowHash();
+  const base = {
     action: String(action),
     actor: actor || null,
     institution_id: institution_id || null,
@@ -3652,6 +3994,59 @@ function insertAuditLog({
     detail: detail || null,
     created_at: createdAt,
   };
+  const rowHash = row_hash || auditRowHash({ ...base, prev_hash: prevHash });
+
+  const info = db
+    .prepare(
+      `INSERT INTO audit_log (action, actor, institution_id, institution_name, detail, created_at, prev_hash, row_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      base.action,
+      base.actor,
+      base.institution_id,
+      base.institution_name,
+      base.detail,
+      base.created_at,
+      prevHash,
+      rowHash
+    );
+  return {
+    id: Number(info.lastInsertRowid),
+    ...base,
+    prev_hash: prevHash,
+    row_hash: rowHash,
+  };
+}
+
+/**
+ * S-M4: Zincir bütünlüğü doğrulaması. Herhangi bir satır eklenmiş, silinmiş veya
+ * değiştirilmişse `ok:false` ve ilk kırılma noktasını döndürür.
+ */
+function verifyAuditChain(limit = 5000) {
+  const rows = db
+    .prepare(
+      `SELECT id, action, actor, institution_id, institution_name, detail, created_at, prev_hash, row_hash
+       FROM audit_log ORDER BY id ASC LIMIT ?`
+    )
+    .all(Math.max(1, Math.min(50000, Number(limit) || 5000)));
+  let prev = "GENESIS";
+  for (const row of rows) {
+    // Eski (migrasyon öncesi) satırlarda hash yok — zincir onlardan sonra başlar.
+    if (row.row_hash == null) {
+      prev = "GENESIS";
+      continue;
+    }
+    if ((row.prev_hash || "GENESIS") !== prev) {
+      return { ok: false, brokenAt: row.id, reason: "prev_hash zincirle uyuşmuyor" };
+    }
+    const expected = auditRowHash(row);
+    if (expected !== row.row_hash) {
+      return { ok: false, brokenAt: row.id, reason: "row_hash içerikle uyuşmuyor (satır değiştirilmiş)" };
+    }
+    prev = row.row_hash;
+  }
+  return { ok: true, checked: rows.length };
 }
 
 function listAuditLogs(limit = 100) {
@@ -3738,16 +4133,21 @@ function applySupabaseAuditRow(row) {
     )
     .get(row.action, row.institution_id || null, row.created_at);
   if (existing) return;
+  // S-M4: Supabase satırı kendi hash zincirini taşıyorsa BİREBİR kopyala
+  // (böylece verifyAuditChain redeploy sonrası da doğrular). Yoksa yerelde
+  // zinciri yeniden hesapla.
   db.prepare(
-    `INSERT INTO audit_log (action, actor, institution_id, institution_name, detail, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO audit_log (action, actor, institution_id, institution_name, detail, created_at, prev_hash, row_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     row.action,
     row.actor || null,
     row.institution_id || null,
     row.institution_name || null,
     row.detail || null,
-    row.created_at
+    row.created_at,
+    row.prev_hash || null,
+    row.row_hash || null
   );
 }
 
@@ -3964,6 +4364,16 @@ function getPaymentsForInstitution(institutionId, limit = 100) {
   return listPayments({ institution_id: institutionId, limit });
 }
 
+/** B-H1: taze kurulumda SQLite → Supabase bootstrap için ham ödeme satırları. */
+function listAllPaymentsForSync() {
+  return db.prepare(`SELECT * FROM payments`).all();
+}
+
+/** B-H1: tek ödeme satırını id ile getir (dual-write payload'u için). */
+function getPaymentById(id) {
+  return db.prepare(`SELECT * FROM payments WHERE id = ?`).get(Number(id)) || null;
+}
+
 /** Gelir özeti: bu ay, bu yıl, toplam + paket dağılımı. */
 function getRevenueSummary() {
   const sum = (sql, ...a) => Number(db.prepare(sql).get(...a)?.t) || 0;
@@ -4159,7 +4569,12 @@ module.exports = {
   applySupabaseAdjustmentRow,
   applySupabaseBranchRow,
   applySupabaseBranchRequestRow,
+  applySupabaseMarginHistoryRow,
+  applySupabaseHistoricalRatesRows,
+  applySupabasePlanRow,
+  applySupabasePaymentRow,
   listAllBranchRequestsForSync,
+  listAllPaymentsForSync,
   getAdjustmentsForInstitution,
   getAllAdjustmentsMap,
   upsertAdjustments,
@@ -4173,6 +4588,7 @@ module.exports = {
   createPayment,
   deletePayment,
   listPayments,
+  getPaymentById,
   getPaymentsForInstitution,
   getRevenueSummary,
   listExpiringSubscriptions,
@@ -4193,11 +4609,13 @@ module.exports = {
   createPasswordResetToken,
   findValidPasswordReset,
   markPasswordResetUsed,
+  hashResetToken,
   updateInstitutionPassword,
   getSeoSettings,
   updateSeoSettings,
   touchLastLogin,
   insertAuditLog,
+  verifyAuditChain,
   listAuditLogs,
   listAuditLogsFiltered,
   listAuditActions,

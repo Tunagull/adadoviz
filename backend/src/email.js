@@ -112,7 +112,11 @@ async function sendPartnershipEmail(data) {
     const mailOptions = {
       from: `"AdaDöviz" <${fromUser}>`,
       to: PARTNERSHIP_INBOX,
-      subject: `Yeni Partnerlik Başvurusu: ${institution_name}`,
+      // S-L5: başlık satırına giden güvenilmez metin — CR/LF sıyrılır, kısaltılır.
+      subject: `Yeni Partnerlik Başvurusu: ${String(institution_name || "")
+        .replace(/[\r\n]+/g, " ")
+        .trim()
+        .slice(0, 120)}`,
       html: emailContent,
       replyTo: email,
     };

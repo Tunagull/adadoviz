@@ -114,10 +114,24 @@ async function main() {
     process.exit(1);
   }
 
+  // S-M3 / S-M5: Supabase TLS zorunlu. CA bundle edilmisse DOGRULAMALI baglan;
+  // yoksa (deploy engellenmesin diye) dogrulama kapali ama UYARI loglanir.
+  //   DATABASE_CA_FILE=/path/prod-ca-2021.crt   (Supabase > Settings > Database)
+  const caFile = String(process.env.DATABASE_CA_FILE || "").trim();
+  let ssl;
+  if (caFile) {
+    ssl = { ca: fs.readFileSync(caFile, "utf8"), rejectUnauthorized: true };
+  } else {
+    console.warn(
+      "[migrate] UYARI: DATABASE_CA_FILE tanimli degil — TLS dogrulamasi kapali. " +
+        "Supabase CA sertifikasini indirip DATABASE_CA_FILE ile verin."
+    );
+    ssl = { rejectUnauthorized: false };
+  }
+
   const client = new Client({
     connectionString: url,
-    // Supabase TLS zorunlu; sertifika zinciri havuz uzerinden dogrulanamiyor.
-    ssl: { rejectUnauthorized: false },
+    ssl,
     application_name: "adadoviz-migrate",
   });
 

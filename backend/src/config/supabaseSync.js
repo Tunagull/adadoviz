@@ -4,7 +4,7 @@
  * Hatalar loglanır, ana isteği düşürmez (fire-and-forget safe await).
  */
 
-const { supabase } = require("./supabaseClient");
+const { supabase, fetchAllPages } = require("./supabaseClient");
 
 const DUAL_WRITE_ERROR_LIMIT = 50;
 const dualWriteErrors = [];
@@ -133,19 +133,36 @@ async function syncInstitutionUpsert(row) {
 async function syncInstitutionDelete(institutionId) {
   const id = String(institutionId || "").trim();
   if (!id) return false;
-  return safe("institution.delete", async () => {
-    await supabase.from("branches").delete().eq("institution_id", id);
-    await supabase.from("rate_adjustments").delete().eq("institution_id", id);
-    await supabase.from("margin_history").delete().eq("institution_id", id);
-    await supabase.from("branch_requests").delete().eq("institution_id", id);
-    await supabase.from("business_notifications").delete().eq("institution_id", id);
-    await supabase.from("password_resets").delete().eq("institution_slug", id);
+  // Impr-2: her alt-delete'in error'ını kontrol et; kısmi başarısızlığı yüzeye çıkar.
+  const partial = [];
+  const subDelete = async (table, column) => {
+    const { error } = await supabase.from(table).delete().eq(column, id);
+    if (error) {
+      partial.push(`${table}: ${error.message}`);
+      logErr(`institution.delete.${table}`, error);
+    }
+  };
+  const ok = await safe("institution.delete", async () => {
+    await subDelete("branches", "institution_id");
+    await subDelete("rate_adjustments", "institution_id");
+    await subDelete("margin_history", "institution_id");
+    await subDelete("branch_requests", "institution_id");
+    await subDelete("business_notifications", "institution_id");
+    await subDelete("password_resets", "institution_slug");
+    await subDelete("payments", "institution_id");
     const { error } = await supabase
       .from("institutions")
       .delete()
       .eq("institution_id", id);
     if (error) throw error;
   });
+  if (ok && partial.length > 0) {
+    console.warn(
+      `[SUPABASE-SYNC] institution.delete kısmen başarısız (${id}): ${partial.join("; ")}`
+    );
+    return { ok: true, partial };
+  }
+  return ok;
 }
 
 async function syncBranchUpsert(branch, institutionId) {
@@ -285,16 +302,24 @@ async function syncPartnershipApplication(row) {
 async function syncAuditLog(row) {
   if (!row?.action) return false;
   return safe("audit_log.insert", async () => {
-    const { error } = await supabase.from("audit_log").insert([
-      {
-        action: row.action,
-        actor: row.actor || null,
-        institution_id: row.institution_id || null,
-        institution_name: row.institution_name || null,
-        detail: row.detail || null,
-        created_at: row.created_at || new Date().toISOString(),
-      },
-    ]);
+    // S-M4: hash zinciri Supabase'e de yazılır (kanonik tamper-evident kayıt).
+    const payload = {
+      action: row.action,
+      actor: row.actor || null,
+      institution_id: row.institution_id || null,
+      institution_name: row.institution_name || null,
+      detail: row.detail || null,
+      created_at: row.created_at || new Date().toISOString(),
+    };
+    if (row.prev_hash !== undefined) payload.prev_hash = row.prev_hash;
+    if (row.row_hash !== undefined) payload.row_hash = row.row_hash;
+    let { error } = await supabase.from("audit_log").insert([payload]);
+    // 0002 migration çalışmamışsa prev_hash/row_hash kolonları yok — hash'siz tekrar dene.
+    if (error && /column .*(prev_hash|row_hash)/i.test(error.message || "")) {
+      delete payload.prev_hash;
+      delete payload.row_hash;
+      ({ error } = await supabase.from("audit_log").insert([payload]));
+    }
     if (error) throw error;
   });
 }
@@ -302,11 +327,14 @@ async function syncAuditLog(row) {
 async function compareInstitutionDrift(sqliteRows = []) {
   const drifts = [];
   try {
-    const { data, error } = await supabase
-      .from("institutions")
-      .select("institution_id, email, branch_limit")
-      .neq("role", "superadmin");
-    if (error) throw error;
+    // B-M2: sayfalı — 1000+ kurumda sessiz kesme olmasın.
+    const data = await fetchAllPages((from, to) =>
+      supabase
+        .from("institutions")
+        .select("institution_id, email, branch_limit")
+        .neq("role", "superadmin")
+        .range(from, to)
+    );
 
     const remote = new Map();
     for (const row of data || []) {
@@ -384,6 +412,81 @@ async function syncPasswordReset(row) {
         created_at: row.created_at || new Date().toISOString(),
       },
       { onConflict: "token" }
+    );
+    if (error) throw error;
+  });
+}
+
+/**
+ * B-H1: Tahsilat (payments) dual-write. Gelir defteri artık her redeploy'da
+ * sıfırlanmaz. `local_id` ile idempotent upsert.
+ */
+async function syncPaymentUpsert(row) {
+  if (!row?.institution_id || !row?.plan_code) return false;
+  return safe("payments.upsert", async () => {
+    const payload = {
+      local_id: row.id ?? row.local_id ?? null,
+      institution_id: String(row.institution_id),
+      plan_code: String(row.plan_code),
+      tutar: Number(row.tutar) || 0,
+      kdv: Number(row.kdv) || 0,
+      para_birimi: row.para_birimi || "TRY",
+      odeme_tarihi: new Date(row.odeme_tarihi).toISOString(),
+      donem_baslangic: String(row.donem_baslangic).slice(0, 10),
+      donem_bitis: String(row.donem_bitis).slice(0, 10),
+      yontem: row.yontem || null,
+      durum: row.durum || "odendi",
+      fatura_no: row.fatura_no || null,
+      aciklama: row.aciklama || null,
+      olusturan: row.olusturan || null,
+      created_at: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    };
+    if (payload.local_id != null) {
+      const { error } = await supabase
+        .from("payments")
+        .upsert(payload, { onConflict: "local_id" });
+      if (error) throw error;
+      return;
+    }
+    const { error } = await supabase.from("payments").insert([payload]);
+    if (error) throw error;
+  });
+}
+
+async function syncPaymentDelete(row) {
+  const localId = row?.id ?? row?.local_id ?? null;
+  return safe("payments.delete", async () => {
+    if (localId != null) {
+      const { error } = await supabase.from("payments").delete().eq("local_id", localId);
+      if (error) throw error;
+      return;
+    }
+    // local_id yoksa doğal anahtarla sil.
+    const { error } = await supabase
+      .from("payments")
+      .delete()
+      .eq("institution_id", String(row.institution_id))
+      .eq("plan_code", String(row.plan_code))
+      .eq("odeme_tarihi", new Date(row.odeme_tarihi).toISOString());
+    if (error) throw error;
+  });
+}
+
+/** B-H1: Plan fiyat/süre değişikliklerini Supabase'e yansıt (code birincil anahtar). */
+async function syncPlanUpsert(plan) {
+  if (!plan?.code) return false;
+  return safe("plans.upsert", async () => {
+    const { error } = await supabase.from("plans").upsert(
+      {
+        code: String(plan.code),
+        ad: String(plan.ad || plan.code),
+        sure_gun: Math.max(0, parseInt(plan.sure_gun, 10) || 0),
+        fiyat: Math.max(0, Number(plan.fiyat) || 0),
+        kdv_orani: Math.max(0, Number(plan.kdv_orani) || 0),
+        aktif: !(plan.aktif === false || plan.aktif === 0),
+        sira: parseInt(plan.sira, 10) || 0,
+      },
+      { onConflict: "code" }
     );
     if (error) throw error;
   });
@@ -504,13 +607,13 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   let institutionsOk = true;
   let branchesOk = false;
 
-  try {
-    const { data: instRows, error: instErr } = await supabase
-      .from("institutions")
-      .select("*")
-      .neq("role", "superadmin");
-    if (instErr) throw instErr;
+  // B-M2: tüm hydrate select'leri fetchAllPages ile sarılır — PostgREST 1000
+  // satır varsayılan limitinde sessizce kesmesin (~84 kurumda marjlar).
+  const pageAll = (table, tune = (q) => q) =>
+    fetchAllPages((from, to) => tune(supabase.from(table).select("*")).range(from, to));
 
+  try {
+    const instRows = await pageAll("institutions", (q) => q.neq("role", "superadmin"));
     for (const row of instRows || []) {
       if (typeof upsertInstitutionRow === "function") {
         upsertInstitutionRow(row);
@@ -523,10 +626,7 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   }
 
   try {
-    const { data: adjRows, error: adjErr } = await supabase
-      .from("rate_adjustments")
-      .select("*");
-    if (adjErr) throw adjErr;
+    const adjRows = await pageAll("rate_adjustments");
     for (const row of adjRows || []) {
       if (typeof upsertAdjustmentRow === "function") {
         upsertAdjustmentRow(row);
@@ -537,14 +637,75 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
     logErr("hydrate.rate_adjustments", err);
   }
 
+  // B-C1: margin_history hydrate — redeploy sonrası `hasPriorHistory` kontrolü
+  // doğru çalışsın ve sahte ~10 yıl öncesi baseline ASLA yazılmasın.
+  let marginHistory = 0;
+  try {
+    const mhRows = await pageAll("margin_history");
+    for (const row of mhRows || []) {
+      if (typeof applyFns.upsertMarginHistoryRow === "function") {
+        applyFns.upsertMarginHistoryRow(row);
+        marginHistory += 1;
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.margin_history", err);
+  }
+
+  // B-H2/B-H3: historical_rates hydrate (son ~3 yıl ile sınırlı).
+  let historicalRates = 0;
+  try {
+    const cutoff = new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000).toISOString();
+    const hrRows = await fetchAllPages((from, to) =>
+      supabase
+        .from("historical_rates")
+        .select("currency, buy_rate, sell_rate, recorded_at")
+        .gte("recorded_at", cutoff)
+        .order("recorded_at", { ascending: true })
+        .range(from, to)
+    );
+    if (typeof applyFns.applyHistoricalRatesRows === "function" && hrRows?.length) {
+      const res = applyFns.applyHistoricalRatesRows(hrRows);
+      historicalRates = res?.inserted || 0;
+    }
+  } catch (err) {
+    logErr("hydrate.historical_rates", err);
+  }
+
+  // B-H1: plans + payments hydrate (gelir defteri kalıcı).
+  let plans = 0;
+  try {
+    const planRows = await pageAll("plans");
+    for (const row of planRows || []) {
+      if (typeof applyFns.upsertPlanRow === "function") {
+        applyFns.upsertPlanRow(row);
+        plans += 1;
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.plans", err);
+  }
+
+  let payments = 0;
+  try {
+    const payRows = await pageAll("payments");
+    for (const row of payRows || []) {
+      if (typeof applyFns.upsertPaymentRow === "function") {
+        applyFns.upsertPaymentRow(row);
+        payments += 1;
+      }
+    }
+  } catch (err) {
+    logErr("hydrate.payments", err);
+  }
+
   // Publishable/anon + RLS: select boş dönebilir; SoT güvenilir sayılmaz.
   const soTUntrusted =
     !institutionsOk ||
     (institutions === 0 && looksLikePublishableOrAnon);
 
   try {
-    const { data: branchRows, error: brErr } = await supabase.from("branches").select("*");
-    if (brErr) throw brErr;
+    const branchRows = await pageAll("branches");
     branchesOk = true;
     // SoT güvenilirse yerel şubeleri tamamen değiştir (hayalet şube temizliği).
     // Aksi halde yalnızca upsert ile ekle/güncelle; mevcut satırları silme.
@@ -570,10 +731,7 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
 
   let branchRequests = 0;
   try {
-    const { data: reqRows, error: reqErr } = await supabase
-      .from("branch_requests")
-      .select("*");
-    if (reqErr) throw reqErr;
+    const reqRows = await pageAll("branch_requests");
     for (const row of reqRows || []) {
       if (typeof applyFns.upsertBranchRequestRow === "function") {
         applyFns.upsertBranchRequestRow(row);
@@ -585,13 +743,16 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   }
 
   try {
-    const { data: auditRows, error: auditErr } = await supabase
+    // S-M4: en yeni 2000 satırı ARTAN sırayla al — hash zinciri yerel
+    // verifyAuditChain için de sırayla kurulur.
+    const { data: newestFirst, error: auditErr } = await supabase
       .from("audit_log")
       .select("*")
-      .order("created_at", { ascending: false })
-      .limit(200);
+      .order("id", { ascending: false })
+      .limit(2000);
     if (auditErr) throw auditErr;
-    for (const row of auditRows || []) {
+    const auditRows = (newestFirst || []).slice().reverse();
+    for (const row of auditRows) {
       if (typeof applyFns.upsertAuditRow === "function") {
         applyFns.upsertAuditRow(row);
       }
@@ -601,7 +762,9 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
   }
 
   console.log(
-    `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} branches=${branches} branchRequests=${branchRequests} branchesOk=${branchesOk}`
+    `[SUPABASE-SYNC] Hydrate bitti — ok=${institutionsOk} institutions=${institutions} adjustments=${adjustments} ` +
+      `marginHistory=${marginHistory} historicalRates=${historicalRates} plans=${plans} payments=${payments} ` +
+      `branches=${branches} branchRequests=${branchRequests} branchesOk=${branchesOk}`
   );
 
   if (soTUntrusted && institutions === 0) {
@@ -610,11 +773,24 @@ async function hydrateAdminDataFromSupabase(applyFns = {}) {
       institutions,
       adjustments,
       branches,
+      marginHistory,
+      historicalRates,
+      plans,
+      payments,
       reason: "publishable_key_rls_mask",
     };
   }
 
-  return { ok: institutionsOk, institutions, adjustments, branches };
+  return {
+    ok: institutionsOk,
+    institutions,
+    adjustments,
+    branches,
+    marginHistory,
+    historicalRates,
+    plans,
+    payments,
+  };
 }
 
 /**
@@ -626,6 +802,8 @@ async function bootstrapAdminDataToSupabase({
   branches = [],
   adjustments = [],
   branchRequests = [],
+  plans = [],
+  payments = [],
 } = {}) {
   console.log("[SUPABASE-SYNC] Bootstrap başlıyor...");
   let ok = 0;
@@ -657,6 +835,16 @@ async function bootstrapAdminDataToSupabase({
     done ? (ok += 1) : (fail += 1);
   }
 
+  for (const plan of plans) {
+    const done = await syncPlanUpsert(plan);
+    done ? (ok += 1) : (fail += 1);
+  }
+
+  for (const pay of payments) {
+    const done = await syncPaymentUpsert(pay);
+    done ? (ok += 1) : (fail += 1);
+  }
+
   console.log(`[SUPABASE-SYNC] Bootstrap bitti — ok=${ok} fail=${fail}`);
   return { ok, fail };
 }
@@ -671,6 +859,9 @@ module.exports = {
   syncPartnershipApplication,
   syncBranchRequestUpsert,
   syncPasswordReset,
+  syncPaymentUpsert,
+  syncPaymentDelete,
+  syncPlanUpsert,
   syncVisitorSession,
   syncSiteStats,
   checkSupabaseHasInstitutions,

@@ -22,12 +22,44 @@
  * Kaynağa ulaşılamazsa SAHTE (mock) kur ÜRETİLMEZ. Hata döner; çağıran taraf
  * son geçerli cache'i korur ve geçmiş tabloya hiçbir şey yazmaz.
  */
+const fs = require("fs");
 const axios = require("axios");
 const https = require("https");
 const xml2js = require("xml2js");
 
 const SOURCE_URL = "https://mb.gov.ct.tr/kur/gunluk.xml";
 const TRACKED_CURRENCIES = ["USD", "EUR", "GBP"];
+
+/**
+ * S-M3 / B-M5: Kur kaynağı artık VARSAYILAN olarak TLS doğrulamalı çekilir.
+ * KKTC MB zinciri eksikse operatör CA'yı bundle etmeli:
+ *   - KKTC_MB_CA_FILE=/path/to/kktc-mb-chain.pem  (bu host'a özel), veya
+ *   - NODE_EXTRA_CA_CERTS=...                      (Node geneli)
+ * Son çare — bilinçli ve loglanan geçici çözüm:
+ *   - KKTC_MB_ALLOW_INSECURE_TLS=1                 (doğrulamayı kapatır, UYARI loglar)
+ */
+let _insecureTlsWarned = false;
+function buildHttpsAgent() {
+  const caFile = String(process.env.KKTC_MB_CA_FILE || "").trim();
+  if (caFile) {
+    try {
+      return new https.Agent({ ca: fs.readFileSync(caFile), rejectUnauthorized: true });
+    } catch (err) {
+      console.warn(`[RATES] KKTC_MB_CA_FILE okunamadı (${caFile}): ${err.message}`);
+    }
+  }
+  if (process.env.KKTC_MB_ALLOW_INSECURE_TLS === "1") {
+    if (!_insecureTlsWarned) {
+      console.warn(
+        "[RATES] ⚠️ KKTC_MB_ALLOW_INSECURE_TLS=1 — kur kaynağı TLS doğrulaması KAPALI. " +
+          "MITM sahte kur enjekte edebilir. Bir an önce KKTC_MB_CA_FILE ile CA bundle edin."
+      );
+      _insecureTlsWarned = true;
+    }
+    return new https.Agent({ rejectUnauthorized: false });
+  }
+  return new https.Agent({ rejectUnauthorized: true });
+}
 
 /** KKTC XML sayıları nokta ondalıklı gelir; virgüllü varyantı da tolere et. */
 function parseRate(value) {
@@ -50,8 +82,7 @@ function bulletinDateToIso(kurTarihi) {
  *   bulletinNo:string,validRange:string,updatedAt:string,rates:object}>}
  */
 async function scrapeRatesFromSource() {
-  // KKTC MB sertifika zinciri eksik gönderiyor; yalnızca bu host için gevşetiliyor.
-  const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+  const httpsAgent = buildHttpsAgent();
 
   const { data } = await axios.get(SOURCE_URL, {
     timeout: 12000,

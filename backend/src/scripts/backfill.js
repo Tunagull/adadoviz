@@ -20,10 +20,25 @@
  *   node backend/src/scripts/backfill.js
  */
 
+require('dotenv').config();
 const axios = require('axios');
 const xml2js = require('xml2js');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+
+/**
+ * B-H2: SQLite ephemeral olduğu için backfill sonucu kalıcı OLSUN diye
+ * Supabase'e de yazılır. SUPABASE_URL / SUPABASE_KEY tanımlı değilse
+ * yalnızca SQLite'a yazılır (yerel geliştirme).
+ */
+let supabaseBulkInsert = null;
+try {
+  if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY) {
+    ({ bulkInsertSupabaseHistoricalRates: supabaseBulkInsert } = require('../config/supabaseClient'));
+  }
+} catch (err) {
+  console.warn('[backfill] Supabase istemcisi yüklenemedi, yalnızca SQLite:', err.message);
+}
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'finsight.db');
@@ -109,6 +124,9 @@ async function fetchRatesForDate(date) {
 /**
  * ✅ DB'ye SADECE doğrulanmış GERÇEK veriyi kaydet (duplicate kontrolü ile)
  */
+/** Bu koşuda eklenen tüm satırlar — koşu sonunda Supabase'e de yazılır (B-H2). */
+const supabaseQueue = [];
+
 function insertRates(dateStr, rates) {
   if (!rates || Object.keys(rates).length === 0) return 0;
 
@@ -129,10 +147,22 @@ function insertRates(dateStr, rates) {
     }
 
     insert.run(currency, pair.buy, pair.sell, isoDate);
+    supabaseQueue.push({ currency, buy_rate: pair.buy, sell_rate: pair.sell, recorded_at: isoDate });
     count++;
   }
 
   return count;
+}
+
+async function flushToSupabase() {
+  if (!supabaseBulkInsert || supabaseQueue.length === 0) return;
+  console.log(`\n☁️  Supabase'e ${supabaseQueue.length} satır yazılıyor (B-H2)...`);
+  try {
+    const res = await supabaseBulkInsert(supabaseQueue);
+    console.log(`   ✅ Supabase: ${res.inserted}/${res.attempted} satır işlendi.`);
+  } catch (err) {
+    console.warn(`   ⚠️ Supabase yazımı başarısız (SQLite yazıldı): ${err.message}`);
+  }
 }
 
 /**
@@ -232,6 +262,8 @@ async function runBackfill() {
     console.log(`   - Başlangıç: ${new Date(dateRange.min_date).toLocaleDateString('tr-TR')}`);
     console.log(`   - Bitiş: ${new Date(dateRange.max_date).toLocaleDateString('tr-TR')}`);
   }
+
+  await flushToSupabase();
 
   console.log('');
   console.log('✨ Backfill tamamlandı! Grafikler artık gerçek KKTC Merkez Bankası verileriyle dolu.');
