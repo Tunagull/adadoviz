@@ -8,6 +8,7 @@ export function useHomeSectionNav() {
 
   return {
     isRatesActive: pathname === "/" || pathname === "/kurlar",
+    isBestRateActive: pathname.startsWith("/en-iyi-kur"),
     isCompareActive: pathname.startsWith("/kiyasla"),
     isPricingActive: pathname.startsWith("/paketler"),
     // Partnerlik formu iletişim çarkından açılıyor; sekme vurgusu orada kalsın.

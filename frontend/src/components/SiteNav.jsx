@@ -1,4 +1,4 @@
-import { BarChart3, LineChart, Mail, Tag } from "lucide-react";
+import { BarChart3, LineChart, Mail, Tag, Trophy } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../context/LanguageContext";
 import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
@@ -13,6 +13,7 @@ export function SiteNav({ compact = false, className = "" }) {
 
   const items = [
     { key: "rates", label: t("navRates"), icon: LineChart, to: "/" },
+    { key: "bestRate", label: t("navBestRate"), icon: Trophy, to: "/en-iyi-kur" },
     { key: "compare", label: t("navCompare"), icon: BarChart3, to: "/kiyasla" },
     { key: "pricing", label: t("navPricing"), icon: Tag, to: "/paketler" },
     { key: "contact", label: t("navContact"), icon: Mail, to: "/iletisim" },
@@ -21,6 +22,7 @@ export function SiteNav({ compact = false, className = "" }) {
   const isActive = (item) => {
     if (item.key === "contact") return nav.isContactActive;
     if (item.key === "rates") return nav.isRatesActive;
+    if (item.key === "bestRate") return nav.isBestRateActive;
     if (item.key === "compare") return nav.isCompareActive;
     if (item.key === "pricing") return nav.isPricingActive;
     return false;
@@ -29,7 +31,15 @@ export function SiteNav({ compact = false, className = "" }) {
   return (
     <nav
       aria-label={
-        t("navRates") + " / " + t("navCompare") + " / " + t("navPricing") + " / " + t("navContact")
+        t("navRates") +
+        " / " +
+        t("navBestRate") +
+        " / " +
+        t("navCompare") +
+        " / " +
+        t("navPricing") +
+        " / " +
+        t("navContact")
       }
       className={`hidden items-center gap-1 md:flex ${className}`}
     >

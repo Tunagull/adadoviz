@@ -32,6 +32,9 @@ const ExchangeOfficePage = lazy(() =>
 const ComparePage = lazy(() =>
   import("./pages/ComparePage").then((m) => ({ default: m.ComparePage }))
 );
+const BestRatePage = lazy(() =>
+  import("./pages/BestRatePage").then((m) => ({ default: m.BestRatePage }))
+);
 const ContactPage = lazy(() =>
   import("./pages/ContactPage").then((m) => ({ default: m.ContactPage }))
 );
@@ -113,6 +116,7 @@ function AppShell() {
               <Route path="/" element={<V0FinancialDashboard />} />
               <Route path="/kurlar" element={<Navigate to="/" replace />} />
               <Route path="/kiyasla" element={<ComparePage />} />
+              <Route path="/en-iyi-kur" element={<BestRatePage />} />
               <Route path="/paketler" element={<PricingPage />} />
               <Route path="/iletisim" element={<ContactPage />} />
               <Route path="/partnerlik" element={<PartnershipPage />} />
