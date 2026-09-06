@@ -23,6 +23,32 @@ function dialable(value) {
   return String(value).replace(/[^\d+]/g, "");
 }
 
+/**
+ * Serbest girilmiş bir telefon numarasını uluslararası biçime çevirir.
+ * KKTC numaraları genelde `0533…` / `0548…` (mobil) veya `0392…` (sabit) yazılır;
+ * wa.me ülke kodu ister. `0` → `90`, `+`/`00` kırpılır, zaten `90…` ise dokunulmaz.
+ */
+export function toIntlDigits(raw) {
+  let d = digitsOnly(raw);
+  if (!d) return "";
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("0")) d = `90${d.slice(1)}`;
+  else if (!d.startsWith("90") && d.length <= 10) d = `90${d}`;
+  return d;
+}
+
+/** Bir şube/işletme numarası için wa.me linki (geçersizse null). */
+export function whatsappHref(raw) {
+  const d = toIntlDigits(raw);
+  return d.length >= 10 ? `https://wa.me/${d}` : null;
+}
+
+/** Bir şube/işletme numarası için tel: linki (geçersizse null). */
+export function telHref(raw) {
+  const cleaned = dialable(raw);
+  return cleaned.replace(/\D/g, "").length >= 7 ? `tel:${cleaned}` : null;
+}
+
 const env = import.meta.env;
 
 const FALLBACK_PHONE = "+90 533 000 00 00";

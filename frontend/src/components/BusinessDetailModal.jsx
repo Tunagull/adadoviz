@@ -13,9 +13,10 @@ import L from "leaflet";
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
-import { ChevronDown, Clock, MapPin, Navigation, X } from "lucide-react";
+import { ChevronDown, Clock, MapPin, MessageCircle, Navigation, X } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import { trackCurrencyView } from "../lib/analytics";
+import { whatsappHref } from "../lib/contact";
 import { apiUrl, mediaUrl } from "../lib/api";
 import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
@@ -787,18 +788,22 @@ export function BusinessDetailModal({
                         {t("whatsappLabelShort")}
                       </dt>
                       <dd className="mt-0.5 text-ink-700 dark:text-ink-200">
-                        {selectedBranch.whatsapp ? (
-                          <a
-                            href={`https://wa.me/${String(selectedBranch.whatsapp).replace(/\D/g, "")}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-brand-700 hover:underline dark:text-brand-300"
-                          >
-                            {selectedBranch.whatsapp}
-                          </a>
-                        ) : (
-                          t("workingHoursNotSet")
-                        )}
+                        {(() => {
+                          const href = whatsappHref(selectedBranch.whatsapp || selectedBranch.phone);
+                          return href ? (
+                            <a
+                              href={href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 font-medium text-success-600 hover:underline dark:text-success-400"
+                            >
+                              <MessageCircle size={13} aria-hidden="true" />
+                              {selectedBranch.whatsapp || selectedBranch.phone}
+                            </a>
+                          ) : (
+                            t("workingHoursNotSet")
+                          );
+                        })()}
                       </dd>
                     </div>
                     <div ref={hoursPopoverRef} className="relative">

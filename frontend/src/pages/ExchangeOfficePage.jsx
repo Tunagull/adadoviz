@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, MapPin, MessageCircle, Phone } from "lucide-react";
 import { BusinessDetailModal } from "../components/BusinessDetailModal";
 import { HeaderActions } from "../components/HeaderActions";
 import { BrandLogo } from "../components/BrandLogo";
 import { useLanguage } from "../context/LanguageContext";
 import { apiUrl, mediaUrl } from "../lib/api";
+import { whatsappHref } from "../lib/contact";
 import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { cityDisplayName, exchangeOfficePath, extractCitySlug, slugify } from "../lib/slug";
 
@@ -245,6 +246,17 @@ export function ExchangeOfficePage() {
                         >
                           <MapPin size={14} aria-hidden="true" />
                           {lang === "en" ? "Directions" : "Yol tarifi"}
+                        </a>
+                      ) : null}
+                      {whatsappHref(branch.whatsapp || branch.phone) ? (
+                        <a
+                          href={whatsappHref(branch.whatsapp || branch.phone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-ghost btn-sm min-h-[2.25rem] text-success-600 dark:text-success-400"
+                        >
+                          <MessageCircle size={14} aria-hidden="true" />
+                          WhatsApp
                         </a>
                       ) : null}
                     </div>
