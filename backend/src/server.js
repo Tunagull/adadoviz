@@ -64,6 +64,7 @@ const {
   updateSupportTicket,
   recordAnalyticsEvent,
   getBusinessAnalytics,
+  getMarketHealth,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -2381,6 +2382,60 @@ app.get("/api/admin/system-health", requireSuperAdmin, async (_req, res) => {
  * P1.9 (S14) — operatör durum sayfası toplayıcısı. "Sabah 30 saniyede sorun var mı"
  * kontrolü: her sinyal için trafik-ışığı (`ok`/`warn`/`down`/`unknown`) + genel özet.
  */
+/**
+ * P2.6 — pazar yeri sağlığı (S2): bayat marj, kapsama boşluğu, kur sanity-band.
+ * Salt okuma; manuel kur düzeltme mevcut işletme düzenleme akışından yapılır.
+ */
+app.get("/api/admin/market-health", requireSuperAdmin, (req, res) => {
+  try {
+    const staleDays = Number(req.query?.staleDays) || 7;
+    const health = getMarketHealth({ staleDays });
+
+    // Kur sanity: canlı MB kuru + adjustments burada.
+    const anomalies = [];
+    const cb = cachedRates.centralBankRates || {};
+    if (Object.keys(cb).length) {
+      const adjustmentsMap = getAllAdjustmentsMap();
+      const nameBySlug = new Map(health.businesses.map((b) => [b.institution_id, b.name]));
+      for (const [institutionId, adj] of adjustmentsMap.entries()) {
+        for (const currency of ["EUR", "USD", "GBP"]) {
+          const kur = cb[currency];
+          if (!kur || kur.buy == null || kur.sell == null) continue;
+          const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
+          const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
+          const buy = applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type);
+          const sell = applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type);
+          if (!Number.isFinite(buy) || !Number.isFinite(sell)) continue;
+
+          let issue = null;
+          if (buy >= sell) issue = "inverted"; // alış ≥ satış: ters spread
+          else if (buy > kur.buy * 1.01) issue = "buy_above_cb"; // MB üstünde alış
+          else if (sell < kur.sell * 0.99) issue = "sell_below_cb"; // MB altında satış
+          else if ((kur.buy - buy) / kur.buy > 0.1) issue = "buy_margin_wide"; // >%10 alış marjı
+          else if ((sell - kur.sell) / kur.sell > 0.1) issue = "sell_margin_wide"; // >%10 satış marjı
+
+          if (issue) {
+            anomalies.push({
+              institution_id: institutionId,
+              name: nameBySlug.get(institutionId) || institutionId,
+              currency,
+              issue,
+              buy: Number(buy.toFixed(4)),
+              sell: Number(sell.toFixed(4)),
+              cbBuy: Number(Number(kur.buy).toFixed(4)),
+              cbSell: Number(Number(kur.sell).toFixed(4)),
+            });
+          }
+        }
+      }
+    }
+
+    return res.json({ ...health, anomalies, anomalyCount: anomalies.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Pazar sağlığı alınamadı." });
+  }
+});
+
 app.get("/api/admin/ops-overview", requireSuperAdmin, async (_req, res) => {
   try {
     const now = Date.now();

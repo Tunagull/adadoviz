@@ -242,10 +242,29 @@ render. i18n `bizAnalytics*` (TR+EN).
 gürültülü olay yayını gerektirir; whitelist'te var, yayıncı bağlanmadı. "Dönüşüm hunisi" (ziyaret→lead)
 P3.4'e ait.
 
-### ☐ P2.6 — Pazar yeri sağlığı UI (S2 + S3)
-`/super-admin` "Pazar Sağlığı": N gündür kur güncellemeyen bürolar · kur sanity-band dışı kalanlar ·
-bürosu olmayan şehirler · her büro için "son marj güncellemesi" · manuel kur düzeltme aksiyonu.
-`GET /api/admin/market-health`.
+### ◐ P2.6 — Pazar yeri sağlığı UI (S2 + S3)
+`db.js` `getMarketHealth({staleDays})`: her işletme için `rate_adjustments.MAX(updated_at)` yaşı
+(`stale` = yok ya da > N gün, `never_configured`), şubesi olan şehirler (`extractCitySlug` + `CITY_RULES`)
+↔ tam liste farkı, şubesiz bürolar. `server.js` `GET /api/admin/market-health` (requireSuperAdmin):
+`getMarketHealth` + canlı kur sanity-band — `getAllAdjustmentsMap` × `cachedRates.centralBankRates`,
+her kurum/para birimi için yayınlanan alış/satış hesaplanıp `inverted` (alış≥satış) / `buy_above_cb` /
+`sell_below_cb` / `buy_margin_wide` / `sell_margin_wide` (>%10) işaretlenir → `anomalies[]`.
+Frontend: `lib/auth.js` `fetchAdminMarketHealth`; `components/MarketHealthPanel.jsx` — 4 sayaç kartı
+(bayat / anomali / bürosuz şehir / şubesiz büro) + bayat büro listesi (yaş/hiç) + anomali listesi
+(kurum·para birimi·sorun·alış/satış vs MB) + kapsama boşluğu satırı + "kur düzeltmek için İşletmeler
+sekmesi" notu. `SuperAdminDashboard` "Sistem Sağlığı" sekmesinde ops şeridinin altına render. i18n
+`marketHealth*` (TR+EN).
+**Doğrulama:** `node --check` server.js + db.js; node ile `getMarketHealth` (21 kurum, kapsama boşluğu,
+şubesiz sayımı) doğrulandı; `npm run build` yeşil (SuperAdminDashboard 106→111 kB); lint 45→45.
+**Ertelendi:** panel-içi manuel kur düzeltme aksiyonu — mevcut işletme düzenleme akışına yönlendiriyor;
+inline superadmin marj editörü ayrı bir iş (yüksek risk). S3'ün scraper/dual-write/drift izleme kısmı
+zaten P1.9 ops-overview'da.
+
+---
+
+**FAZ 2 durumu:** P2.1 ☑ · P2.2 ☑ · P2.3 ☑ · P2.4 ◐ (zamanlanmış marj ertelendi) ·
+P2.5 ◐ (`search_impression` yayıncısı ertelendi) · P2.6 ◐ (inline manuel kur düzeltme ertelendi).
+Çekirdek ürün akışları bitti; ertelenen 3 alt-madde ayrı iş olarak işaretli. Sıra: Faz 3.
 
 ---
 

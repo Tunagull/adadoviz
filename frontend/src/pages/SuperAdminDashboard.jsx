@@ -25,6 +25,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { ActivityLogPanel } from "../components/ActivityLogPanel";
+import { MarketHealthPanel } from "../components/MarketHealthPanel";
 import {
   createAdminBusiness,
   fetchAdminBusinesses,
@@ -2942,6 +2943,9 @@ export function SuperAdminDashboard() {
               );
             })()
           ) : null}
+
+          {/* P2.6 — pazar yeri sağlığı (S2): bayat marj, kur sanity, kapsama boşluğu. */}
+          <MarketHealthPanel token={token} />
 
           {healthLoading ? (
             <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>

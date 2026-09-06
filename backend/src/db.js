@@ -2067,6 +2067,7 @@ const {
   buildBusinessSlug,
   buildBranchSlug,
   extractCitySlug,
+  CITY_RULES,
 } = require("./slug");
 
 /**
@@ -4948,6 +4949,70 @@ function getBusinessAnalytics(institutionId, { days = 7 } = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// P2.6 — pazar yeri sağlığı (S2): bayat kur, kapsama boşluğu, marj yaşı
+// ---------------------------------------------------------------------------
+
+/**
+ * Her işletme için son marj güncellemesinin yaşı + kapsama boşlukları.
+ * Kur sanity kontrolü server.js'te (canlı MB kuru + adjustments orada).
+ */
+function getMarketHealth({ staleDays = 7 } = {}) {
+  const stale = Math.min(Math.max(Number(staleDays) || 7, 1), 90);
+
+  const lastAdjRows = db
+    .prepare(
+      `SELECT institution_id, MAX(updated_at) AS last_update
+         FROM rate_adjustments
+        GROUP BY institution_id`
+    )
+    .all();
+  const lastMap = new Map(lastAdjRows.map((r) => [r.institution_id, r.last_update]));
+
+  const now = Date.now();
+  const staleMs = stale * 86400000;
+
+  const businesses = listBusinesses().map((b) => {
+    const raw = lastMap.get(b.institution_id) || null;
+    const iso = raw ? toIsoTimestamp(raw) : null;
+    const ms = iso ? Date.parse(iso) : null;
+    const ageDays = ms ? Math.floor((now - ms) / 86400000) : null;
+    const active =
+      b.is_active === 1 || b.is_active === true || b.is_active === "1" || b.is_active == null;
+    return {
+      institution_id: b.institution_id,
+      name: String(b.institution_name || "").replace(/\s*\([Tt]est\)\s*/g, " ").trim(),
+      is_active: active,
+      branch_count: Number(b.branch_count) || 0,
+      last_margin_update: iso,
+      last_margin_age_days: ageDays,
+      never_configured: !raw,
+      stale: !raw || (ms != null && now - ms > staleMs),
+    };
+  });
+
+  // Kapsama: şubesi olan şehirler.
+  const covered = new Set();
+  for (const row of db.prepare(`SELECT address FROM branches`).all()) {
+    const c = extractCitySlug(row.address);
+    if (c) covered.add(c);
+  }
+  const allCities = (CITY_RULES || []).map((r) => r.slug);
+
+  return {
+    staleDays: stale,
+    generatedAt: new Date().toISOString(),
+    businesses,
+    staleCount: businesses.filter((x) => x.stale && x.is_active).length,
+    neverConfiguredCount: businesses.filter((x) => x.never_configured).length,
+    businessesWithoutBranch: businesses
+      .filter((x) => x.branch_count === 0)
+      .map((x) => x.name),
+    coveredCities: [...covered],
+    uncoveredCities: allCities.filter((c) => !covered.has(c)),
+  };
+}
+
 module.exports = {
   initDb,
   seedAdminsIfNeeded,
@@ -4993,6 +5058,7 @@ module.exports = {
   updateSupportTicket,
   recordAnalyticsEvent,
   getBusinessAnalytics,
+  getMarketHealth,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
