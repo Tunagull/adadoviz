@@ -34,7 +34,18 @@ kompakt kart + genişletilmiş modal başlığında, `aria-live` bölgesinde. (O
 `V0FinancialDashboard` `biz.institutionId` geçiyor. (İleride: büro-detay/ExchangeOfficePage doğrudan
 ziyaretlerini de olay olarak say — P2.5.)
 
-### ☐ P1.5 — Bildirim omurgası + abonelik-bitiş bildirimi (B4, kısmen S10/S13)
+### ☑ P1.5 — Bildirim omurgası + abonelik-bitiş bildirimi (B4, kısmen S10/S13)
+
+**Yapıldı** (commit `3218f96`): `admin_notifications` (SQLite) + CRUD/dedup (`hasRecentBusinessNotification`);
+`src/notifications.js` (`emitBusinessNotification` in-app+e-posta hata-yutan / `emitAdminNotification`);
+`email.js` `sendGenericNotificationEmail` (minimal inline — P1.6 `renderEmailShell` ile değişecek);
+`src/jobs/subscriptionReminders.js` (7/3/1/0-gün + 7-gün grace `subscription_expired`, günlük dedup,
+koşu-başı operatör özeti sadece yeni bildirim varsa); `server.js` günlük setInterval + boot+30sn ilk koşu
++ `GET /api/admin/notifications`, `POST .../mark-read`, `POST .../run-reminders` (superadmin).
+Frontend: `lib/auth.js` `fetchAdminNotifications`/`markAdminNotificationsRead`; `SuperAdminDashboard`
+`AdminNotificationBell` (işletme çanının aynısı, mevcut `notifications*` i18n key'leri).
+Not: bildirim metinleri backend'de düz TR string (mevcut şube-bildirimi deseniyle aynı) — ayrı i18n eklenmedi.
+Supabase `admin_notifications` senkronu bilinçli atlandı (kritik-kalıcı değil).
 
 **Karar:** `business_notifications` iyi çalışıyor (şema: `business_id`=institutions.id NUMERİK PK,
 `type,title,message,related_request_id,is_read,created_at`; `createBusinessNotification({...})`;
