@@ -35,6 +35,9 @@ const ComparePage = lazy(() =>
 const BestRatePage = lazy(() =>
   import("./pages/BestRatePage").then((m) => ({ default: m.BestRatePage }))
 );
+const MapPage = lazy(() =>
+  import("./pages/MapPage").then((m) => ({ default: m.MapPage }))
+);
 const ContactPage = lazy(() =>
   import("./pages/ContactPage").then((m) => ({ default: m.ContactPage }))
 );
@@ -117,6 +120,7 @@ function AppShell() {
               <Route path="/kurlar" element={<Navigate to="/" replace />} />
               <Route path="/kiyasla" element={<ComparePage />} />
               <Route path="/en-iyi-kur" element={<BestRatePage />} />
+              <Route path="/harita" element={<MapPage />} />
               <Route path="/paketler" element={<PricingPage />} />
               <Route path="/iletisim" element={<ContactPage />} />
               <Route path="/partnerlik" element={<PartnershipPage />} />

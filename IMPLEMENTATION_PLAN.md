@@ -171,10 +171,22 @@ URL state `?birim/?islem/?tutar` (paylaşılabilir). `SiteNav` 5. sekme (`Trophy
 dokunulmadı — sekme md+ / URL. Commit `9dffd34`.
 **Doğrulama:** `npm run build` yeşil (BestRatePage 8.1 kB lazy chunk); lint yeni hata yok.
 
-### ☐ P2.2 — Genel harita (C2)
-`/kiyasla` veya ana sayfada harita sekmesi: leaflet (zaten dep + admin'de kullanılıyor, `vendor-map` chunk),
-lazy route. Şube pinleri (`/api/branches` lat/lng), popup: büro adı + anlık USD/EUR/GBP + "yol tarifi" + WhatsApp.
-"Açık" filtresi (çalışma saatleri). Kullanıcı konumu (izinle) → "en yakın". `index.css`'te leaflet stilleri var.
+### ☑ P2.2 — Genel harita (C2)
+Yeni lazy rota `/harita` → `frontend/src/pages/MapPage.jsx`: leaflet `MapContainer` (KKTC merkezli),
+şube pinleri `/api/branches`'ten (lat/lng), kurumun anlık kuru `/api/kurlar`'dan `institutionId` ile
+eşlenip birleştirilir (backend değişmedi). Popup: logo + kurum/şube adı + açık/kapalı rozeti (çalışma
+saati bilinirse) + USD/EUR/GBP alış/satış tablosu + adres + "Yol tarifi" (Google Maps `dir` linki) +
+WhatsApp/telefon + "Detay" (`exchangeOfficePath` + `trackBusinessClick`). Filtreler: şehir `FloatingSelect`
+(`?sehir`), "Şu an açık" toggle (`?acik=1`, `openState()` — `V0FinancialDashboard.isOpenNow` bağımsız
+kopyası; bilinmeyen saat gizlenmez). "Bana en yakın" → `navigator.geolocation` → haritayı `flyTo` +
+kullanıcı noktası + yan liste `haversineKm` ile mesafeye göre sıralanır. Yan liste (`lg:` iki kolon):
+kurum adı + şehir/mesafe + USD özet, tıklama haritayı o pine odaklar. Kurları sekme görünürken 60 sn
+tazeler (SSE yok, BestRatePage döngüsü). `SiteNav` 6. sekme (`MapPinned`, `to="/harita"`) +
+`useHomeSectionNav.isMapActive`. `SiteDownbar` (mobil) dokunulmadı — sekme md+ / URL (P2.1 deseni).
+i18n `map*` + `navMap` (TR+EN). `vendor-map` chunk zaten vardı (admin kullanıyor).
+**Doğrulama:** `npm run build` yeşil (MapPage 11.5 kB lazy chunk); lint yeni hata yok (45→45);
+dev sunucuda `/harita` render + pin popup (kur tablosu, yol tarifi, detay) tarayıcıda doğrulandı,
+konsol hatasız.
 
 ### ☐ P2.3 — PWA (C4)
 `vite-plugin-pwa` (CDN değil, dev dep) veya elle `manifest.webmanifest` + hafif service worker
