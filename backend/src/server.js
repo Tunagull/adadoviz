@@ -2059,8 +2059,10 @@ app.put("/api/analytics/update", analyticsLimiter, (req, res) => {
     }
     const session = updateVisitorSession(session_id, {
       clicked_businesses: req.body?.clicked_businesses,
+      clicked_business_ids: req.body?.clicked_business_ids,
       viewed_currencies: req.body?.viewed_currencies,
       business: req.body?.business,
+      business_id: req.body?.business_id,
       currency: req.body?.currency,
     });
     syncVisitorSession(session);

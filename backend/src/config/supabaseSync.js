@@ -502,6 +502,10 @@ async function syncVisitorSession(row) {
           typeof row.clicked_businesses === "string"
             ? row.clicked_businesses
             : JSON.stringify(row.clicked_businesses || []),
+        clicked_business_ids:
+          typeof row.clicked_business_ids === "string"
+            ? row.clicked_business_ids
+            : JSON.stringify(row.clicked_business_ids || []),
         viewed_currencies:
           typeof row.viewed_currencies === "string"
             ? row.viewed_currencies

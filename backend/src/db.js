@@ -382,6 +382,7 @@ function initDb({ skipBusinessSeed = false } = {}) {
       session_id TEXT NOT NULL UNIQUE,
       location TEXT NOT NULL DEFAULT 'Bilinmiyor',
       clicked_businesses TEXT NOT NULL DEFAULT '[]',
+      clicked_business_ids TEXT NOT NULL DEFAULT '[]',
       viewed_currencies TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -550,6 +551,12 @@ function initDb({ skipBusinessSeed = false } = {}) {
   }
   if (!columnExists("institutions", "branch_limit")) {
     db.exec(`ALTER TABLE institutions ADD COLUMN branch_limit INTEGER NOT NULL DEFAULT 1`);
+  }
+  // P1.4 / S7: id-bazli tiklama esleme (isim yerine institution_id).
+  if (!columnExists("visitor_sessions", "clicked_business_ids")) {
+    db.exec(
+      `ALTER TABLE visitor_sessions ADD COLUMN clicked_business_ids TEXT NOT NULL DEFAULT '[]'`
+    );
   }
   if (!columnExists("institutions", "contact_person")) {
     db.exec(`ALTER TABLE institutions ADD COLUMN contact_person TEXT`);
@@ -2957,7 +2964,7 @@ function startVisitorSession({ session_id, location }) {
     return mapVisitorSession(
       db
         .prepare(
-          `SELECT session_id, location, clicked_businesses, viewed_currencies, created_at, updated_at
+          `SELECT session_id, location, clicked_businesses, clicked_business_ids, viewed_currencies, created_at, updated_at
            FROM visitor_sessions WHERE session_id = ?`
         )
         .get(sid)
@@ -2975,7 +2982,7 @@ function startVisitorSession({ session_id, location }) {
   return mapVisitorSession(
     db
       .prepare(
-        `SELECT session_id, location, clicked_businesses, viewed_currencies, created_at, updated_at
+        `SELECT session_id, location, clicked_businesses, clicked_business_ids, viewed_currencies, created_at, updated_at
          FROM visitor_sessions WHERE session_id = ?`
       )
       .get(sid)
@@ -2988,19 +2995,23 @@ function mapVisitorSession(row) {
     session_id: row.session_id,
     location: row.location || "Bilinmiyor",
     clicked_businesses: parseJsonArray(row.clicked_businesses),
+    clicked_business_ids: parseJsonArray(row.clicked_business_ids),
     viewed_currencies: parseJsonArray(row.viewed_currencies),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 }
 
-function updateVisitorSession(session_id, { clicked_businesses, viewed_currencies, business, currency }) {
+function updateVisitorSession(
+  session_id,
+  { clicked_businesses, clicked_business_ids, viewed_currencies, business, business_id, currency }
+) {
   const sid = String(session_id || "").trim();
   if (!sid) throw new Error("session_id zorunludur.");
 
   const row = db
     .prepare(
-      `SELECT session_id, location, clicked_businesses, viewed_currencies, created_at, updated_at
+      `SELECT session_id, location, clicked_businesses, clicked_business_ids, viewed_currencies, created_at, updated_at
        FROM visitor_sessions WHERE session_id = ?`
     )
     .get(sid);
@@ -3008,6 +3019,7 @@ function updateVisitorSession(session_id, { clicked_businesses, viewed_currencie
   if (!row) throw new Error("Oturum bulunamadı.");
 
   let businesses = parseJsonArray(row.clicked_businesses);
+  let businessIds = parseJsonArray(row.clicked_business_ids);
   let currencies = parseJsonArray(row.viewed_currencies);
 
   if (Array.isArray(clicked_businesses)) {
@@ -3015,6 +3027,12 @@ function updateVisitorSession(session_id, { clicked_businesses, viewed_currencie
   }
   if (business) {
     businesses = mergeUniqueStrings(businesses, [business]);
+  }
+  if (Array.isArray(clicked_business_ids)) {
+    businessIds = mergeUniqueStrings(businessIds, clicked_business_ids.map((v) => String(v)));
+  }
+  if (business_id != null && String(business_id).trim()) {
+    businessIds = mergeUniqueStrings(businessIds, [String(business_id).trim()]);
   }
   if (Array.isArray(viewed_currencies)) {
     currencies = mergeUniqueStrings(currencies, viewed_currencies);
@@ -3025,14 +3043,19 @@ function updateVisitorSession(session_id, { clicked_businesses, viewed_currencie
 
   db.prepare(
     `UPDATE visitor_sessions
-     SET clicked_businesses = ?, viewed_currencies = ?, updated_at = datetime('now')
+     SET clicked_businesses = ?, clicked_business_ids = ?, viewed_currencies = ?, updated_at = datetime('now')
      WHERE session_id = ?`
-  ).run(JSON.stringify(businesses), JSON.stringify(currencies), sid);
+  ).run(
+    JSON.stringify(businesses),
+    JSON.stringify(businessIds),
+    JSON.stringify(currencies),
+    sid
+  );
 
   return mapVisitorSession(
     db
       .prepare(
-        `SELECT session_id, location, clicked_businesses, viewed_currencies, created_at, updated_at
+        `SELECT session_id, location, clicked_businesses, clicked_business_ids, viewed_currencies, created_at, updated_at
          FROM visitor_sessions WHERE session_id = ?`
       )
       .get(sid)
@@ -3042,7 +3065,7 @@ function updateVisitorSession(session_id, { clicked_businesses, viewed_currencie
 function listVisitorSessions(limit = 50) {
   const rows = db
     .prepare(
-      `SELECT session_id, location, clicked_businesses, viewed_currencies, created_at, updated_at
+      `SELECT session_id, location, clicked_businesses, clicked_business_ids, viewed_currencies, created_at, updated_at
        FROM visitor_sessions
        ORDER BY datetime(created_at) DESC
        LIMIT ?`
@@ -4470,19 +4493,19 @@ function backfillPaymentsFromSubscriptions(olusturan = "sistem") {
  * işletme ADIYLA tutuluyor; institution_id'ye eşliyoruz.
  */
 function getClicksByBusiness() {
-  const sessions = db.prepare(`SELECT clicked_businesses FROM visitor_sessions`).all();
+  const sessions = db
+    .prepare(`SELECT clicked_businesses, clicked_business_ids FROM visitor_sessions`)
+    .all();
   const byName = new Map();
+  const byId = new Map();
   for (const row of sessions) {
-    let arr = [];
-    try {
-      arr = JSON.parse(row.clicked_businesses || "[]");
-    } catch (_e) {
-      arr = [];
-    }
-    for (const name of Array.isArray(arr) ? arr : []) {
+    for (const name of parseJsonArray(row.clicked_businesses)) {
       const key = String(name || "").trim();
-      if (!key) continue;
-      byName.set(key, (byName.get(key) || 0) + 1);
+      if (key) byName.set(key, (byName.get(key) || 0) + 1);
+    }
+    for (const id of parseJsonArray(row.clicked_business_ids)) {
+      const key = String(id || "").trim();
+      if (key) byId.set(key, (byId.get(key) || 0) + 1);
     }
   }
   const insts = db
@@ -4492,11 +4515,16 @@ function getClicksByBusiness() {
     )
     .all();
   return insts
-    .map((i) => ({
-      institution_id: i.institution_id,
-      institution_name: i.institution_name,
-      tiklama: byName.get(String(i.institution_name).trim()) || 0,
-    }))
+    .map((i) => {
+      // S7: id eslesmesi birincil; eski (id'siz) satirlar icin isim yedek.
+      const idHits = byId.get(String(i.institution_id).trim()) || 0;
+      const nameHits = byName.get(String(i.institution_name).trim()) || 0;
+      return {
+        institution_id: i.institution_id,
+        institution_name: i.institution_name,
+        tiklama: idHits > 0 ? idHits : nameHits,
+      };
+    })
     .sort((a, b) => b.tiklama - a.tiklama);
 }
 

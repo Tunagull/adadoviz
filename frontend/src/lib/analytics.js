@@ -65,10 +65,12 @@ export async function trackAnalyticsUpdate(payload = {}) {
   }
 }
 
-export function trackBusinessClick(businessName) {
+export function trackBusinessClick(businessName, businessId) {
   const name = String(businessName || "").trim();
-  if (!name) return;
-  trackAnalyticsUpdate({ business: name });
+  const id = businessId != null ? String(businessId).trim() : "";
+  if (!name && !id) return;
+  // S7: id birincil eşleşme anahtarı; isim geriye dönük uyum için hâlâ gönderiliyor.
+  trackAnalyticsUpdate({ business: name || undefined, business_id: id || undefined });
 }
 
 export function trackCurrencyView(currency) {

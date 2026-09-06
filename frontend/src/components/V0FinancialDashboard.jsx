@@ -379,7 +379,7 @@ export function V0FinancialDashboard() {
       const name = String(biz?.name || "")
         .replace(/\s*\([Tt]est\)\s*/g, "")
         .trim();
-      trackBusinessClick(name || biz?.name);
+      trackBusinessClick(name || biz?.name, biz?.institutionId);
       const nearest = biz?.nearestBranch;
       const slug = nearest?.id
         ? buildBranchSlug(nearest, name || biz?.name)

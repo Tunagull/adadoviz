@@ -27,10 +27,12 @@ Metin: "AdaDöviz — <tarih> · USD alış X / satış Y · adadoviz.tunahangul
 kompakt kart + genişletilmiş modal başlığında, `aria-live` bölgesinde. (Opsiyonel ileride: dashboard
 3-döviz roll-up cümlesi — 3 lazy kartın verisini yukarı taşımayı gerektirir.)
 
-### ☐ P1.4 — id-bazlı analitik (S7)
-`visitor_sessions`: `clicked_businesses` (isim) → `clicked_business_ids` ekle (migration `0003`).
-Frontend tıklama takibi `institutionId` gönderir. `getClicksByBusiness` id ile eşleşir, isim fallback.
-`updateVisitorSession` her ikisini de yazar (geçiş dönemi).
+### ☑ P1.4 — id-bazlı analitik (S7)
+`migrations/0003` + SQLite `visitor_sessions.clicked_business_ids` (initDb ALTER). `updateVisitorSession`
+`business_id`/`clicked_business_ids` kabul edip yazıyor; `getClicksByBusiness` id-birincil, isim yedek;
+`syncVisitorSession` yeni kolonu da gönderiyor. Frontend `trackBusinessClick(name, id)` +
+`V0FinancialDashboard` `biz.institutionId` geçiyor. (İleride: büro-detay/ExchangeOfficePage doğrudan
+ziyaretlerini de olay olarak say — P2.5.)
 
 ### ☐ P1.5 — Bildirim omurgası + abonelik-bitiş bildirimi (B4, kısmen S10/S13)
 - `notifications` genel tablo (`0003`): `recipient_type` (business|superadmin), `recipient_id`, `type`,
