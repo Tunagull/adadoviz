@@ -352,6 +352,56 @@ export async function markAdminNotificationsRead(token, ids) {
   return data;
 }
 
+// P1.7 — panel-içi destek / sorun bildirimi
+export async function submitSupportTicket(token, payload) {
+  const response = await fetch(apiUrl("/api/support-tickets"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Destek talebi gönderilemedi.");
+  }
+  return data?.ticket || null;
+}
+
+export async function fetchSupportTickets(token) {
+  const response = await fetch(apiUrl("/api/support-tickets"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talepler alınamadı.");
+  }
+  return data?.tickets || [];
+}
+
+export async function fetchAdminSupportTickets(token, status) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await fetch(apiUrl(`/api/admin/support-tickets${qs}`), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talepler alınamadı.");
+  }
+  return { tickets: data?.tickets || [], open: data?.open || 0 };
+}
+
+export async function updateAdminSupportTicket(token, id, payload) {
+  const response = await fetch(apiUrl(`/api/admin/support-tickets/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talep güncellenemedi.");
+  }
+  return data?.ticket || null;
+}
+
 export async function fetchAdminBusinesses(token) {
   const response = await fetch(apiUrl("/api/admin/businesses"), {
     headers: authHeaders(token),

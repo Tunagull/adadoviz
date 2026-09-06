@@ -668,6 +668,27 @@ function initDb({ skipBusinessSeed = false } = {}) {
     )
   `);
 
+  // P1.7: panel-içi destek / sorun bildirimi (B11). Kaydı işletme (veya
+  // superadmin) açar; operatör statü/yanıt yönetir. Supabase sync yok
+  // (admin_notifications ile aynı gerekçe — operasyonel, kritik-kalıcı değil).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS support_tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      institution_id TEXT,
+      business_id INTEGER,
+      business_name TEXT NOT NULL DEFAULT '',
+      reporter_username TEXT NOT NULL DEFAULT '',
+      reporter_role TEXT NOT NULL DEFAULT 'business',
+      subject TEXT NOT NULL,
+      message TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      admin_reply TEXT,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -4068,6 +4089,131 @@ function markAdminNotificationsRead(ids) {
   return { ok: true, unread: countUnreadAdminNotifications() };
 }
 
+// ---------------------------------------------------------------------------
+// P1.7 — destek talepleri (support_tickets)
+// ---------------------------------------------------------------------------
+
+const SUPPORT_STATUSES = new Set(["open", "answered", "closed"]);
+
+function mapSupportTicketRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    institution_id: row.institution_id || null,
+    business_id: row.business_id == null ? null : Number(row.business_id),
+    business_name: row.business_name || "",
+    reporter_username: row.reporter_username || "",
+    reporter_role: row.reporter_role || "business",
+    subject: row.subject || "",
+    message: row.message || "",
+    status: SUPPORT_STATUSES.has(row.status) ? row.status : "open",
+    admin_reply: row.admin_reply || null,
+    is_read: row.is_read === 1 || row.is_read === true,
+    created_at: toIsoTimestamp(row.created_at),
+    updated_at: toIsoTimestamp(row.updated_at),
+  };
+}
+
+function createSupportTicket({
+  institution_id = null,
+  business_id = null,
+  business_name = "",
+  reporter_username = "",
+  reporter_role = "business",
+  subject,
+  message,
+}) {
+  const cleanSubject = String(subject || "").trim().slice(0, 200);
+  const cleanMessage = String(message || "").trim().slice(0, 5000);
+  if (!cleanSubject || !cleanMessage) {
+    throw new Error("Konu ve mesaj zorunludur.");
+  }
+  const info = db
+    .prepare(
+      `INSERT INTO support_tickets
+         (institution_id, business_id, business_name, reporter_username,
+          reporter_role, subject, message, status, is_read)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'open', 0)`
+    )
+    .run(
+      institution_id ? String(institution_id) : null,
+      business_id != null ? Number(business_id) : null,
+      String(business_name || "").trim(),
+      String(reporter_username || "").trim(),
+      String(reporter_role || "business").trim(),
+      cleanSubject,
+      cleanMessage
+    );
+  return mapSupportTicketRow(
+    db.prepare(`SELECT * FROM support_tickets WHERE id = ?`).get(info.lastInsertRowid)
+  );
+}
+
+function listSupportTickets({ status, institution_id, limit = 100 } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const clauses = [];
+  const args = [];
+  if (status && SUPPORT_STATUSES.has(String(status))) {
+    clauses.push(`status = ?`);
+    args.push(String(status));
+  }
+  if (institution_id) {
+    clauses.push(`institution_id = ?`);
+    args.push(String(institution_id));
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  return db
+    .prepare(
+      `SELECT * FROM support_tickets
+       ${where}
+       ORDER BY datetime(created_at) DESC
+       LIMIT ?`
+    )
+    .all(...args, lim)
+    .map(mapSupportTicketRow);
+}
+
+function getSupportTicketById(id) {
+  return mapSupportTicketRow(
+    db.prepare(`SELECT * FROM support_tickets WHERE id = ?`).get(Number(id))
+  );
+}
+
+function countOpenSupportTickets() {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS c FROM support_tickets WHERE status = 'open'`)
+    .get();
+  return Number(row?.c) || 0;
+}
+
+function updateSupportTicket(id, { status, admin_reply } = {}) {
+  const existing = getSupportTicketById(id);
+  if (!existing) throw new Error("Destek talebi bulunamadı.");
+
+  let nextStatus = existing.status;
+  if (status !== undefined) {
+    const s = String(status || "").trim();
+    if (!SUPPORT_STATUSES.has(s)) throw new Error("Geçersiz talep durumu.");
+    nextStatus = s;
+  }
+  let nextReply = existing.admin_reply;
+  if (admin_reply !== undefined) {
+    nextReply = String(admin_reply || "").trim().slice(0, 5000) || null;
+    // Yanıt yazıldıysa ve statü hâlâ 'open' ise otomatik 'answered'.
+    if (nextReply && status === undefined && nextStatus === "open") {
+      nextStatus = "answered";
+    }
+  }
+
+  db.prepare(
+    `UPDATE support_tickets
+     SET status = ?, admin_reply = ?, is_read = 1, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(nextStatus, nextReply, Number(id));
+
+  return getSupportTicketById(id);
+}
+
 const DEFAULT_SEO_SETTINGS = {
   site_name: "AdaDöviz",
   title: "AdaDöviz | KKTC Döviz Kurları, Dolar TL, Euro Kur ve Döviz Bürosu",
@@ -4711,6 +4857,11 @@ module.exports = {
   listAdminNotifications,
   countUnreadAdminNotifications,
   markAdminNotificationsRead,
+  createSupportTicket,
+  listSupportTickets,
+  getSupportTicketById,
+  countOpenSupportTickets,
+  updateSupportTicket,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,

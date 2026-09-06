@@ -500,6 +500,48 @@ async function sendSignupRejectedEmail({ to, institutionName, reason }) {
   });
 }
 
+// --- P1.7 destek talepleri -------------------------------------------------
+
+/** Yeni destek talebi — operatör kutusuna (dahili, markasız). */
+async function sendSupportTicketEmail({ subject, message, reporterUsername, businessName, reporterRole }) {
+  const html = `
+    <h2>AdaDöviz — Destek / Sorun Bildirimi</h2>
+    <hr />
+    <p><strong>İşletme:</strong> ${escapeHtml(businessName || "-")}</p>
+    <p><strong>Bildiren:</strong> ${escapeHtml(reporterUsername || "-")} (${escapeHtml(reporterRole || "business")})</p>
+    <p><strong>Konu:</strong> ${escapeHtml(subject || "-")}</p>
+    <hr />
+    <p>${escapeHtml(message || "").replace(/\n/g, "<br />")}</p>
+  `;
+  const fromUser = getGmailUser();
+  const info = await getTransporter().sendMail({
+    from: `"AdaDöviz" <${fromUser}>`,
+    to: PARTNERSHIP_INBOX,
+    subject: `Destek: ${sanitizeSubject(subject)}`,
+    html,
+  });
+  console.log(`[EMAIL] Destek talebi → ${PARTNERSHIP_INBOX}:`, info.messageId);
+  return { success: true, messageId: info.messageId };
+}
+
+/** Operatör yanıtladı — işletmeye (markalı). */
+async function sendSupportReplyEmail({ to, institutionName, subject, reply, panelUrl }) {
+  const name = String(institutionName || "").trim() || "İşletmeniz";
+  const url = panelUrl || `${getFrontendBaseUrl()}/admin`;
+  const body = `
+    <p style="margin:0 0 12px;">Merhaba,</p>
+    <p style="margin:0 0 12px;"><strong>${escapeHtml(name)}</strong> — "<strong>${escapeHtml(subject || "destek talebiniz")}</strong>" konulu talebinize yanıt verildi:</p>
+    <p style="margin:0;padding:12px 14px;background:#f4f4f5;border-radius:10px;color:#3a3a42;">${escapeHtml(reply || "").replace(/\n/g, "<br />")}</p>
+  `;
+  return sendBrandedMail({
+    to,
+    subject: "Destek talebinize yanıt",
+    title: "Destek talebinize yanıt verildi",
+    bodyHtml: body,
+    cta: { text: "Panele git", url },
+  });
+}
+
 function logMailConfigOnBoot() {
   console.log(
     `[EMAIL] Yapılandırma: configured=${isMailConfigured()} user=${getGmailUser() || "(yok)"} frontend=${getFrontendBaseUrl()}`
@@ -518,6 +560,8 @@ module.exports = {
   sendSignupReceivedEmail,
   sendSignupApprovedEmail,
   sendSignupRejectedEmail,
+  sendSupportTicketEmail,
+  sendSupportReplyEmail,
   buildPartnershipDefaultMessage,
   renderEmailShell,
   isMailConfigured,

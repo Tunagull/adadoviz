@@ -50,6 +50,8 @@ import {
   fetchAdminPartnershipApplications,
   fetchAdminNotifications,
   markAdminNotificationsRead,
+  fetchAdminSupportTickets,
+  updateAdminSupportTicket,
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
@@ -585,6 +587,12 @@ export function SuperAdminDashboard() {
     currentRemainingDays: 0,
   });
   const [branchSubSaving, setBranchSubSaving] = useState(false);
+  // P1.7 — destek talepleri
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [supportOpen, setSupportOpen] = useState(0);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportActingId, setSupportActingId] = useState(null);
+  const [supportReplyDraft, setSupportReplyDraft] = useState({});
 
   const TABS = useMemo(
     () => [
@@ -600,6 +608,7 @@ export function SuperAdminDashboard() {
         gönderiyor, yani başvurular veritabanına düşüp görünmez oluyordu.
       */
       { id: "revenue", label: t("tabRevenue") },
+      { id: "support", label: t("supportAdminTab") },
       { id: "health", label: t("tabHealth") },
       { id: "logs", label: t("logsTitle") },
     ],
@@ -673,6 +682,44 @@ export function SuperAdminDashboard() {
     loadSystemHealth();
     return undefined;
   }, [tab, token, loadSystemHealth]);
+
+  const loadSupportTickets = useCallback(async () => {
+    if (!token) return;
+    setSupportLoading(true);
+    try {
+      const { tickets, open } = await fetchAdminSupportTickets(token);
+      setSupportTickets(Array.isArray(tickets) ? tickets : []);
+      setSupportOpen(Number(open) || 0);
+    } catch (err) {
+      console.warn("[SUPPORT] Talepler yüklenemedi:", err.message);
+    } finally {
+      setSupportLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (tab !== "support" || !token) return undefined;
+    loadSupportTickets();
+    return undefined;
+  }, [tab, token, loadSupportTickets]);
+
+  const handleSupportUpdate = async (id, payload) => {
+    if (!token) return;
+    setSupportActingId(id);
+    try {
+      await updateAdminSupportTicket(token, id, payload);
+      setSupportReplyDraft((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      await loadSupportTickets();
+    } catch (err) {
+      setError(err.message || "Talep güncellenemedi.");
+    } finally {
+      setSupportActingId(null);
+    }
+  };
 
   const loadBranchRequestUnread = useCallback(async () => {
     if (!token) return;
@@ -1482,6 +1529,11 @@ export function SuperAdminDashboard() {
             {item.id === "requests" && branchRequestUnread > 0 ? (
               <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-danger-500 px-1 py-0.5 text-[10px] font-bold leading-none text-white shadow">
                 {branchRequestUnread > 99 ? "99+" : branchRequestUnread}
+              </span>
+            ) : null}
+            {item.id === "support" && supportOpen > 0 ? (
+              <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-warning-500 px-1 py-0.5 text-[10px] font-bold leading-none text-white shadow">
+                {supportOpen > 99 ? "99+" : supportOpen}
               </span>
             ) : null}
           </button>
@@ -2726,6 +2778,94 @@ export function SuperAdminDashboard() {
               )}
             </div>
           </div>
+        </section>
+      )}
+
+      {tab === "support" && (
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
+            <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
+              <h2 className="font-semibold">{t("supportAdminTab")}</h2>
+              {supportOpen > 0 ? (
+                <span className="inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-warning-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  {supportOpen}
+                </span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={loadSupportTickets}
+              className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
+            >
+              {t("refresh")}
+            </button>
+          </div>
+
+          {supportLoading && supportTickets.length === 0 ? (
+            <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+          ) : supportTickets.length === 0 ? (
+            <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("supportAdminEmpty")}</p>
+          ) : (
+            <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+              {supportTickets.map((tk) => {
+                const draft =
+                  supportReplyDraft[tk.id] !== undefined
+                    ? supportReplyDraft[tk.id]
+                    : tk.admin_reply || "";
+                const acting = supportActingId === tk.id;
+                return (
+                  <li key={tk.id} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
+                          {tk.subject}
+                        </p>
+                        <p className="text-[11px] text-ink-500 dark:text-ink-400">
+                          {t("supportAdminFrom")}: {tk.business_name || tk.reporter_username} ·{" "}
+                          {parseDateLoose(tk.created_at)?.toLocaleString("tr-TR") || "—"}
+                        </p>
+                      </div>
+                      <select
+                        value={tk.status}
+                        disabled={acting}
+                        onChange={(e) => handleSupportUpdate(tk.id, { status: e.target.value })}
+                        className="rounded-lg border border-ink-200 bg-white px-2 py-1 text-xs text-ink-700 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200"
+                      >
+                        <option value="open">{t("supportStatusOpen")}</option>
+                        <option value="answered">{t("supportStatusAnswered")}</option>
+                        <option value="closed">{t("supportStatusClosed")}</option>
+                      </select>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-xs text-ink-600 dark:text-ink-300">
+                      {tk.message}
+                    </p>
+                    <div className="mt-2">
+                      <FloatingTextarea
+                        label={t("supportAdminReplyLabel")}
+                        value={draft}
+                        rows={2}
+                        maxLength={5000}
+                        placeholder={t("supportAdminReplyPlaceholder")}
+                        onChange={(e) =>
+                          setSupportReplyDraft((prev) => ({ ...prev, [tk.id]: e.target.value }))
+                        }
+                      />
+                      <div className="mt-1.5 flex justify-end">
+                        <button
+                          type="button"
+                          disabled={acting || !draft.trim() || draft.trim() === (tk.admin_reply || "")}
+                          onClick={() => handleSupportUpdate(tk.id, { admin_reply: draft.trim() })}
+                          className="btn btn-sm btn-primary"
+                        >
+                          {acting ? t("supportSubmitting") : t("supportAdminSave")}
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       )}
 

@@ -56,6 +56,12 @@ const {
   listAdminNotifications,
   countUnreadAdminNotifications,
   markAdminNotificationsRead,
+  createAdminNotification,
+  createSupportTicket,
+  listSupportTickets,
+  getSupportTicketById,
+  countOpenSupportTickets,
+  updateSupportTicket,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -129,7 +135,7 @@ const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./in
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
 const { runSubscriptionReminders } = require("./jobs/subscriptionReminders");
 const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
@@ -368,6 +374,12 @@ const visitorLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 10,
   message: "Çok fazla istek. Lütfen daha sonra tekrar deneyin.",
+});
+// P1.7: destek talebi — kimlik doğrulamalı ama yine de spam/kaza koruması.
+const supportLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: "Çok fazla destek talebi gönderildi. Lütfen bir saat sonra tekrar deneyin.",
 });
 
 /**
@@ -1424,6 +1436,151 @@ app.post("/api/admin/notifications/run-reminders", requireSuperAdmin, async (_re
     return res.json(result);
   } catch (err) {
     return res.status(500).json({ error: err.message || "Hatırlatmalar çalıştırılamadı." });
+  }
+});
+
+// -------------------------------------------------------------------------
+// P1.7 — panel-içi destek / sorun bildirimi (B11)
+// -------------------------------------------------------------------------
+
+/** İşletme (veya superadmin) yeni destek talebi açar. */
+app.post("/api/support-tickets", requireAuth, supportLimiter, async (req, res) => {
+  try {
+    const isSuper = req.user?.role === "superadmin";
+    let full = null;
+    if (!isSuper) {
+      full = getInstitutionFullBySlug(req.user.institution_id);
+      if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    }
+
+    const ticket = createSupportTicket({
+      institution_id: isSuper ? null : full.institution_id,
+      business_id: isSuper ? null : full.id,
+      business_name: isSuper ? "Operatör" : full.institution_name,
+      reporter_username: req.user?.username || "",
+      reporter_role: isSuper ? "superadmin" : "business",
+      subject: req.body?.subject,
+      message: req.body?.message,
+    });
+
+    try {
+      createAdminNotification({
+        type: "support_ticket",
+        title: "Yeni destek talebi",
+        message: `${ticket.business_name} — ${ticket.subject}`,
+        data: { ticket_id: ticket.id },
+      });
+    } catch (nerr) {
+      console.warn("[SUPPORT] admin notify:", nerr.message);
+    }
+
+    if (isMailConfigured()) {
+      sendSupportTicketEmail({
+        subject: ticket.subject,
+        message: ticket.message,
+        reporterUsername: ticket.reporter_username,
+        reporterRole: ticket.reporter_role,
+        businessName: ticket.business_name,
+      }).catch((e) => console.warn("[EMAIL] destek talebi gönderilemedi:", e.message));
+    }
+
+    await recordAudit({
+      action: "support_ticket_create",
+      actor: req.user?.username || "business",
+      institution_id: ticket.institution_id || null,
+      institution_name: ticket.business_name || null,
+      detail: `Destek talebi açıldı (#${ticket.id}): ${ticket.subject}`,
+    });
+
+    return res.status(201).json({ ticket });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Destek talebi oluşturulamadı." });
+  }
+});
+
+/** İşletme kendi destek taleplerini listeler. */
+app.get("/api/support-tickets", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.json({ tickets: listSupportTickets({ limit: 100 }) });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    return res.json({
+      tickets: listSupportTickets({ institution_id: full.institution_id, limit: 100 }),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Talepler alınamadı." });
+  }
+});
+
+/** Super Admin: tüm destek talepleri + açık sayısı. */
+app.get("/api/admin/support-tickets", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      tickets: listSupportTickets({ status: req.query?.status || undefined, limit: 200 }),
+      open: countOpenSupportTickets(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Talepler alınamadı." });
+  }
+});
+
+/** Super Admin: durum güncelle / yanıt yaz. */
+app.patch("/api/admin/support-tickets/:id", requireSuperAdmin, async (req, res) => {
+  try {
+    const before = getSupportTicketById(req.params.id);
+    if (!before) return res.status(404).json({ error: "Destek talebi bulunamadı." });
+
+    const ticket = updateSupportTicket(req.params.id, {
+      status: req.body?.status,
+      admin_reply: req.body?.admin_reply,
+    });
+
+    // Yanıt eklendiyse işletmeye bildir (in-app + e-posta).
+    const replyAdded =
+      ticket.admin_reply && ticket.admin_reply !== before.admin_reply && ticket.business_id;
+    if (replyAdded) {
+      try {
+        createBusinessNotification({
+          business_id: ticket.business_id,
+          type: "support_reply",
+          title: "Destek talebinize yanıt verildi",
+          message: `"${ticket.subject}" konulu talebiniz yanıtlandı.`,
+        });
+      } catch (nerr) {
+        console.warn("[SUPPORT] business notify:", nerr.message);
+      }
+      if (isMailConfigured()) {
+        try {
+          const biz = getInstitutionFullById(ticket.business_id);
+          if (biz?.email) {
+            sendSupportReplyEmail({
+              to: biz.email,
+              institutionName: biz.institution_name,
+              subject: ticket.subject,
+              reply: ticket.admin_reply,
+              panelUrl: `${getFrontendBaseUrl()}/admin`,
+            }).catch((e) => console.warn("[EMAIL] destek yanıtı gönderilemedi:", e.message));
+          }
+        } catch (mailErr) {
+          console.warn("[EMAIL] destek yanıtı hazırlanamadı:", mailErr.message);
+        }
+      }
+    }
+
+    await recordAudit({
+      action: "support_ticket_update",
+      actor: req.user?.username || "superadmin",
+      institution_id: ticket.institution_id || null,
+      institution_name: ticket.business_name || null,
+      detail: `Destek talebi #${ticket.id} → ${ticket.status}${replyAdded ? " (yanıtlandı)" : ""}`,
+    });
+
+    return res.json({ ticket });
+  } catch (err) {
+    const status = err.message === "Destek talebi bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Talep güncellenemedi." });
   }
 });
 

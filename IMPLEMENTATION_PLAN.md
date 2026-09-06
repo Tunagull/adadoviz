@@ -108,10 +108,24 @@ kullanıyor. E-postalar backend'de düz TR (P1.5 deseni — ayrı i18n yok).
 **Doğrulama:** `node --check` 4 dosya temiz; mock-transport ile 6 sender + `runSubscriptionReminders()`
 initDb'li koşu yeşil.
 
-### ☐ P1.7 — Panel-içi destek / bildirim (B11)
-`/admin` + `/super-admin`: "Yardım / Sorun bildir" — `POST /api/support-tickets` (konu, mesaj, otomatik
-hesap bağlamı) → `support_tickets` tablosu (`0003`) + `emitAdminNotification` + e-posta. Superadmin panelinde
-liste + durum (açık/yanıtlandı/kapalı).
+### ☑ P1.7 — Panel-içi destek / bildirim (B11)
+`db.js`: `support_tickets` (SQLite, initDb `CREATE IF NOT EXISTS` — P1.5 `admin_notifications` deseni,
+Supabase sync yok) + `createSupportTicket`/`listSupportTickets`/`getSupportTicketById`/
+`countOpenSupportTickets`/`updateSupportTicket` (statü: `open`→`answered`→`closed`; yanıt yazılınca
+`open` ise otomatik `answered`).
+`server.js`: `POST /api/support-tickets` (requireAuth + `supportLimiter` 10/sa; hesap bağlamı otomatik) →
+`createAdminNotification({type:'support_ticket'})` + `sendSupportTicketEmail` operatör kutusuna + audit;
+`GET /api/support-tickets` (kendi talepleri); `GET /api/admin/support-tickets` (`?status`, `open` sayısı);
+`PATCH /api/admin/support-tickets/:id` (statü/yanıt → yanıt eklendiyse işletmeye `support_reply` bildirimi +
+`sendSupportReplyEmail`).
+`email.js`: `sendSupportTicketEmail` (dahili, markasız), `sendSupportReplyEmail` (markalı shell).
+Frontend: `auth.js` `submitSupportTicket`/`fetchSupportTickets`/`fetchAdminSupportTickets`/
+`updateAdminSupportTicket`; `InstitutionAdminPage` "Yardım / Sorun bildir" butonu + `Sheet` modal
+(konu + mesaj + kendi talep listesi statü/yanıtla); `SuperAdminDashboard` yeni "Destek" sekmesi
+(liste + statü `<select>` + yanıt `FloatingTextarea`, açık-sayı rozeti). i18n `support*` (TR+EN).
+**Doğrulama:** `node --check` 5 dosya temiz; `createSupportTicket`/`updateSupportTicket` + iki e-posta
+mock-transport ile yeşil; `npm run build` yeşil (lint: mevcut desenle tek yeni `set-state-in-effect`,
+`loadSystemHealth` efektiyle aynı).
 
 ### ☐ P1.8 — Onboarding checklist (B13)
 `/admin` üstünde ilerleme kartı: logo yüklendi mi · saatler girildi mi · en az 1 şube · marjlar ayarlandı mı ·

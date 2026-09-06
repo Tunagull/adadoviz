@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell } from "lucide-react";
+import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell, LifeBuoy } from "lucide-react";
 import Cropper from "react-easy-crop";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -24,6 +24,8 @@ import {
   fetchBusinessSubscription,
   fetchBusinessNotifications,
   markBusinessNotificationsRead,
+  submitSupportTicket,
+  fetchSupportTickets,
 } from "../lib/auth";
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
@@ -272,6 +274,13 @@ export function InstitutionAdminPage() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const notifPanelRef = useRef(null);
+  // P1.7 — panel-içi destek / sorun bildirimi
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [supportFeedback, setSupportFeedback] = useState(null); // {type:'ok'|'err', msg}
+  const [supportTickets, setSupportTickets] = useState([]);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState("");
   const [infoSuccess, setInfoSuccess] = useState("");
@@ -552,6 +561,47 @@ export function InstitutionAdminPage() {
     setShowNotifPanel(next);
     if (next) {
       await loadNotifications();
+    }
+  };
+
+  const loadSupportTickets = async () => {
+    if (!auth?.token) return;
+    try {
+      const rows = await fetchSupportTickets(auth.token);
+      setSupportTickets(Array.isArray(rows) ? rows : []);
+    } catch (err) {
+      console.warn("[SUPPORT] Talepler yüklenemedi:", err.message);
+    }
+  };
+
+  const openSupportModal = () => {
+    setSupportFeedback(null);
+    setSupportSubject("");
+    setSupportMessage("");
+    setShowSupportModal(true);
+    loadSupportTickets();
+  };
+
+  const handleSupportSubmit = async () => {
+    if (!auth?.token) return;
+    const subject = supportSubject.trim();
+    const message = supportMessage.trim();
+    if (!subject || !message) {
+      setSupportFeedback({ type: "err", msg: t("supportError") });
+      return;
+    }
+    setSupportSubmitting(true);
+    setSupportFeedback(null);
+    try {
+      await submitSupportTicket(auth.token, { subject, message });
+      setSupportFeedback({ type: "ok", msg: t("supportSent") });
+      setSupportSubject("");
+      setSupportMessage("");
+      await loadSupportTickets();
+    } catch (err) {
+      setSupportFeedback({ type: "err", msg: err.message || t("supportError") });
+    } finally {
+      setSupportSubmitting(false);
     }
   };
 
@@ -1650,6 +1700,15 @@ export function InstitutionAdminPage() {
         >
           <Edit2 className="size-4" />
           İşletme Bilgilerini Güncelle
+        </button>
+
+        <button
+          type="button"
+          onClick={openSupportModal}
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400"
+        >
+          <LifeBuoy className="size-4" />
+          {t("supportButton")}
         </button>
 
         <div className="relative" ref={subscriptionPanelRef}>
@@ -2829,6 +2888,101 @@ export function InstitutionAdminPage() {
         </p>
         {renewRequestError ? (
           <p className="mt-3 text-xs text-danger-700 dark:text-danger-300">{renewRequestError}</p>
+        ) : null}
+      </Sheet>
+
+      <Sheet
+        open={showSupportModal}
+        onOpenChange={(next) => { if (!next) setShowSupportModal(false); }}
+        title={t("supportTitle")}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowSupportModal(false)}
+              className="btn-ghost flex-1"
+            >
+              {t("cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={handleSupportSubmit}
+              disabled={supportSubmitting}
+              className="btn-primary flex-1"
+            >
+              {supportSubmitting ? t("supportSubmitting") : t("supportSubmit")}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <FloatingInput
+            label={t("supportSubjectLabel")}
+            value={supportSubject}
+            onChange={(e) => setSupportSubject(e.target.value)}
+            maxLength={200}
+            placeholder={t("supportSubjectPlaceholder")}
+          />
+          <FloatingTextarea
+            label={t("supportMessageLabel")}
+            value={supportMessage}
+            onChange={(e) => setSupportMessage(e.target.value)}
+            rows={5}
+            maxLength={5000}
+            placeholder={t("supportMessagePlaceholder")}
+          />
+          {supportFeedback ? (
+            <p
+              className={`text-xs ${
+                supportFeedback.type === "ok"
+                  ? "text-success-700 dark:text-success-300"
+                  : "text-danger-700 dark:text-danger-300"
+              }`}
+            >
+              {supportFeedback.msg}
+            </p>
+          ) : null}
+        </div>
+
+        {supportTickets.length > 0 ? (
+          <div className="mt-5 border-t border-ink-200 pt-4 dark:border-ink-800">
+            <p className="mb-2 text-xs font-semibold text-ink-700 dark:text-ink-300">
+              {t("supportMyTickets")}
+            </p>
+            <ul className="space-y-2">
+              {supportTickets.map((tk) => (
+                <li
+                  key={tk.id}
+                  className="rounded-lg border border-ink-200 px-3 py-2 text-xs dark:border-ink-800"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-ink-900 dark:text-ink-100">{tk.subject}</span>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        tk.status === "closed"
+                          ? "bg-ink-500/10 text-ink-600 dark:text-ink-300"
+                          : tk.status === "answered"
+                            ? "bg-success-500/10 text-success-700 dark:text-success-300"
+                            : "bg-warning-500/10 text-warning-700 dark:text-warning-300"
+                      }`}
+                    >
+                      {tk.status === "closed"
+                        ? t("supportStatusClosed")
+                        : tk.status === "answered"
+                          ? t("supportStatusAnswered")
+                          : t("supportStatusOpen")}
+                    </span>
+                  </div>
+                  {tk.admin_reply ? (
+                    <p className="mt-1 text-ink-600 dark:text-ink-300">
+                      <span className="font-semibold">{t("supportAdminReplyLabel")}: </span>
+                      {tk.admin_reply}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </Sheet>
 
