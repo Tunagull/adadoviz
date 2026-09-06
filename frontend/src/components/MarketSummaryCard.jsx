@@ -841,6 +841,13 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           </span>
         </div>
 
+        <p
+          className="mb-2 text-[11px] leading-snug text-ink-600 dark:text-ink-300"
+          aria-live="polite"
+        >
+          {rateTrendSentence({ currency, period, percent: displayPercentage, lang })}
+        </p>
+
         {renderChartContent(false)}
       </div>
 

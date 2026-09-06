@@ -23,8 +23,9 @@ Durum: ☐ yapılacak · ◐ kısmi · ☑ bitti
 Metin: "AdaDöviz — <tarih> · USD alış X / satış Y · adadoviz.tunahangul.com". OG görseli sonraki fazda.
 
 ### ☑ P1.3 — Düz-dil trend cümlesi (C12)
-`MarketSummaryCard` + dashboard: yüzde + yön verisinden cümle üret ("USD son 7 günde %2,3 arttı,
-30 günde %5,1"). `lib/rateNarrative.js` — saf fonksiyon, i18n'li. `aria-live` bölgesiyle birlikte.
+`lib/rateNarrative.js` (`rateTrendSentence`/`rateBuyHint`, TR/EN, yerele göre yüzde). `MarketSummaryCard`
+kompakt kart + genişletilmiş modal başlığında, `aria-live` bölgesinde. (Opsiyonel ileride: dashboard
+3-döviz roll-up cümlesi — 3 lazy kartın verisini yukarı taşımayı gerektirir.)
 
 ### ☐ P1.4 — id-bazlı analitik (S7)
 `visitor_sessions`: `clicked_businesses` (isim) → `clicked_business_ids` ekle (migration `0003`).
