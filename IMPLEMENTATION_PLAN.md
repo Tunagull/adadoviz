@@ -160,11 +160,16 @@ yeşil; lint yeni hata yok.
 
 ## FAZ 2 — çekirdek ürün
 
-### ☐ P2.1 — "Bugünkü en iyi kur" + tutar (C1 + C5)
-Yeni `/en-iyi-kur` veya ana sayfaya sekme: para birimi + işlem (alış/satış) + opsiyonel tutar → tüm bürolar
-**anlık** kur sırasına dizili liste (tutar verilirse "alacağın TRY" ile). Backend: `/api/kurlar` zaten tüm
-büroların anlık kurunu veriyor — sıralama + tutar çarpımı frontend'de. Kademeli kur ileride.
-Tasarım: mevcut `V0BankCard` grid'i yeniden kullan, üstüne sıralama kontrolü (`SlidingTabs` / `BuySellToggle` dili).
+### ☑ P2.1 — "Bugünkü en iyi kur" + tutar (C1 + C5)
+Yeni lazy rota `/en-iyi-kur` → `frontend/src/pages/BestRatePage.jsx`: para birimi (USD/EUR/GBP pill) +
+işlem (`BuySellToggle`) + opsiyonel tutar → tüm bürolar anlık kur sırasına dizili liste (alış → en yüksek,
+satış → en düşük). Tutar verilirse her satırda "elinize geçecek" TL/döviz; #1 satır GERÇEK spread varsa
+"En iyi" rozeti (`Award`). Satıra tıklama → `exchangeOfficePath` + `trackBusinessClick`. Veri
+`fetchRatesWithRetry` ile (`/api/kurlar`, backend değişmedi), sekme görünürken 60 sn tazeleme, SSE yok.
+URL state `?birim/?islem/?tutar` (paylaşılabilir). `SiteNav` 5. sekme (`Trophy`) +
+`useHomeSectionNav.isBestRateActive`. i18n `bestRate*` + `navBestRate` (TR+EN). `SiteDownbar` (mobil)
+dokunulmadı — sekme md+ / URL. Commit `9dffd34`.
+**Doğrulama:** `npm run build` yeşil (BestRatePage 8.1 kB lazy chunk); lint yeni hata yok.
 
 ### ☐ P2.2 — Genel harita (C2)
 `/kiyasla` veya ana sayfada harita sekmesi: leaflet (zaten dep + admin'de kullanılıyor, `vendor-map` chunk),
