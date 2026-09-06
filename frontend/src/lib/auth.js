@@ -402,6 +402,18 @@ export async function updateAdminSupportTicket(token, id, payload) {
   return data?.ticket || null;
 }
 
+// P1.9 — operatör durum sayfası
+export async function fetchAdminOpsOverview(token) {
+  const response = await fetch(apiUrl("/api/admin/ops-overview"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Durum özeti alınamadı.");
+  }
+  return data;
+}
+
 export async function fetchAdminBusinesses(token) {
   const response = await fetch(apiUrl("/api/admin/businesses"), {
     headers: authHeaders(token),

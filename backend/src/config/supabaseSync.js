@@ -4,6 +4,8 @@
  * Hatalar loglanır, ana isteği düşürmez (fire-and-forget safe await).
  */
 
+const fs = require("fs");
+const path = require("path");
 const { supabase, fetchAllPages } = require("./supabaseClient");
 
 const DUAL_WRITE_ERROR_LIMIT = 50;
@@ -397,6 +399,47 @@ async function compareInstitutionDrift(sqliteRows = []) {
     return { ok: false, error: err?.message || String(err), drifts: [] };
   }
   return { ok: true, error: null, drifts };
+}
+
+/**
+ * P1.9 — migration durumu: yerel `migrations/*.sql` dosyaları ile Supabase
+ * `public.schema_migrations` tablosunu karşılaştırır. Supabase erişilemezse
+ * `status: "unknown"` döner (ana isteği düşürmez).
+ */
+async function getMigrationStatus() {
+  let localFiles = [];
+  try {
+    const dir = path.join(__dirname, "..", "..", "migrations");
+    localFiles = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+  } catch (err) {
+    return { status: "unknown", error: err?.message || String(err), applied: 0, total: 0, pending: [] };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("schema_migrations")
+      .select("filename");
+    if (error) throw error;
+    const appliedSet = new Set((data || []).map((r) => String(r.filename)));
+    const pending = localFiles.filter((f) => !appliedSet.has(f));
+    return {
+      status: pending.length === 0 ? "ok" : "warn",
+      applied: localFiles.length - pending.length,
+      total: localFiles.length,
+      pending,
+    };
+  } catch (err) {
+    return {
+      status: "unknown",
+      error: err?.message || String(err),
+      applied: 0,
+      total: localFiles.length,
+      pending: [],
+    };
+  }
 }
 
 async function syncPasswordReset(row) {
@@ -874,4 +917,5 @@ module.exports = {
   getDualWriteErrors,
   syncAuditLog,
   compareInstitutionDrift,
+  getMigrationStatus,
 };

@@ -168,6 +168,7 @@ const {
   getDualWriteErrors,
   syncAuditLog,
   compareInstitutionDrift,
+  getMigrationStatus,
 } = require("./config/supabaseSync");
 
 const app = express();
@@ -2334,6 +2335,126 @@ app.get("/api/admin/system-health", requireSuperAdmin, async (_req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Sağlık raporu alınamadı." });
+  }
+});
+
+/**
+ * P1.9 (S14) — operatör durum sayfası toplayıcısı. "Sabah 30 saniyede sorun var mı"
+ * kontrolü: her sinyal için trafik-ışığı (`ok`/`warn`/`down`/`unknown`) + genel özet.
+ */
+app.get("/api/admin/ops-overview", requireSuperAdmin, async (_req, res) => {
+  try {
+    const now = Date.now();
+    const ageMs = (iso) => (iso ? now - new Date(iso).getTime() : null);
+    const checks = [];
+
+    // 1) Scraper / MB kurları
+    {
+      const okAge = ageMs(ratesHealth.lastOkAt);
+      const errNewer =
+        ratesHealth.lastErrorAt &&
+        (!ratesHealth.lastOkAt ||
+          new Date(ratesHealth.lastErrorAt) > new Date(ratesHealth.lastOkAt));
+      let status = "ok";
+      if (!ratesHealth.lastOkAt || errNewer) status = "down";
+      else if (okAge != null && okAge > 6 * 60 * 60 * 1000) status = "warn";
+      checks.push({
+        key: "rates",
+        status,
+        at: ratesHealth.lastOkAt,
+        detail: ratesHealth.lastError
+          ? String(ratesHealth.lastError)
+          : ratesHealth.lastOkAt
+            ? `son başarı ${Math.round((okAge || 0) / 60000)} dk önce`
+            : "hiç başarılı çekim yok",
+      });
+    }
+
+    // 2) Dual-write hata kuyruğu
+    {
+      const dw = getDualWriteErrors(20);
+      checks.push({
+        key: "dualWrite",
+        status: dw.length === 0 ? "ok" : "down",
+        detail: dw.length === 0 ? "kuyruk boş" : `${dw.length} bekleyen hata`,
+      });
+    }
+
+    // 3) Supabase drift
+    try {
+      const drift = await compareInstitutionDrift(listAllInstitutionsForSync());
+      const n = Array.isArray(drift?.drifts) ? drift.drifts.length : 0;
+      checks.push({
+        key: "drift",
+        status: drift?.ok === false ? "unknown" : n === 0 ? "ok" : "warn",
+        detail: drift?.ok === false ? drift.error || "karşılaştırılamadı" : n === 0 ? "eşleşiyor" : `${n} kayıt farklı`,
+      });
+    } catch (e) {
+      checks.push({ key: "drift", status: "unknown", detail: e.message });
+    }
+
+    // 4) Supabase erişimi + 5) son hydrate (boot state)
+    checks.push({
+      key: "supabase",
+      status: bootState.supabase === "ok" ? "ok" : bootState.supabase === "pending" ? "warn" : "down",
+      detail: `durum: ${bootState.supabase}`,
+    });
+    checks.push({
+      key: "hydrate",
+      status: bootState.hydrate === "ok" ? "ok" : bootState.hydrate === "pending" ? "warn" : "down",
+      at: bootState.finishedAt,
+      detail: `durum: ${bootState.hydrate}`,
+    });
+
+    // 6) Audit zinciri
+    try {
+      const chain = verifyAuditChain();
+      checks.push({
+        key: "auditChain",
+        status: chain.ok === true ? "ok" : chain.ok === false ? "down" : "unknown",
+        detail: chain.ok === true ? `${chain.checked} satır doğrulandı` : chain.reason || "doğrulanamadı",
+      });
+    } catch (e) {
+      checks.push({ key: "auditChain", status: "unknown", detail: e.message });
+    }
+
+    // 7) Migration durumu
+    try {
+      const mig = await getMigrationStatus();
+      checks.push({
+        key: "migrations",
+        status: mig.status,
+        detail:
+          mig.status === "ok"
+            ? `${mig.applied}/${mig.total} uygulandı`
+            : mig.status === "warn"
+              ? `${mig.pending.length} bekliyor: ${mig.pending.join(", ")}`
+              : mig.error || "durum bilinmiyor",
+      });
+    } catch (e) {
+      checks.push({ key: "migrations", status: "unknown", detail: e.message });
+    }
+
+    // 8) Yaklaşan abonelik bitişleri (bilgi amaçlı — problem değil)
+    {
+      const expiring = listExpiringSubscriptions(7);
+      checks.push({
+        key: "expiring",
+        status: "ok",
+        detail: `${expiring.length} abonelik 7 gün içinde bitiyor`,
+      });
+    }
+
+    const rank = { down: 3, unknown: 2, warn: 1, ok: 0 };
+    const worst = checks.reduce(
+      (acc, c) => (rank[c.status] > rank[acc] ? c.status : acc),
+      "ok"
+    );
+    const overall = worst === "down" ? "down" : worst === "warn" || worst === "unknown" ? "warn" : "ok";
+
+    return res.json({ overall, checks, generatedAt: new Date().toISOString() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Durum özeti alınamadı." });
   }
 });
 

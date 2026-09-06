@@ -52,6 +52,7 @@ import {
   markAdminNotificationsRead,
   fetchAdminSupportTickets,
   updateAdminSupportTicket,
+  fetchAdminOpsOverview,
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
@@ -661,10 +662,15 @@ export function SuperAdminDashboard() {
     };
   }, [showLogModal, token]);
 
+  const [opsData, setOpsData] = useState(null);
+
   const loadSystemHealth = useCallback(async () => {
     if (!token) return;
     setHealthLoading(true);
     setHealthError("");
+    fetchAdminOpsOverview(token)
+      .then(setOpsData)
+      .catch(() => setOpsData(null));
     try {
       const data = await fetchAdminSystemHealth(token);
       setHealthData(data);
@@ -2880,6 +2886,62 @@ export function SuperAdminDashboard() {
               {t("refresh")}
             </button>
           </div>
+
+          {opsData ? (
+            (() => {
+              const labelKeys = {
+                rates: "opsRates",
+                dualWrite: "opsDualWrite",
+                drift: "opsDrift",
+                supabase: "opsSupabase",
+                hydrate: "opsHydrate",
+                auditChain: "opsAuditChain",
+                migrations: "opsMigrations",
+                expiring: "opsExpiring",
+              };
+              const dot = {
+                ok: "bg-success-500",
+                warn: "bg-warning-500",
+                down: "bg-danger-500",
+                unknown: "bg-ink-400",
+              };
+              const bannerCls =
+                opsData.overall === "down"
+                  ? "border-danger-500/30 bg-danger-500/10 text-danger-700 dark:text-danger-200"
+                  : opsData.overall === "warn"
+                    ? "border-warning-500/30 bg-warning-500/10 text-warning-700 dark:text-warning-200"
+                    : "border-success-500/30 bg-success-500/10 text-success-700 dark:text-success-200";
+              const bannerText =
+                opsData.overall === "down"
+                  ? t("opsOverallDown")
+                  : opsData.overall === "warn"
+                    ? t("opsOverallWarn")
+                    : t("opsOverallOk");
+              return (
+                <div className="space-y-3">
+                  <div className={`rounded-card border px-3 py-2 text-sm font-semibold ${bannerCls}`}>
+                    {t("opsTitle")}: {bannerText}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {(opsData.checks || []).map((c) => (
+                      <div
+                        key={c.key}
+                        className="rounded-card border border-ink-200 bg-white p-3 dark:border-ink-800 dark:bg-ink-900/80"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`size-2 shrink-0 rounded-full ${dot[c.status] || dot.unknown}`} />
+                          <span className="text-xs font-semibold text-ink-800 dark:text-ink-100">
+                            {t(labelKeys[c.key] || c.key)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-ink-500 dark:text-ink-400">{c.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()
+          ) : null}
 
           {healthLoading ? (
             <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>

@@ -138,11 +138,23 @@ birinde marj > 0), `{items, doneCount, total, complete}`. Panel üstünde `surfa
 **Doğrulama:** `npm run build` yeşil; lint yeni hata yok (45→45); `computeOnboardingState` node ile
 0/5·5/5·kısmi senaryoları doğrulandı.
 
-### ☐ P1.9 — Operatör durum sayfası (S14)
-`/super-admin` "Sistem" sekmesi: `system-health` + scraper son başarı/yaş · dual-write hata kuyruğu
-(`getDualWriteErrors`) · Supabase drift (`compareInstitutionDrift`) · migration durumu · son hydrate ·
-expiring sayısı · audit-zinciri OK. Tek `GET /api/admin/ops-overview` toplayıcı. Kırmızı/amber/yeşil rozetler
-(`success`/`warning`/`danger`).
+### ☑ P1.9 — Operatör durum sayfası (S14)
+`supabaseSync.js`: `getMigrationStatus()` — yerel `migrations/*.sql` ↔ Supabase `schema_migrations`
+karşılaştırması, erişilemezse `status:'unknown'` (hata yutulur). `server.js`: `GET /api/admin/ops-overview`
+(requireSuperAdmin) — 8 sinyal için trafik ışığı (`ok`/`warn`/`down`/`unknown`) + genel özet:
+scraper (`ratesHealth`, 6 sa eşiği), dual-write kuyruğu, Supabase drift, Supabase erişimi + son hydrate
+(`bootState`), audit zinciri (`verifyAuditChain`), migration, yaklaşan bitişler (`listExpiringSubscriptions(7)`,
+bilgi amaçlı). Mevcut sinyaller yeniden kullanıldı — `system-health` değişmedi.
+Frontend: `auth.js` `fetchAdminOpsOverview`; `SuperAdminDashboard` "Sistem Sağlığı" sekmesinin üstüne
+durum şeridi — genel banner (yeşil/amber/kırmızı) + 8 kontrol kartı (renkli nokta + detay).
+`loadSystemHealth` içinde paralel yüklenir. i18n `ops*` (TR+EN).
+**Doğrulama:** `node --check` server.js + supabaseSync.js temiz; `getMigrationStatus()` node ile çalıştı
+(`schema_migrations` yok → `unknown`, `total:3` doğru — S14'ün yakalaması gereken sinyal); `npm run build`
+yeşil; lint yeni hata yok.
+
+---
+
+**FAZ 1 TAMAM** (P1.1–P1.9). Sıra: Faz 2 — çekirdek ürün.
 
 ---
 
