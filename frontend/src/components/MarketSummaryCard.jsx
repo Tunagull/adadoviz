@@ -17,6 +17,7 @@ import { useLanguage } from "../context/LanguageContext";
 import { trackCurrencyView } from "../lib/analytics";
 import { apiUrl } from "../lib/api";
 import { useScrollLock } from "../hooks/useScrollLock";
+import { rateTrendSentence } from "../lib/rateNarrative";
 
 /*
   ⚠️ OPTİMİZASYON (O-01b): "Piyasa Özeti" grafiği kendi dosyasına taşındı ve
@@ -914,6 +915,12 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
               <span className={`mt-1 text-base font-bold md:text-xl ${displayPercentage >= 0 ? 'text-success-700 dark:text-success-400' : 'text-danger-700 dark:text-danger-400'}`}>
                 {displayPercentage >= 0 ? '+' : ''}{displayPercentage.toFixed(2)}%
               </span>
+              <p
+                className="mt-1.5 max-w-[36ch] text-center text-xs text-ink-600 dark:text-ink-300"
+                aria-live="polite"
+              >
+                {rateTrendSentence({ currency, period, percent: displayPercentage, lang })}
+              </p>
             </div>
 
             {/* Büyük Grafik Wrapper'ı - Tüm sekmeler için sabit yükseklik */}
