@@ -168,6 +168,39 @@ async function sendPasswordResetEmail({ to, resetUrl, institutionName }) {
   }
 }
 
+/**
+ * P1.5 — genel amaçlı in-app bildirim e-postası. Minimal inline şablon;
+ * P1.6'da ortak `renderEmailShell` ile değiştirilecek.
+ */
+async function sendGenericNotificationEmail({ to, title, message, ctaText, ctaUrl }) {
+  const safeTitle = escapeHtml(title || "AdaDöviz");
+  const safeMessage = escapeHtml(message || "").replace(/\n/g, "<br />");
+  const cta =
+    ctaText && ctaUrl
+      ? `<p style="margin:20px 0 0;"><a href="${escapeHtml(ctaUrl)}" style="display:inline-block;padding:10px 16px;background:#55555f;color:#fff;text-decoration:none;border-radius:8px;">${escapeHtml(ctaText)}</a></p>`
+      : "";
+  const html = `
+    <div style="font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#1c1c22;">
+      <h2 style="margin:0 0 4px;">${safeTitle}</h2>
+      <hr style="border:none;border-top:1px solid #e5e5ea;margin:12px 0;" />
+      <p style="line-height:1.6;">${safeMessage}</p>
+      ${cta}
+      <hr style="border:none;border-top:1px solid #e5e5ea;margin:20px 0 8px;" />
+      <p style="color:#94a3b8;font-size:12px;">AdaDöviz — ${escapeHtml(getFrontendBaseUrl())}</p>
+    </div>
+  `;
+
+  const fromUser = getGmailUser();
+  const info = await getTransporter().sendMail({
+    from: `"AdaDöviz" <${fromUser}>`,
+    to,
+    subject: `AdaDöviz — ${String(title || "Bildirim").replace(/[\r\n]+/g, " ").trim().slice(0, 120)}`,
+    html,
+  });
+  console.log(`[EMAIL] Bildirim gönderildi (${to}):`, info.messageId);
+  return { success: true, messageId: info.messageId };
+}
+
 function logMailConfigOnBoot() {
   console.log(
     `[EMAIL] Yapılandırma: configured=${isMailConfigured()} user=${getGmailUser() || "(yok)"} frontend=${getFrontendBaseUrl()}`
@@ -177,6 +210,7 @@ function logMailConfigOnBoot() {
 module.exports = {
   sendPartnershipEmail,
   sendPasswordResetEmail,
+  sendGenericNotificationEmail,
   buildPartnershipDefaultMessage,
   isMailConfigured,
   getFrontendBaseUrl,

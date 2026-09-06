@@ -325,6 +325,33 @@ export async function markBusinessNotificationsRead(token, ids) {
   return data;
 }
 
+export async function fetchAdminNotifications(token) {
+  const response = await fetch(apiUrl("/api/admin/notifications"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Bildirimler alınamadı.");
+  }
+  return data;
+}
+
+export async function markAdminNotificationsRead(token, ids) {
+  const response = await fetch(apiUrl("/api/admin/notifications/mark-read"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(ids ? { ids } : {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Bildirimler işaretlenemedi.");
+  }
+  return data;
+}
+
 export async function fetchAdminBusinesses(token) {
   const response = await fetch(apiUrl("/api/admin/businesses"), {
     headers: authHeaders(token),

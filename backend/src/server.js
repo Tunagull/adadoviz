@@ -53,6 +53,9 @@ const {
   listBusinessNotifications,
   countUnreadBusinessNotifications,
   markBusinessNotificationsRead,
+  listAdminNotifications,
+  countUnreadAdminNotifications,
+  markAdminNotificationsRead,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -127,6 +130,7 @@ const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } 
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
 const { sendPartnershipEmail, sendPasswordResetEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { runSubscriptionReminders } = require("./jobs/subscriptionReminders");
 const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
 const {
@@ -1389,6 +1393,37 @@ app.post("/api/business/notifications/mark-read", requireAuth, (req, res) => {
     return res.json(markBusinessNotificationsRead(full.id, ids));
   } catch (err) {
     return res.status(400).json({ error: err.message || "Okundu işaretlenemedi." });
+  }
+});
+
+/** Super Admin: operatör bildirimleri (P1.5) */
+app.get("/api/admin/notifications", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({
+      notifications: listAdminNotifications({ limit: 50 }),
+      unread: countUnreadAdminNotifications(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Bildirimler alınamadı." });
+  }
+});
+
+app.post("/api/admin/notifications/mark-read", requireSuperAdmin, (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
+    return res.json(markAdminNotificationsRead(ids));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Okundu işaretlenemedi." });
+  }
+});
+
+/** Manuel tetik — test/operasyon için. */
+app.post("/api/admin/notifications/run-reminders", requireSuperAdmin, async (_req, res) => {
+  try {
+    const result = await runSubscriptionReminders();
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Hatırlatmalar çalıştırılamadı." });
   }
 });
 
@@ -3541,6 +3576,20 @@ async function startServer() {
   }, REFRESH_INTERVAL_MS);
 
   console.log(`[SCHEDULER] ✅ KKTC Merkez Bankası bülten takibi başlatıldı (${REFRESH_INTERVAL_MS / 1000}s aralık)`);
+
+  /** P1.5: abonelik-bitiş hatırlatmaları — günde bir, boot'tan ~30 sn sonra ilk koşu. */
+  const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  setTimeout(() => {
+    runSubscriptionReminders().catch((err) =>
+      console.error("[SCHEDULER] subscriptionReminders ilk koşu hatası:", err.message)
+    );
+  }, 30_000);
+  setInterval(() => {
+    runSubscriptionReminders().catch((err) =>
+      console.error("[SCHEDULER] subscriptionReminders hatası:", err.message)
+    );
+  }, REMINDER_INTERVAL_MS);
+  console.log("[SCHEDULER] ✅ Abonelik hatırlatma job'ı başlatıldı (24s aralık)");
 }
 
 /**

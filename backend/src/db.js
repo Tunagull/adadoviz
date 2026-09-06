@@ -654,6 +654,20 @@ function initDb({ skipBusinessSeed = false } = {}) {
     )
   `);
 
+  // P1.5: superadmin (operatör) bildirimleri — business_notifications ile eş şema,
+  // alıcı hep superadmin olduğu için business_id yerine serbest data_json.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL,
+      data_json TEXT,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -3946,6 +3960,114 @@ function markBusinessNotificationsRead(businessId, ids) {
   return { ok: true, unread: countUnreadBusinessNotifications(id) };
 }
 
+/**
+ * P1.5 — dedup yardımcısı: belirli bir işletmeye, verilen türde bir bildirim
+ * son `withinHours` saat içinde zaten yazılmış mı? (abonelik hatırlatması günde
+ * bir çalışsın diye).
+ */
+function hasRecentBusinessNotification(businessId, type, withinHours = 20) {
+  const id = Number(businessId);
+  if (!Number.isFinite(id)) return false;
+  const hrs = Math.max(1, Math.min(24 * 365, Number(withinHours) || 20));
+  const row = db
+    .prepare(
+      `SELECT 1 AS hit FROM business_notifications
+       WHERE business_id = ? AND type = ?
+         AND datetime(created_at) > datetime('now', ?)
+       LIMIT 1`
+    )
+    .get(id, String(type || "").trim(), `-${hrs} hours`);
+  return Boolean(row?.hit);
+}
+
+function mapAdminNotificationRow(row) {
+  if (!row) return null;
+  let data = null;
+  if (row.data_json) {
+    try {
+      data = JSON.parse(row.data_json);
+    } catch (_e) {
+      data = null;
+    }
+  }
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title || "",
+    message: row.message || "",
+    data,
+    is_read: row.is_read === 1 || row.is_read === true,
+    created_at: toIsoTimestamp(row.created_at),
+  };
+}
+
+function createAdminNotification({ type, title, message, data = null }) {
+  const nowIso = new Date().toISOString();
+  let dataJson = null;
+  if (data != null) {
+    try {
+      dataJson = JSON.stringify(data);
+    } catch (_e) {
+      dataJson = null;
+    }
+  }
+  const info = db
+    .prepare(
+      `INSERT INTO admin_notifications
+         (type, title, message, data_json, is_read, created_at)
+       VALUES (?, ?, ?, ?, 0, ?)`
+    )
+    .run(
+      String(type || "info").trim(),
+      String(title || "").trim(),
+      String(message || "").trim(),
+      dataJson,
+      nowIso
+    );
+  return mapAdminNotificationRow(
+    db.prepare(`SELECT * FROM admin_notifications WHERE id = ?`).get(info.lastInsertRowid)
+  );
+}
+
+function listAdminNotifications({ limit = 50, unreadOnly = false } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
+  const where = unreadOnly ? `WHERE COALESCE(is_read, 0) = 0` : ``;
+  return db
+    .prepare(
+      `SELECT * FROM admin_notifications
+       ${where}
+       ORDER BY datetime(created_at) DESC
+       LIMIT ?`
+    )
+    .all(lim)
+    .map(mapAdminNotificationRow);
+}
+
+function countUnreadAdminNotifications() {
+  const row = db
+    .prepare(
+      `SELECT COUNT(*) AS c FROM admin_notifications WHERE COALESCE(is_read, 0) = 0`
+    )
+    .get();
+  return Number(row?.c) || 0;
+}
+
+function markAdminNotificationsRead(ids) {
+  if (Array.isArray(ids) && ids.length > 0) {
+    const clean = ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+    if (!clean.length) return { ok: true, unread: countUnreadAdminNotifications() };
+    const placeholders = clean.map(() => "?").join(",");
+    db.prepare(
+      `UPDATE admin_notifications SET is_read = 1 WHERE id IN (${placeholders})`
+    ).run(...clean);
+  } else {
+    db.prepare(
+      `UPDATE admin_notifications SET is_read = 1 WHERE COALESCE(is_read, 0) = 0`
+    ).run();
+  }
+  return { ok: true, unread: countUnreadAdminNotifications() };
+}
+
 const DEFAULT_SEO_SETTINGS = {
   site_name: "AdaDöviz",
   title: "AdaDöviz | KKTC Döviz Kurları, Dolar TL, Euro Kur ve Döviz Bürosu",
@@ -4584,6 +4706,11 @@ module.exports = {
   listBusinessNotifications,
   countUnreadBusinessNotifications,
   markBusinessNotificationsRead,
+  hasRecentBusinessNotification,
+  createAdminNotification,
+  listAdminNotifications,
+  countUnreadAdminNotifications,
+  markAdminNotificationsRead,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,

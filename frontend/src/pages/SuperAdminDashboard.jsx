@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
 import {
@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Activity,
   AlertTriangle,
+  Bell,
   HeartPulse,
   Building2,
   Check,
@@ -47,6 +48,8 @@ import {
   fetchAdminPlans,
   fetchAdminExpiring,
   fetchAdminPartnershipApplications,
+  fetchAdminNotifications,
+  markAdminNotificationsRead,
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
@@ -234,6 +237,137 @@ function parseDateLoose(iso) {
   }
   const d = new Date(raw);
   return Number.isFinite(d.getTime()) ? d : null;
+}
+
+/** P1.5 — operatör bildirim çanı (InstitutionAdminPage çanının eşdeğeri). */
+function AdminNotificationBell({ token }) {
+  const { t, lang } = useLanguage();
+  const [notifications, setNotifications] = useState([]);
+  const [unread, setUnread] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const panelRef = useRef(null);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const data = await fetchAdminNotifications(token);
+      setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+      setUnread(Number(data.unread) || 0);
+    } catch (err) {
+      console.warn("[NOTIF] Operatör bildirimleri yüklenemedi:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 60000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => {
+      if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next) await load();
+  };
+
+  const markAll = async () => {
+    try {
+      const data = await markAdminNotificationsRead(token);
+      setUnread(Number(data.unread) || 0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    } catch (err) {
+      console.warn("[NOTIF] Okundu işaretlenemedi:", err.message);
+    }
+  };
+
+  const fmtDate = (iso) => {
+    const d = parseDateLoose(iso);
+    if (!d) return "—";
+    return d.toLocaleString(lang === "en" ? "en-GB" : "tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  return (
+    <div className="relative" ref={panelRef}>
+      <button
+        type="button"
+        onClick={toggle}
+        className="relative inline-flex size-10 items-center justify-center rounded-full border border-ink-200 bg-white text-ink-600 transition hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-300"
+        aria-label={t("notificationsTitle")}
+        title={t("notificationsTitle")}
+      >
+        <Bell className="size-4" />
+        {unread > 0 ? (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-bold text-white">
+            {unread > 99 ? "99+" : unread}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="absolute right-0 z-dropdown mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl dark:border-ink-700 dark:bg-ink-900">
+          <div className="flex items-center justify-between gap-2 border-b border-ink-200 px-3 py-2.5 dark:border-ink-800">
+            <p className="text-sm font-semibold text-ink-900 dark:text-white">
+              {t("notificationsTitle")}
+            </p>
+            {unread > 0 ? (
+              <button
+                type="button"
+                onClick={markAll}
+                className="text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300"
+              >
+                {t("notificationsMarkAllRead")}
+              </button>
+            ) : null}
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {loading && notifications.length === 0 ? (
+              <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+            ) : notifications.length === 0 ? (
+              <p className="p-4 text-sm text-ink-500 dark:text-ink-400">
+                {t("notificationsEmpty")}
+              </p>
+            ) : (
+              <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+                {notifications.map((n) => (
+                  <li
+                    key={n.id}
+                    className={`px-3 py-3 ${
+                      n.is_read ? "" : "bg-brand-500/5 dark:bg-brand-500/10"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
+                      {n.title || t("notificationsTitle")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-ink-600 dark:text-ink-300">{n.message}</p>
+                    <p className="mt-1 text-[10px] text-ink-600 dark:text-ink-400">
+                      {fmtDate(n.created_at)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function SubscriptionFields({ form, setForm }) {
@@ -1295,6 +1429,7 @@ export function SuperAdminDashboard() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <AdminNotificationBell token={token} />
           <HeaderActions />
           <SubscriptionLedgerButton
             active={ledgerView === "subscription"}
