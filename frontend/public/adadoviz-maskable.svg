@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AdaDöviz">
+  <title>AdaDöviz</title>
+  <!--
+    Maskable ikon: köşe yuvarlama YOK, arka plan tüm kareyi doldurur.
+    Simge içeriği merkezdeki güvenli alanda kalır ki Android/iOS farklı
+    maskeler (daire, squircle) uygularken kırpılmasın.
+  -->
+  <rect width="64" height="64" fill="#0a0a0c"/>
+  <g fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" transform="translate(12.8 12.8) scale(0.6)">
+    <path d="M18 25h22"/>
+    <path d="M34.5 19.5 40 25l-5.5 5.5"/>
+    <path d="M46 39H24" opacity=".88"/>
+    <path d="M29.5 33.5 24 39l5.5 5.5" opacity=".88"/>
+  </g>
+</svg>

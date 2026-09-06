@@ -7,6 +7,7 @@ import { OfficeSearchProvider } from "./context/OfficeSearchContext";
 import { V0FinancialDashboard } from "./components/V0FinancialDashboard";
 import { CinematicFooter } from "./components/ui/motion-footer";
 import { CookieConsent } from "./components/CookieConsent";
+import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 import { SiteDownbar } from "./components/SiteDownbar";
 import { SeoHead } from "./components/SeoHead";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -139,6 +140,7 @@ function AppShell() {
       {!adminRoute ? <CinematicFooter /> : null}
       {!adminRoute ? <SiteDownbar /> : null}
       {!adminRoute ? <CookieConsent /> : null}
+      {!adminRoute ? <PwaInstallPrompt /> : null}
     </div>
   );
 }

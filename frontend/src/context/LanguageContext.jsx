@@ -701,6 +701,10 @@ const dictionaries = {
     mapAllCities: "Tüm şehirler",
     mapEmpty: "Bu filtreyle eşleşen şube yok.",
     mapBranchCount: "{n} şube",
+    pwaInstallTitle: "AdaDöviz'i ana ekrana ekle",
+    pwaInstallBody: "Tek dokunuşla güncel kurlar — uygulama gibi açılır, mağaza gerekmez.",
+    pwaInstallAction: "Ekle",
+    pwaInstallDismiss: "Şimdi değil",
   },
   en: {
     navRates: "Rates",
@@ -1396,6 +1400,10 @@ const dictionaries = {
     mapAllCities: "All cities",
     mapEmpty: "No branch matches this filter.",
     mapBranchCount: "{n} branches",
+    pwaInstallTitle: "Add AdaDöviz to your home screen",
+    pwaInstallBody: "Live rates in one tap — opens like an app, no store needed.",
+    pwaInstallAction: "Add",
+    pwaInstallDismiss: "Not now",
   },
 };
 

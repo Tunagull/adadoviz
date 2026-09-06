@@ -188,10 +188,20 @@ i18n `map*` + `navMap` (TR+EN). `vendor-map` chunk zaten vardı (admin kullanıy
 dev sunucuda `/harita` render + pin popup (kur tablosu, yol tarifi, detay) tarayıcıda doğrulandı,
 konsol hatasız.
 
-### ☐ P2.3 — PWA (C4)
-`vite-plugin-pwa` (CDN değil, dev dep) veya elle `manifest.webmanifest` + hafif service worker
-(`public/sw.js`, network-first `/api/kurlar` cache). İkonlar `public/`'te SVG var → PNG maskable üret.
-`index.html` manifest link + tema rengi (`#08080a`). "Ana ekrana ekle" ipucu (bir kez, `localStorage`).
+### ☑ P2.3 — PWA (C4)
+Elle (plugin yok): `public/manifest.webmanifest` (standalone, `theme/background #08080a`, `any`+`maskable`
+ikon, `/en-iyi-kur` + `/harita` shortcut'ları), `public/adadoviz-maskable.svg` (köşe yuvarlamasız,
+merkezde güvenli alan — PNG rasterize aracı yok, modern Chrome/Android SVG manifest ikonunu kabul ediyor),
+`public/sw.js` hafif SW: shell precache + `install`/`activate` sürüm temizliği, `/api/kurlar` network-first
+(10 sn timeout → çevrimdışında bayat kopya), diğer `/api/*` dokunulmuyor, `/assets/*` cache-first, SPA
+gezinme network-first → offline'da `index.html`. `main.jsx` yalnızca `import.meta.env.PROD` iken
+`/sw.js` register (dev'de HMR çakışması yok). `index.html`: manifest link + `theme-color` + apple-mobile
+meta'ları. `components/PwaInstallPrompt.jsx`: `beforeinstallprompt` yakalar, `CookieConsent` dilinde şerit,
+"Ekle" → yerleşik diyalog, "Şimdi değil"/`appinstalled` → `localStorage: adadoviz:pwa-dismissed` (bir kez),
+standalone açıldıysa render yok. `App.jsx` public rotalarda render. `vercel.json`: `/sw.js` `no-cache` +
+`Service-Worker-Allowed`, manifest `Content-Type`. i18n `pwaInstall*` (TR+EN).
+**Doğrulama:** `npm run build` yeşil (dist'te `sw.js`+`manifest.webmanifest`+maskable ikon, index'te
+manifest link); `node --check public/sw.js` temiz; lint 45→45.
 
 ### ☐ P2.4 — Hızlı marj girişi (B2)
 `/admin` marj ekranı: "Dünküyle aynı" butonu · toplu (tüm para birimlerine aynı yüzde) · "yayınlanan kuru
