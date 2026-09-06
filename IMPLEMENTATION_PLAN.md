@@ -35,14 +35,51 @@ kompakt kart + genişletilmiş modal başlığında, `aria-live` bölgesinde. (O
 ziyaretlerini de olay olarak say — P2.5.)
 
 ### ☐ P1.5 — Bildirim omurgası + abonelik-bitiş bildirimi (B4, kısmen S10/S13)
-- `notifications` genel tablo (`0003`): `recipient_type` (business|superadmin), `recipient_id`, `type`,
-  `title`, `body`, `data_json`, `is_read`, `created_at`. Mevcut `business_notifications`'ı bunun üstüne map'le
-  veya migrate et.
-- `backend/src/notifications.js`: `notify({recipientType, recipientId, type, ...})` — in-app satır + (opsiyonel)
-  e-posta. `emitBusinessNotification` / `emitAdminNotification`.
-- `backend/src/jobs/subscriptionReminders.js`: günlük `setInterval` (server.js scheduler'ına ekle) —
-  `listExpiringSubscriptions` → 7/3/1 gün kala bir kez bildirim + e-posta (`sent_reminders` dedup).
-- Frontend: `/admin` panelinde bildirim çanı zaten var; superadmin paneline de aynı bileşen.
+
+**Karar:** `business_notifications` iyi çalışıyor (şema: `business_id`=institutions.id NUMERİK PK,
+`type,title,message,related_request_id,is_read,created_at`; `createBusinessNotification({...})`;
+`GET /api/business/notifications` → `{notifications, unread}`; frontend çanı `InstitutionAdminPage.jsx`
+zaten tüketiyor). Yeniden yazma YOK. Yanına eş şemalı `admin_notifications` ekle.
+
+**Backend:**
+1. `db.js`:
+   - `CREATE TABLE IF NOT EXISTS admin_notifications` — `business_notifications` ile aynı sütunlar,
+     `business_id` yerine sadece PK+meta (recipient hep superadmin). initDb'de sırf `CREATE IF NOT EXISTS`.
+   - `createAdminNotification({type,title,message,data_json?})`, `listAdminNotifications({limit,unreadOnly})`,
+     `countUnreadAdminNotifications()`, `markAdminNotificationsRead(ids)` — `business_notifications`
+     eşdeğerlerini kopyala. `module.exports`'a ekle.
+   - `hasRecentBusinessNotification(businessId, type, withinHours)` — dedup için
+     (`SELECT 1 ... WHERE business_id=? AND type=? AND created_at > datetime('now', ?)`).
+2. `backend/src/notifications.js` (yeni): ince sarmalayıcı.
+   - `emitBusinessNotification(businessNumericId, {type,title,message,email})` → `createBusinessNotification`
+     + `email` verildiyse `sendGenericNotificationEmail` (P1.6'da gelen `renderEmailShell`; P1.5'te
+     minimal inline şablon yeterli). Hata yutma: e-posta patlarsa in-app kaydı yine dursun.
+   - `emitAdminNotification({type,title,message})` → `createAdminNotification`.
+3. `backend/src/jobs/subscriptionReminders.js` (yeni):
+   - `runSubscriptionReminders()` — `listExpiringSubscriptions(8)` (institution_id=slug döndürüyor;
+     numerik id + email için `findAdminByUsername`/`listBusinesses()` ile eşle — `listBusinesses()`
+     satırında `.id` + `.email` var).
+   - Eşik: `days_remaining` ∈ {7,3,1,0} → `type = 'subscription_reminder'`,
+     dedup `hasRecentBusinessNotification(id,'subscription_reminder',-20h)` (günde bir).
+     `days_remaining < 0` (süresi geçmiş, hâlâ aktif) → ilk kez `type='subscription_expired'`.
+   - Her tetiklemede `emitAdminNotification` ile operatöre özet ("3 abonelik 7 gün içinde bitiyor").
+4. `server.js`:
+   - Scheduler bloğuna (≈ satır 3538, `REFRESH_INTERVAL_MS` `setInterval`'in yanına):
+     `setInterval(runSubscriptionReminders, 24*60*60*1000)` + boot'tan ~30 sn sonra bir kez çalıştır.
+   - `GET /api/admin/notifications` + `POST /api/admin/notifications/mark-read` (requireSuperAdmin).
+   - `POST /api/admin/notifications/run-reminders` (requireSuperAdmin, manuel tetik — test için).
+5. `supabaseSync.js`: `admin_notifications` opsiyonel — Supabase'e senkronlamak istersen `0004` migration
+   + `syncAdminNotification`. İlk sürümde atlanabilir (superadmin bildirimleri kritik-kalıcı değil);
+   NOT olarak bırak.
+
+**Frontend:**
+- `SuperAdminDashboard.jsx`: `InstitutionAdminPage`'deki çan bileşeninin birebir kopyası —
+  `GET /api/admin/notifications`, unread rozet, panel, "tümünü okundu işaretle". Aynı i18n key'leri
+  (`notificationsTitle`, `notificationsMarkAllRead`, …) yeniden kullan; eksikse ekle.
+- Yeni i18n: `subscriptionReminderTitle/Body` (TR+EN), abonelik-bitiş bildirim metinleri.
+
+**Doğrulama:** `node --check`; initDb temiz; `runSubscriptionReminders()` elle çağrılıp
+`business_notifications`/`admin_notifications` satırları + dedup kontrol; `npm run build`.
 
 ### ☐ P1.6 — İşlemsel e-postalar (S13)
 `email.js`: `sendWelcomeEmail` (hesap onaylanınca), `sendSubscriptionReminderEmail`, `sendPaymentReceiptEmail`,
