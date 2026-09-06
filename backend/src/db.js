@@ -708,6 +708,32 @@ function initDb({ skipBusinessSeed = false } = {}) {
        ON analytics_events (institution_id, created_at)`
   );
 
+  // P3.1: self-signup başvuruları (B1). /kayit → başvuru kaydı; hesap YOK.
+  // Superadmin Onayla → createBusiness. migrations/0005 ile eş şema.
+  // Supabase sync yok (admin_notifications/support_tickets gerekçesi —
+  // e-posta + emitAdminNotification zaten operatörü haberdar eder).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS signup_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      institution_name TEXT NOT NULL,
+      contact_person TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      city TEXT,
+      current_rate_info TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      reject_reason TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      created_business_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS signup_requests_status_idx
+       ON signup_requests (status, created_at)`
+  );
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -5013,6 +5039,148 @@ function getMarketHealth({ staleDays = 7 } = {}) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// P3.1 — self-signup başvuruları (signup_requests)
+// ---------------------------------------------------------------------------
+
+const SIGNUP_STATUSES = new Set(["pending", "approved", "rejected"]);
+
+function mapSignupRequestRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    institution_name: row.institution_name || "",
+    contact_person: row.contact_person || "",
+    email: row.email || "",
+    phone: row.phone || "",
+    city: row.city || null,
+    current_rate_info: row.current_rate_info || null,
+    status: SIGNUP_STATUSES.has(row.status) ? row.status : "pending",
+    reject_reason: row.reject_reason || null,
+    reviewed_by: row.reviewed_by || null,
+    reviewed_at: row.reviewed_at ? toIsoTimestamp(row.reviewed_at) : null,
+    created_business_id: row.created_business_id == null ? null : Number(row.created_business_id),
+    created_at: toIsoTimestamp(row.created_at),
+  };
+}
+
+/**
+ * Public başvuru kaydı. Anti-abuse:
+ *  - aynı e-posta / telefon / kurum adıyla BEKLEYEN başvuru varsa reddet
+ *  - o kurum adı / e-posta zaten institutions'ta kayıtlıysa reddet
+ */
+function createSignupRequest({
+  institution_name,
+  contact_person,
+  email,
+  phone,
+  city = null,
+  current_rate_info = null,
+}) {
+  const name = String(institution_name || "").trim().slice(0, 160);
+  const person = String(contact_person || "").trim().slice(0, 120);
+  const mail = String(email || "").trim().toLowerCase().slice(0, 160);
+  const tel = String(phone || "").replace(/[^\d+() \-]/g, "").trim().slice(0, 40);
+  const cityClean = city ? String(city).trim().slice(0, 40) : null;
+  const rateInfo = current_rate_info ? String(current_rate_info).trim().slice(0, 1000) : null;
+
+  if (!name || !person || !mail || !tel) {
+    throw new Error("Kurum adı, yetkili, e-posta ve telefon zorunludur.");
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
+    throw new Error("Geçerli bir e-posta girin.");
+  }
+  const digits = tel.replace(/\D/g, "");
+  if (digits.length < 7) {
+    throw new Error("Geçerli bir telefon numarası girin.");
+  }
+
+  const dupPending = db
+    .prepare(
+      `SELECT 1 FROM signup_requests
+        WHERE status = 'pending'
+          AND (lower(email) = ? OR replace(replace(replace(replace(phone,' ',''),'-',''),'(',''),')','') = ?
+               OR lower(institution_name) = lower(?))
+        LIMIT 1`
+    )
+    .get(mail, digits, name);
+  if (dupPending) {
+    throw new Error("Bu bilgilerle zaten bekleyen bir başvurunuz var. İnceliyoruz.");
+  }
+
+  const existingBiz = db
+    .prepare(
+      `SELECT 1 FROM institutions
+        WHERE lower(institution_name) = lower(?) OR lower(email) = ?
+        LIMIT 1`
+    )
+    .get(name, mail);
+  if (existingBiz) {
+    throw new Error("Bu kurum ya da e-posta zaten kayıtlı. Şifrenizi mi unuttunuz?");
+  }
+
+  const info = db
+    .prepare(
+      `INSERT INTO signup_requests
+         (institution_name, contact_person, email, phone, city, current_rate_info, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+    )
+    .run(name, person, mail, tel, cityClean, rateInfo);
+
+  return mapSignupRequestRow(
+    db.prepare(`SELECT * FROM signup_requests WHERE id = ?`).get(info.lastInsertRowid)
+  );
+}
+
+function listSignupRequests({ status, limit = 200 } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const where = status && SIGNUP_STATUSES.has(String(status)) ? `WHERE status = ?` : "";
+  const args = where ? [String(status)] : [];
+  return db
+    .prepare(
+      `SELECT * FROM signup_requests ${where}
+       ORDER BY datetime(created_at) DESC
+       LIMIT ?`
+    )
+    .all(...args, lim)
+    .map(mapSignupRequestRow);
+}
+
+function getSignupRequestById(id) {
+  return mapSignupRequestRow(
+    db.prepare(`SELECT * FROM signup_requests WHERE id = ?`).get(Number(id))
+  );
+}
+
+function countPendingSignupRequests() {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS c FROM signup_requests WHERE status = 'pending'`)
+    .get();
+  return Number(row?.c) || 0;
+}
+
+function updateSignupRequestStatus(id, { status, reject_reason, reviewed_by, created_business_id } = {}) {
+  const existing = getSignupRequestById(id);
+  if (!existing) throw new Error("Başvuru bulunamadı.");
+  const s = String(status || "").trim();
+  if (!SIGNUP_STATUSES.has(s) || s === "pending") {
+    throw new Error("Geçersiz başvuru durumu.");
+  }
+  db.prepare(
+    `UPDATE signup_requests
+        SET status = ?, reject_reason = ?, reviewed_by = ?, reviewed_at = datetime('now'),
+            created_business_id = ?
+      WHERE id = ?`
+  ).run(
+    s,
+    s === "rejected" ? String(reject_reason || "").trim().slice(0, 1000) || null : null,
+    String(reviewed_by || "").trim().slice(0, 80) || null,
+    created_business_id != null ? Number(created_business_id) : null,
+    Number(id)
+  );
+  return getSignupRequestById(id);
+}
+
 module.exports = {
   initDb,
   seedAdminsIfNeeded,
@@ -5059,6 +5227,11 @@ module.exports = {
   recordAnalyticsEvent,
   getBusinessAnalytics,
   getMarketHealth,
+  createSignupRequest,
+  listSignupRequests,
+  getSignupRequestById,
+  countPendingSignupRequests,
+  updateSignupRequestStatus,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,

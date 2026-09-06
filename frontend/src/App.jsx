@@ -48,6 +48,9 @@ const PricingPage = lazy(() =>
 const PartnershipPage = lazy(() =>
   import("./pages/PartnershipPage").then((m) => ({ default: m.PartnershipPage }))
 );
+const SignupPage = lazy(() =>
+  import("./pages/SignupPage").then((m) => ({ default: m.SignupPage }))
+);
 const ResetPasswordPage = lazy(() =>
   import("./pages/ResetPassword").then((m) => ({ default: m.ResetPasswordPage }))
 );
@@ -125,6 +128,8 @@ function AppShell() {
               <Route path="/paketler" element={<PricingPage />} />
               <Route path="/iletisim" element={<ContactPage />} />
               <Route path="/partnerlik" element={<PartnershipPage />} />
+              <Route path="/kayit" element={<SignupPage />} />
+              <Route path="/signup" element={<Navigate to="/kayit" replace />} />
               <Route path="/doviz-burosu/:slug" element={<ExchangeOfficePage />} />
               <Route path="/admin" element={<InstitutionAdminPage />} />
               <Route path="/super-admin" element={<SuperAdminDashboard />} />

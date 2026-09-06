@@ -377,6 +377,44 @@ export async function fetchSupportTickets(token) {
   return data?.tickets || [];
 }
 
+export async function fetchAdminSignupRequests(token, status) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await fetch(apiUrl(`/api/admin/signup-requests${qs}`), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Başvurular alınamadı.");
+  }
+  return { requests: data?.requests || [], pending: Number(data?.pending) || 0 };
+}
+
+export async function approveSignupRequest(token, id, payload) {
+  const response = await fetch(apiUrl(`/api/admin/signup-requests/${id}/approve`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Başvuru onaylanamadı.");
+  }
+  return data;
+}
+
+export async function rejectSignupRequest(token, id, reason) {
+  const response = await fetch(apiUrl(`/api/admin/signup-requests/${id}/reject`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ reason: reason || "" }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Başvuru reddedilemedi.");
+  }
+  return data;
+}
+
 export async function fetchAdminMarketHealth(token, staleDays = 7) {
   const response = await fetch(
     apiUrl(`/api/admin/market-health?staleDays=${Number(staleDays) || 7}`),

@@ -243,6 +243,20 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   {loading ? t("loggingIn") : t("loginButton")}
                 </button>
               </div>
+
+              <p className="pt-1 text-center text-xs text-ink-500 dark:text-ink-400">
+                {t("signupNoAccount")}{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    navigate("/kayit");
+                  }}
+                  className="font-semibold text-brand-500 transition-colors hover:text-brand-400"
+                >
+                  {t("signupNoAccountCta")}
+                </button>
+              </p>
             </form>
           </>
         )}

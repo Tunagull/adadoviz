@@ -19,6 +19,7 @@ import {
   Search,
   Shield,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -54,6 +55,9 @@ import {
   fetchAdminSupportTickets,
   updateAdminSupportTicket,
   fetchAdminOpsOverview,
+  fetchAdminSignupRequests,
+  approveSignupRequest,
+  rejectSignupRequest,
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
@@ -601,6 +605,7 @@ export function SuperAdminDashboard() {
       { id: "list", label: t("tabList") },
       { id: "create", label: t("tabCreate") },
       { id: "requests", label: t("tabRequests") },
+      { id: "signups", label: t("tabSignups") },
       /*
         ⚠️ HATA DÜZELTMESİ (R-01): `revenue`, `expiring`, `plans` ve
         `partnershipApps` her panel açılışında `loadRevenue` ile çekiliyor ama
@@ -780,6 +785,86 @@ export function SuperAdminDashboard() {
     },
     [token, loadRevenue]
   );
+
+  // P3.1 — self-signup başvuru kuyruğu
+  const [signupRequests, setSignupRequests] = useState([]);
+  const [signupPending, setSignupPending] = useState(0);
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupError, setSignupError] = useState("");
+  const [signupActingId, setSignupActingId] = useState(null);
+  const [signupForm, setSignupForm] = useState({});
+
+  const loadSignupRequests = useCallback(async () => {
+    if (!token) return;
+    setSignupLoading(true);
+    setSignupError("");
+    try {
+      const data = await fetchAdminSignupRequests(token);
+      setSignupRequests(data.requests || []);
+      setSignupPending(Number(data.pending) || 0);
+    } catch (err) {
+      setSignupError(err.message || t("statsLoadFailedMsg"));
+    } finally {
+      setSignupLoading(false);
+    }
+  }, [token, t]);
+
+  useEffect(() => {
+    if (tab !== "signups" || !token) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const data = await fetchAdminSignupRequests(token);
+        if (!alive) return;
+        setSignupRequests(data.requests || []);
+        setSignupPending(Number(data.pending) || 0);
+        setSignupError("");
+      } catch (err) {
+        if (alive) setSignupError(err.message || t("statsLoadFailedMsg"));
+      } finally {
+        if (alive) setSignupLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [tab, token, t]);
+
+  const handleSignupApprove = async (id) => {
+    if (!token) return;
+    setSignupActingId(id);
+    setError("");
+    try {
+      const cfg = signupForm[id] || {};
+      await approveSignupRequest(token, id, {
+        subscription_type: cfg.subscription_type || "Test",
+        branch_limit: cfg.branch_limit ? Number(cfg.branch_limit) : undefined,
+      });
+      setSuccess(t("signupAdminApproved"));
+      await loadSignupRequests();
+    } catch (err) {
+      setError(err.message || t("signupAdminActionFailed"));
+    } finally {
+      setSignupActingId(null);
+    }
+  };
+
+  const handleSignupReject = async (id) => {
+    if (!token) return;
+    const reason = window.prompt(t("signupAdminRejectPrompt")) ?? null;
+    if (reason === null) return;
+    setSignupActingId(id);
+    setError("");
+    try {
+      await rejectSignupRequest(token, id, reason);
+      setSuccess(t("signupAdminRejected"));
+      await loadSignupRequests();
+    } catch (err) {
+      setError(err.message || t("signupAdminActionFailed"));
+    } finally {
+      setSignupActingId(null);
+    }
+  };
 
   const loadBranchRequests = useCallback(async () => {
     if (!token) return;
@@ -2472,6 +2557,141 @@ export function SuperAdminDashboard() {
                             <X size={14} />
                             {t("rejectRequestBtn")}
                           </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* P3.1 — self-signup başvuru kuyruğu (onay → hesap oluşturur). */}
+      {tab === "signups" && (
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
+            <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
+              <UserPlus size={18} className="text-brand-600 dark:text-brand-400" />
+              <h2 className="font-semibold">{t("tabSignups")}</h2>
+              {signupPending > 0 ? (
+                <span className="rounded-full bg-danger-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {signupPending}
+                </span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={loadSignupRequests}
+              className="text-xs text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
+            >
+              {t("refresh")}
+            </button>
+          </div>
+
+          {signupLoading ? (
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+          ) : signupError ? (
+            <p className="p-6 text-sm text-danger-700 dark:text-danger-300">{signupError}</p>
+          ) : signupRequests.length === 0 ? (
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("signupAdminEmpty")}</p>
+          ) : (
+            <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+              {signupRequests.map((r) => {
+                const statusLabel =
+                  r.status === "approved"
+                    ? t("requestStatusApproved")
+                    : r.status === "rejected"
+                      ? t("requestStatusRejected")
+                      : t("requestStatusPending");
+                const statusClass =
+                  r.status === "approved"
+                    ? "text-success-700 dark:text-success-400"
+                    : r.status === "rejected"
+                      ? "text-danger-700 dark:text-danger-400"
+                      : "text-warning-600 dark:text-warning-400";
+                const cfg = signupForm[r.id] || {};
+                return (
+                  <li
+                    key={r.id}
+                    className={`px-4 py-4 ${r.status === "pending" ? "bg-brand-500/5 dark:bg-brand-500/10" : ""}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-semibold text-ink-900 dark:text-white">{r.institution_name}</p>
+                        <p className="text-xs text-ink-500 dark:text-ink-400">
+                          {r.contact_person} · {r.email} · {r.phone}
+                        </p>
+                        {r.city ? (
+                          <p className="text-xs text-ink-500 dark:text-ink-400">{r.city}</p>
+                        ) : null}
+                        {r.current_rate_info ? (
+                          <p className="text-xs text-ink-500 dark:text-ink-400 line-clamp-2">
+                            {r.current_rate_info}
+                          </p>
+                        ) : null}
+                        <p className="text-[11px] text-ink-600 dark:text-ink-400">
+                          {t("requestCreatedAt")}: {formatRequestDateTime(r.created_at)}
+                        </p>
+                        <p className={`text-xs font-semibold ${statusClass}`}>
+                          {statusLabel}
+                          {r.reject_reason ? ` — ${r.reject_reason}` : ""}
+                        </p>
+                      </div>
+                      {r.status === "pending" ? (
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={cfg.subscription_type || "Test"}
+                              onChange={(e) =>
+                                setSignupForm((prev) => ({
+                                  ...prev,
+                                  [r.id]: { ...prev[r.id], subscription_type: e.target.value },
+                                }))
+                              }
+                              className="rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-xs dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200"
+                            >
+                              {["Test", "Ücretsiz", "Aylık", "Yıllık"].map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder={t("signupAdminBranchLimit")}
+                              value={cfg.branch_limit || ""}
+                              onChange={(e) =>
+                                setSignupForm((prev) => ({
+                                  ...prev,
+                                  [r.id]: { ...prev[r.id], branch_limit: e.target.value },
+                                }))
+                              }
+                              className="w-20 rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-xs dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={signupActingId === r.id}
+                              onClick={() => handleSignupApprove(r.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-success-500/40 bg-success-500/10 px-3 py-1.5 text-xs font-semibold text-success-700 transition hover:bg-success-500/20 disabled:opacity-50 dark:text-success-300"
+                            >
+                              <Check size={14} />
+                              {t("signupAdminApprove")}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={signupActingId === r.id}
+                              onClick={() => handleSignupReject(r.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-semibold text-danger-700 transition hover:bg-danger-500/20 disabled:opacity-50 dark:text-danger-300"
+                            >
+                              <X size={14} />
+                              {t("signupAdminReject")}
+                            </button>
+                          </div>
                         </div>
                       ) : null}
                     </div>

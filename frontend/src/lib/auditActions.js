@@ -37,6 +37,8 @@ const AUDIT_ACTION_LABELS = {
   payment_delete: { tr: "Ödeme silindi", en: "Payment deleted" },
   payment_backfill: { tr: "Geriye dönük tahsilat", en: "Payment backfill" },
   seo_update: { tr: "SEO ayarları güncellendi", en: "SEO settings updated" },
+  signup_approved: { tr: "Kayıt başvurusu onaylandı", en: "Signup approved" },
+  signup_rejected: { tr: "Kayıt başvurusu reddedildi", en: "Signup rejected" },
 };
 
 /** Bilinmeyen action kodları da okunabilir görünsün: snake_case -> "Snake case". */

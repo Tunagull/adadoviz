@@ -65,6 +65,11 @@ const {
   recordAnalyticsEvent,
   getBusinessAnalytics,
   getMarketHealth,
+  createSignupRequest,
+  listSignupRequests,
+  getSignupRequestById,
+  countPendingSignupRequests,
+  updateSignupRequestStatus,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -138,7 +143,7 @@ const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./in
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, sendSignupReceivedEmail, sendSignupApprovedEmail, sendSignupRejectedEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
 const { runSubscriptionReminders } = require("./jobs/subscriptionReminders");
 const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
@@ -384,6 +389,12 @@ const supportLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 10,
   message: "Çok fazla destek talebi gönderildi. Lütfen bir saat sonra tekrar deneyin.",
+});
+// P3.1: self-signup başvurusu — public, hesap oluşturmaz ama e-posta + bildirim tetikler.
+const signupLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: "Çok fazla başvuru gönderildi. Lütfen bir saat sonra tekrar deneyin.",
 });
 
 /**
@@ -3202,6 +3213,205 @@ app.get("/api/business/subscription", requireAuth, (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Abonelik bilgisi alınamadı." });
+  }
+});
+
+/**
+ * P3.1 — self-signup başvurusu (B1). HESAP OLUŞTURMAZ; yalnızca kuyruk kaydı.
+ * Anti-abuse: honeypot alanı (`company_website`) dolu ise sessizce başarı dön;
+ * KVKK onayı zorunlu; tekrar/çakışma kontrolü db katmanında.
+ */
+app.post("/api/signup", signupLimiter, async (req, res) => {
+  try {
+    // Honeypot: gerçek kullanıcı bu gizli alanı görmez, botlar doldurur.
+    if (String(req.body?.company_website || "").trim()) {
+      return res.status(201).json({ ok: true });
+    }
+    if (req.body?.kvkk !== true && req.body?.kvkk !== "true") {
+      return res.status(400).json({ error: "Devam etmek için KVKK aydınlatma metnini onaylayın." });
+    }
+
+    const request = createSignupRequest({
+      institution_name: req.body?.institution_name,
+      contact_person: req.body?.contact_person,
+      email: req.body?.email,
+      phone: req.body?.phone,
+      city: req.body?.city,
+      current_rate_info: req.body?.current_rate_info,
+    });
+
+    try {
+      createAdminNotification({
+        type: "signup_request",
+        title: "Yeni kayıt başvurusu",
+        message: `${request.institution_name} — ${request.contact_person} (${request.email})`,
+        data: { signup_request_id: request.id },
+      });
+    } catch (nerr) {
+      console.warn("[SIGNUP] bildirim oluşturulamadı:", nerr.message);
+    }
+
+    if (isMailConfigured()) {
+      sendSignupReceivedEmail({
+        to: request.email,
+        institutionName: request.institution_name,
+        contactPerson: request.contact_person,
+      }).catch((e) => console.warn("[SIGNUP] alındı e-postası gönderilemedi:", e.message));
+    }
+
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Başvuru gönderilemedi." });
+  }
+});
+
+/** Super Admin: kayıt başvuruları kuyruğu. */
+app.get("/api/admin/signup-requests", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      requests: listSignupRequests({ status: req.query?.status, limit: req.query?.limit }),
+      pending: countPendingSignupRequests(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Başvurular alınamadı." });
+  }
+});
+
+/**
+ * Super Admin: başvuruyu ONAYLA → createBusiness + parola-belirleme linki
+ * (reset token akışı yeniden kullanılır). Audit strict.
+ */
+app.post("/api/admin/signup-requests/:id/approve", requireSuperAdmin, async (req, res) => {
+  try {
+    const request = getSignupRequestById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Başvuru bulunamadı." });
+    if (request.status !== "pending") {
+      return res.status(409).json({ error: "Bu başvuru zaten sonuçlandırılmış." });
+    }
+
+    const emailLocal = String(request.email).split("@")[0] || "";
+    const username =
+      String(req.body?.username || "").trim() ||
+      `${emailLocal}`.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 40) ||
+      `biz${request.id}`;
+
+    // Rastgele geçici parola — kullanıcı e-postadaki linkle kendi parolasını belirler.
+    const tempPassword = crypto.randomBytes(24).toString("hex");
+
+    const business = createBusiness({
+      username,
+      password: tempPassword,
+      institution_name: request.institution_name,
+      contact_person: request.contact_person,
+      email: request.email,
+      subscription_type: req.body?.subscription_type || "Test",
+      remaining_days: req.body?.remaining_days,
+      branch_limit: req.body?.branch_limit,
+      is_active: true,
+    });
+
+    const full = getInstitutionFullById(business.id);
+    if (full) {
+      const synced = await syncInstitutionUpsert(full);
+      if (!synced) {
+        console.error(
+          `[SIGNUP] İşletme SQLite'a yazıldı ama Supabase sync başarısız: ${full.institution_id}`
+        );
+      }
+    }
+
+    // Parola belirleme linki (forgot-password ile aynı token akışı).
+    let setPasswordUrl = null;
+    try {
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+      createPasswordResetToken({
+        institutionId: business.id,
+        email: request.email,
+        token,
+        expiresAt,
+      });
+      await syncPasswordReset({
+        institution_id: business.id,
+        institution_slug: business.institution_id,
+        email: request.email,
+        token: hashResetToken(token),
+        expires_at: expiresAt,
+        used: false,
+      });
+      setPasswordUrl = `${getFrontendBaseUrl()}/reset-password?token=${token}`;
+    } catch (terr) {
+      console.warn("[SIGNUP] parola belirleme linki üretilemedi:", terr.message);
+    }
+
+    updateSignupRequestStatus(request.id, {
+      status: "approved",
+      reviewed_by: req.user?.username || "superadmin",
+      created_business_id: business.id,
+    });
+
+    await recordAudit(
+      {
+        action: "signup_approved",
+        actor: req.user?.username || "superadmin",
+        institution_id: business.institution_id || null,
+        institution_name: business.institution_name || null,
+        detail: `Kayıt başvurusu onaylandı (#${request.id}, paket=${business.subscription_type || "Test"}, şube limiti=${business.branch_limit ?? 1})`,
+      },
+      { strict: true }
+    );
+
+    if (isMailConfigured()) {
+      sendSignupApprovedEmail({
+        to: request.email,
+        institutionName: business.institution_name,
+        setPasswordUrl,
+      }).catch((e) => console.warn("[SIGNUP] onay e-postası gönderilemedi:", e.message));
+    }
+
+    return res.status(201).json({ business, setPasswordUrl });
+  } catch (err) {
+    return res.status(400).json({ error: clientErrorMessage(err, "Başvuru onaylanamadı.") });
+  }
+});
+
+/** Super Admin: başvuruyu REDDET (sebep + e-posta). Audit strict. */
+app.post("/api/admin/signup-requests/:id/reject", requireSuperAdmin, async (req, res) => {
+  try {
+    const request = getSignupRequestById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Başvuru bulunamadı." });
+    if (request.status !== "pending") {
+      return res.status(409).json({ error: "Bu başvuru zaten sonuçlandırılmış." });
+    }
+    const reason = String(req.body?.reason || "").trim();
+
+    updateSignupRequestStatus(request.id, {
+      status: "rejected",
+      reject_reason: reason,
+      reviewed_by: req.user?.username || "superadmin",
+    });
+
+    await recordAudit(
+      {
+        action: "signup_rejected",
+        actor: req.user?.username || "superadmin",
+        institution_name: request.institution_name || null,
+        detail: `Kayıt başvurusu reddedildi (#${request.id})${reason ? ` — ${reason}` : ""}`,
+      },
+      { strict: true }
+    );
+
+    if (isMailConfigured()) {
+      sendSignupRejectedEmail({
+        to: request.email,
+        institutionName: request.institution_name,
+        reason,
+      }).catch((e) => console.warn("[SIGNUP] ret e-postası gönderilemedi:", e.message));
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Başvuru reddedilemedi." });
   }
 });
 

@@ -270,16 +270,32 @@ P2.5 ◐ (`search_impression` yayıncısı ertelendi) · P2.6 ◐ (inline manuel
 
 ## FAZ 3 — büyüme motorları
 
-### ☐ P3.1 — Self-signup (superadmin ONAYLI) (B1)  ⚠️ kullanıcı özellikle istedi
-- Public `/kayit` sayfası: kurum adı, yetkili, e-posta, telefon, şehir, (opsiyonel) mevcut kur bilgisi,
-  KVKK onayı. `POST /api/signup` → `signup_requests` tablosu (`durum: beklemede`), rate-limit,
-  `sendSignupReceivedEmail` + `emitAdminNotification`. **Hesap OLUŞTURULMAZ.**
-- `/super-admin` "Başvurular" kuyruğu (partnerlik başvuruları ekranının yanına / birleşik): incele →
-  **Onayla** (`createBusiness` + rastgele parola + `sendSignupApprovedEmail` parola-belirleme linkiyle
-  [reset token akışını yeniden kullan] + `branch_limit`/plan seç) · **Reddet** (sebep + e-posta).
-- Anti-abuse: aynı e-posta/telefon/kurum-adı için tekrar başvuru engeli, honeypot alan, basit soru.
-- Audit: `signup_approved` / `signup_rejected` (strict).
-- Tasarım: `/partnerlik` sayfasının form dilini birebir kullan (`FloatingInput`, `role="alert"`).
+### ☑ P3.1 — Self-signup (superadmin ONAYLI) (B1)  ⚠️ kullanıcı özellikle istedi
+`migrations/0005_signup_requests.sql` + `db.js` initDb eş tablo (Supabase sync yok — e-posta +
+`createAdminNotification` operatörü zaten haberdar eder). `db.js`: `createSignupRequest` (alan
+temizliği + anti-abuse: aynı e-posta/telefon/kurum-adıyla BEKLEYEN başvuru VEYA `institutions`'ta zaten
+kayıtlı e-posta/ad → reddet), `listSignupRequests`, `getSignupRequestById`, `countPendingSignupRequests`,
+`updateSignupRequestStatus` (pending→approved/rejected, `reviewed_at`, `created_business_id`).
+`server.js`: `signupLimiter` (3/sa); `POST /api/signup` (public) — honeypot `company_website` dolu ise
+sessiz 201, KVKK zorunlu, `createSignupRequest` + `createAdminNotification({type:'signup_request'})` +
+`sendSignupReceivedEmail` (guarded). **HESAP OLUŞTURULMAZ.** `GET /api/admin/signup-requests`
+(requireSuperAdmin, `?status`, pending sayısı); `POST /api/admin/signup-requests/:id/approve` —
+`createBusiness` (username = e-posta local-part, rastgele hex parola, `subscription_type`/`branch_limit`
+seçilir) + `syncInstitutionUpsert` + forgot-password token akışıyla 72 sa geçerli parola-belirleme linki
+(`syncPasswordReset` sha256) + `sendSignupApprovedEmail` + `updateSignupRequestStatus` +
+`recordAudit('signup_approved', {strict})`; `.../reject` — sebep + `sendSignupRejectedEmail` +
+`recordAudit('signup_rejected', {strict})`. Frontend: lazy rota `/kayit` → `pages/SignupPage.jsx`
+(`/partnerlik` form dili — `FloatingInput/Select/Textarea`, `role="alert"`, honeypot gizli input, KVKK
+checkbox, şehir `CITY_LABELS`'ten, başarı ekranı); `App.jsx` `/kayit` + `/signup`→`/kayit`; `lib/auth.js`
+`fetchAdminSignupRequests`/`approveSignupRequest`/`rejectSignupRequest`; `SuperAdminDashboard` yeni
+"Kayıt Başvuruları" sekmesi (pending rozeti + satır başına paket/şube seçimi + Onayla/Reddet, ret sebebi
+`window.prompt`); `BusinessLoginModal` "Hesabınız yok mu? Büronuzu ekletin" → `/kayit`; `auditActions.js`
+`signup_approved`/`signup_rejected` etiketleri. i18n `signup*` + `tabSignups` + `signupAdmin*` (TR+EN).
+E-posta şablonları P1.6'da hazırdı (`sendSignup{Received,Approved,Rejected}Email`).
+**Doğrulama:** `node --check` server.js + db.js; node ile tam akış (createSignupRequest → dup-engeli →
+createBusiness → createPasswordResetToken → updateSignupRequestStatus) doğrulandı, test satırları
+temizlendi; `npm run build` yeşil (SignupPage 5.3 kB lazy chunk, SuperAdminDashboard 111→116 kB);
+lint 45→45.
 
 ### ☐ P3.2 — Kur alarmı sistemi (C3)
 - `rate_alerts` tablosu: `email`, `currency`, `side`, `direction` (above|below), `threshold`, `active`,
