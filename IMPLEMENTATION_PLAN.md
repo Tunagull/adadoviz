@@ -92,11 +92,21 @@ zaten tüketiyor). Yeniden yazma YOK. Yanına eş şemalı `admin_notifications`
 **Doğrulama:** `node --check`; initDb temiz; `runSubscriptionReminders()` elle çağrılıp
 `business_notifications`/`admin_notifications` satırları + dedup kontrol; `npm run build`.
 
-### ☐ P1.6 — İşlemsel e-postalar (S13)
-`email.js`: `sendWelcomeEmail` (hesap onaylanınca), `sendSubscriptionReminderEmail`, `sendPaymentReceiptEmail`,
-`sendBranchRequestResultEmail`, `sendSignupReceivedEmail` (başvuru alındı) + `sendSignupApproved/RejectedEmail`.
-Ortak HTML şablonu (`renderEmailShell(title, bodyHtml, cta?)`) — mevcut inline stiller yerine tek yerden.
-Marka: mat siyah başlık, `#55555f` buton (gradyan token'ıyla uyumlu).
+### ☑ P1.6 — İşlemsel e-postalar (S13)
+`email.js`: ortak `renderEmailShell(title, bodyHtml, cta?)` (mat siyah `#08080a` başlık, `#55555f` buton,
+tablo-tabanlı, tr-TR tarih/tutar biçimi) + tek çıkış noktası `sendBrandedMail` ("AdaDöviz — " öneki, CRLF
+temizliği). Mevcut `sendPasswordResetEmail` + `sendGenericNotificationEmail` bu şablona taşındı
+(`sendPartnershipEmail` dahili operatör kutusu — dokunulmadı). Yeni: `sendWelcomeEmail`,
+`sendSubscriptionReminderEmail`, `sendSubscriptionExpiredEmail`, `sendPaymentReceiptEmail`,
+`sendBranchRequestResultEmail`, `sendSignupReceivedEmail`/`sendSignupApprovedEmail`/`sendSignupRejectedEmail`
+(signup üçlüsü export edildi, P3.1'de bağlanacak).
+Bağlantılar: `server.js` `POST /api/admin/businesses` → welcome; `PUT /api/admin/branch-requests/:id` →
+sonuç e-postası; `POST /api/admin/payments` (`durum==='odendi'`) → makbuz — hepsi `isMailConfigured()` korumalı,
+fire-and-forget (`.catch` yutar). `notifications.js` `emitBusinessNotification`'a opsiyonel `emailFn` eklendi;
+`jobs/subscriptionReminders.js` artık genel e-posta yerine dedike `sendSubscription{Reminder,Expired}Email`
+kullanıyor. E-postalar backend'de düz TR (P1.5 deseni — ayrı i18n yok).
+**Doğrulama:** `node --check` 4 dosya temiz; mock-transport ile 6 sender + `runSubscriptionReminders()`
+initDb'li koşu yeşil.
 
 ### ☐ P1.7 — Panel-içi destek / bildirim (B11)
 `/admin` + `/super-admin`: "Yardım / Sorun bildir" — `POST /api/support-tickets` (konu, mesaj, otomatik

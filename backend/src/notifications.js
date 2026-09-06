@@ -13,11 +13,12 @@ const { isMailConfigured, sendGenericNotificationEmail } = require("./email");
 
 /**
  * İşletmeye bildirim: in-app kayıt + (email verildiyse ve mail yapılandırılmışsa) e-posta.
+ * `emailFn` verilirse (P1.6 işlemsel şablonlar) genel e-posta yerine o çağrılır.
  * @param {number} businessNumericId institutions.id (NUMERİK PK)
- * @param {{type:string,title:string,message:string,email?:string,ctaText?:string,ctaUrl?:string}} opts
+ * @param {{type:string,title:string,message:string,email?:string,ctaText?:string,ctaUrl?:string,emailFn?:Function}} opts
  */
 async function emitBusinessNotification(businessNumericId, opts = {}) {
-  const { type, title, message, email, ctaText, ctaUrl } = opts;
+  const { type, title, message, email, ctaText, ctaUrl, emailFn } = opts;
   const record = createBusinessNotification({
     business_id: businessNumericId,
     type,
@@ -25,12 +26,16 @@ async function emitBusinessNotification(businessNumericId, opts = {}) {
     message,
   });
 
-  if (email && isMailConfigured()) {
+  if ((emailFn || email) && isMailConfigured()) {
     try {
-      await sendGenericNotificationEmail({ to: email, title, message, ctaText, ctaUrl });
+      if (typeof emailFn === "function") {
+        await emailFn();
+      } else {
+        await sendGenericNotificationEmail({ to: email, title, message, ctaText, ctaUrl });
+      }
     } catch (err) {
       console.warn(
-        `[NOTIF] emitBusinessNotification e-posta gönderilemedi (${email}):`,
+        `[NOTIF] emitBusinessNotification e-posta gönderilemedi (${email || "emailFn"}):`,
         err.message
       );
     }

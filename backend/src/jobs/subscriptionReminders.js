@@ -10,7 +10,11 @@ const {
   listBusinesses,
   hasRecentBusinessNotification,
 } = require("../db");
-const { getFrontendBaseUrl } = require("../email");
+const {
+  getFrontendBaseUrl,
+  sendSubscriptionReminderEmail,
+  sendSubscriptionExpiredEmail,
+} = require("../email");
 const { emitBusinessNotification, emitAdminNotification } = require("../notifications");
 
 const REMINDER_DAYS = new Set([7, 3, 1, 0]);
@@ -72,9 +76,16 @@ async function runSubscriptionReminders() {
           type: "subscription_reminder",
           title,
           message,
-          email: b.email || undefined,
-          ctaText: "Panele git",
-          ctaUrl: panelUrl,
+          emailFn: b.email
+            ? () =>
+                sendSubscriptionReminderEmail({
+                  to: b.email,
+                  institutionName: name,
+                  daysRemaining: d,
+                  endDate: b.subscription_end_date,
+                  panelUrl,
+                })
+            : undefined,
         });
         reminded += 1;
       } catch (err) {
@@ -89,9 +100,14 @@ async function runSubscriptionReminders() {
           type: "subscription_expired",
           title,
           message,
-          email: b.email || undefined,
-          ctaText: "Panele git",
-          ctaUrl: panelUrl,
+          emailFn: b.email
+            ? () =>
+                sendSubscriptionExpiredEmail({
+                  to: b.email,
+                  institutionName: name,
+                  panelUrl,
+                })
+            : undefined,
         });
         expired += 1;
       } catch (err) {

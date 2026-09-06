@@ -129,7 +129,7 @@ const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./in
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
 const { runSubscriptionReminders } = require("./jobs/subscriptionReminders");
 const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
@@ -1564,6 +1564,28 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
       } catch (notifyErr) {
         console.warn("[NOTIFICATIONS] branch request notify:", notifyErr.message);
       }
+
+      // P1.6 — işletmeye sonucu e-postayla bildir (hata yutulur).
+      if (isMailConfigured()) {
+        try {
+          const biz = getInstitutionFullById(existing.business_id);
+          if (biz?.email) {
+            sendBranchRequestResultEmail({
+              to: biz.email,
+              institutionName: biz.institution_name,
+              branchName: existing.branch_name,
+              approved: nextStatus === "approved",
+              isRenewal: isRenew,
+              adminNote: request.admin_note,
+              panelUrl: `${getFrontendBaseUrl()}/admin`,
+            }).catch((e) =>
+              console.warn("[EMAIL] şube talebi sonucu gönderilemedi:", e.message)
+            );
+          }
+        } catch (mailErr) {
+          console.warn("[EMAIL] şube talebi e-postası hazırlanamadı:", mailErr.message);
+        }
+      }
     }
 
     await syncBranchRequestUpsert(request);
@@ -1635,6 +1657,15 @@ app.post("/api/admin/businesses", requireSuperAdmin, async (req, res) => {
       institution_name: business.institution_name || null,
       detail: `Yeni işletme oluşturuldu (paket=${business.subscription_type || "Test"}, şube limiti=${business.branch_limit ?? 1})`,
     });
+    // P1.6 — hoş geldin e-postası (hata yutulur; hesap oluşturmayı bloklamaz).
+    if (business.email && isMailConfigured()) {
+      sendWelcomeEmail({
+        to: business.email,
+        institutionName: business.institution_name,
+        username: business.username,
+        loginUrl: `${getFrontendBaseUrl()}/admin`,
+      }).catch((e) => console.warn("[EMAIL] hoş geldin gönderilemedi:", e.message));
+    }
     return res.status(201).json({ business });
   } catch (err) {
     return res.status(400).json({ error: clientErrorMessage(err, "İşletme oluşturulamadı.") });
@@ -2681,6 +2712,31 @@ app.post("/api/admin/payments", requireSuperAdmin, async (req, res) => {
       institution_id: payment.institution_id,
       detail: `Tahsilat kaydedildi: ${payment.tutar} ₺ (${payment.plan_code}), dönem ${payment.donem_baslangic} → ${payment.donem_bitis}`,
     }, { strict: true });
+
+    // P1.6 — makbuz e-postası (yalnızca ödenmiş kayıtta; hata yutulur).
+    if (payment.durum === "odendi" && isMailConfigured()) {
+      try {
+        const biz = getInstitutionFullBySlug(payment.institution_id);
+        if (biz?.email) {
+          const plan = listPlans().find((p) => p.code === payment.plan_code);
+          sendPaymentReceiptEmail({
+            to: biz.email,
+            institutionName: biz.institution_name,
+            planName: plan?.ad,
+            planCode: payment.plan_code,
+            amount: payment.tutar,
+            vat: payment.kdv,
+            periodStart: payment.donem_baslangic,
+            periodEnd: payment.donem_bitis,
+            invoiceNo: payment.fatura_no,
+            method: payment.yontem,
+            paidAt: payment.odeme_tarihi,
+          }).catch((e) => console.warn("[EMAIL] makbuz gönderilemedi:", e.message));
+        }
+      } catch (mailErr) {
+        console.warn("[EMAIL] makbuz e-postası hazırlanamadı:", mailErr.message);
+      }
+    }
     return res.status(201).json({ payment });
   } catch (err) {
     return res.status(400).json({ error: clientErrorMessage(err, "Tahsilat kaydedilemedi.") });
