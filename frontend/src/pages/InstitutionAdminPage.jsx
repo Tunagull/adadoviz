@@ -195,6 +195,24 @@ function applyGranularMargin(kur, marginType, marginValue) {
   return base + m;
 }
 
+/** Marj yapısının derin kopyası — string değerler korunur (yükleme ile aynı biçim). */
+function cloneMarginConfig(cfg) {
+  const out = {};
+  for (const c of ["EUR", "USD", "GBP"]) {
+    out[c] = {
+      buy: {
+        type: cfg?.[c]?.buy?.type || "fixed",
+        value: String(cfg?.[c]?.buy?.value ?? "0"),
+      },
+      sell: {
+        type: cfg?.[c]?.sell?.type || "fixed",
+        value: String(cfg?.[c]?.sell?.value ?? "0"),
+      },
+    };
+  }
+  return out;
+}
+
 function sanitizeNonNegative(value) {
   if (value === "" || value === null || value === undefined) return "";
   const num = Number.parseFloat(value);
@@ -216,6 +234,13 @@ export function InstitutionAdminPage() {
     USD: { buy: { type: "fixed", value: "0" }, sell: { type: "fixed", value: "0" } },
     GBP: { buy: { type: "fixed", value: "0" }, sell: { type: "fixed", value: "0" } },
   });
+
+  // Son kaydedilmiş marj anlık görüntüsü — "son kayıtlıya dön" + "değişti mi" için.
+  const [savedMarginConfig, setSavedMarginConfig] = useState(null);
+  // Hızlı (toplu) marj girişi bar durumu.
+  const [bulkScope, setBulkScope] = useState("all"); // buy | sell | all
+  const [bulkType, setBulkType] = useState("percent"); // fixed | percent
+  const [bulkValue, setBulkValue] = useState("");
 
   const [centralBankRates, setCentralBankRates] = useState({
     EUR: { buy: null, sell: null },
@@ -436,6 +461,7 @@ export function InstitutionAdminPage() {
         }
         setCentralBankRates(cbRates);
         setMarginConfig(newMarginConfig);
+        setSavedMarginConfig(cloneMarginConfig(newMarginConfig));
         devLog("[ADMIN-LOAD] Marjlar başarıyla yüklendi:", newMarginConfig);
 
         // KKTC Merkez Bankası kurlarını çek
@@ -493,6 +519,40 @@ export function InstitutionAdminPage() {
         },
       },
     }));
+  };
+
+  const marginDirty = useMemo(() => {
+    if (!savedMarginConfig) return false;
+    return (
+      JSON.stringify(cloneMarginConfig(marginConfig)) !==
+      JSON.stringify(savedMarginConfig)
+    );
+  }, [marginConfig, savedMarginConfig]);
+
+  /** Toplu marj: seçilen tarafa (alış/satış/hepsi) tek tip + tek değer uygula. */
+  const applyBulkMargin = () => {
+    const val = sanitizeNonNegative(bulkValue);
+    if (val === "") return;
+    setSuccess("");
+    setMarginConfig((prev) => {
+      const next = cloneMarginConfig(prev);
+      for (const c of ["EUR", "USD", "GBP"]) {
+        if (bulkScope === "all" || bulkScope === "buy") {
+          next[c].buy = { type: bulkType, value: val };
+        }
+        if (bulkScope === "all" || bulkScope === "sell") {
+          next[c].sell = { type: bulkType, value: val };
+        }
+      }
+      return next;
+    });
+  };
+
+  /** Kaydedilmemiş marj düzenlemelerini son kayıtlı duruma geri al. */
+  const revertMargins = () => {
+    if (!savedMarginConfig) return;
+    setSuccess("");
+    setMarginConfig(cloneMarginConfig(savedMarginConfig));
   };
 
   const kalanAbonelikSuresi = useMemo(() => {
@@ -915,6 +975,7 @@ export function InstitutionAdminPage() {
       if (!auth?.token) throw new Error("Token bulunamadı");
       const response = await saveAdminRates(auth.token, payload);
       devLog("[ADMIN] Kaydetme başarılı:", response);
+      setSavedMarginConfig(cloneMarginConfig(marginConfig));
       
       // API'den dönen güncellenmiş veriyi state'e kaydet
       if (Array.isArray(response.currencies)) {
@@ -2047,6 +2108,84 @@ export function InstitutionAdminPage() {
         </div>
       ) : null}
 
+      {/* Hızlı (toplu) marj girişi — tezgah arkası mobil kullanım (B2). */}
+      {!ratesLocked ? (
+        <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-white/10 dark:bg-ink-900/60">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-ink-900 dark:text-white">
+              {t("quickMarginTitle")}
+            </h3>
+            <button
+              type="button"
+              onClick={revertMargins}
+              disabled={!marginDirty}
+              className="text-xs font-medium text-brand-600 transition-colors hover:text-brand-700 disabled:opacity-40 dark:text-brand-400"
+            >
+              {t("quickMarginRevert")}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">{t("quickMarginHint")}</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex rounded-control border border-ink-200 p-0.5 dark:border-white/15">
+              {["buy", "sell", "all"].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setBulkScope(s)}
+                  className={`min-h-[2.75rem] flex-1 rounded-[0.55rem] px-3 text-sm font-medium transition-colors ${
+                    bulkScope === s
+                      ? "bg-ink-900 text-white dark:bg-white dark:text-ink-950"
+                      : "text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white"
+                  }`}
+                >
+                  {t(
+                    s === "buy"
+                      ? "quickMarginBuy"
+                      : s === "sell"
+                        ? "quickMarginSell"
+                        : "quickMarginAll"
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-control border border-ink-200 p-0.5 dark:border-white/15">
+              {["fixed", "percent"].map((tp) => (
+                <button
+                  key={tp}
+                  type="button"
+                  onClick={() => setBulkType(tp)}
+                  className={`min-h-[2.75rem] flex-1 rounded-[0.55rem] px-4 text-sm font-medium transition-colors ${
+                    bulkType === tp
+                      ? "bg-ink-900 text-white dark:bg-white dark:text-ink-950"
+                      : "text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white"
+                  }`}
+                >
+                  {tp === "fixed" ? "TL" : "%"}
+                </button>
+              ))}
+            </div>
+            <FloatingInput
+              label={t("quickMarginValue")}
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={bulkValue}
+              onChange={(e) => setBulkValue(e.target.value)}
+              className="sm:w-40"
+            />
+            <button
+              type="button"
+              onClick={applyBulkMargin}
+              disabled={bulkValue === ""}
+              className="btn min-h-[2.75rem] justify-center disabled:opacity-40 sm:w-auto"
+            >
+              {t("quickMarginApply")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Granüler 6-Kalem Tablo */}
       <form onSubmit={handleSave} className="space-y-6">
         {/* ALIŞ KURLAR */}
@@ -2103,6 +2242,7 @@ export function InstitutionAdminPage() {
                     type="number"
                     min="0"
                     step="0.01"
+                    inputMode="decimal"
                     value={cfg.value}
                     disabled={ratesLocked}
                     onChange={(e) =>
@@ -2181,6 +2321,7 @@ export function InstitutionAdminPage() {
                       type="number"
                       min="0"
                       step="0.01"
+                      inputMode="decimal"
                       value={cfg.value}
                       disabled={ratesLocked}
                       onChange={(e) =>

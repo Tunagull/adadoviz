@@ -203,10 +203,21 @@ standalone açıldıysa render yok. `App.jsx` public rotalarda render. `vercel.j
 **Doğrulama:** `npm run build` yeşil (dist'te `sw.js`+`manifest.webmanifest`+maskable ikon, index'te
 manifest link); `node --check public/sw.js` temiz; lint 45→45.
 
-### ☐ P2.4 — Hızlı marj girişi (B2)
-`/admin` marj ekranı: "Dünküyle aynı" butonu · toplu (tüm para birimlerine aynı yüzde) · "yayınlanan kuru
-göster" canlı önizleme (zaten var mı kontrol) · mobil-öncelikli düzen (büyük dokunma hedefleri, sayısal
-klavye) · opsiyonel "şu saatte uygula" (zamanlanmış — `scheduled_adjustments` tablosu, job).
+### ◐ P2.4 — Hızlı marj girişi (B2)
+`InstitutionAdminPage.jsx` marj sekmesi, form üstünde `!ratesLocked` iken "Hızlı marj girişi" kartı:
+taraf segmenti (Alış/Satış/Hepsi) + tip toggle (TL/%) + tek `FloatingInput` (`inputMode="decimal"`) +
+"Uygula" → `applyBulkMargin` seçilen tarafın 3 para biriminin `marginConfig`'ini tek tip+değere set eder
+(alttan ince ayar hâlâ mümkün). Dokunma hedefleri `min-h-[2.75rem]`, mobilde dikey yığılır.
+"Son kayıtlıya dön" (`revertMargins`) — kaydedilmemiş düzenlemeleri son persist edilen `savedMarginConfig`
+anlık görüntüsüne geri alır (`marginDirty` memo ile pasif/aktif). `savedMarginConfig` yükleme +
+başarılı `saveAdminRates` sonrası `cloneMarginConfig` ile tazelenir. İki granüler marj input'una da
+`inputMode="decimal"`. "Yayınlanan kur canlı önizleme" zaten vardı (her kart "Final Kur & Kâr").
+Backend değişmedi — mevcut `saveAdminRates` payload'ı aynı. i18n `quickMargin*` (TR+EN).
+**Doğrulama:** `npm run build` yeşil; lint 45→45.
+**Ertelendi:** "şu saatte uygula" zamanlanmış değişiklik (`scheduled_adjustments` tablosu + job) —
+plan zaten "opsiyonel" diyor; backend tablo+job gerektirir, ayrı bir iş olarak bırakıldı.
+"Dünküyle aynı" → pratikte "son kayıtlıya dön" olarak yorumlandı (marjlar sunucuda kalıcı; günlük
+sıfırlanmıyor, dolayısıyla ayrı gün-bazlı geçmiş saklamaya gerek yok).
 
 ### ☐ P2.5 — İşletme analitik paneli (B3)
 Olay tablosu (`analytics_events`: `institution_id`, `event` [view|call|directions|whatsapp|search_impression],
