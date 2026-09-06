@@ -127,10 +127,16 @@ Frontend: `auth.js` `submitSupportTicket`/`fetchSupportTickets`/`fetchAdminSuppo
 mock-transport ile yeşil; `npm run build` yeşil (lint: mevcut desenle tek yeni `set-state-in-effect`,
 `loadSystemHealth` efektiyle aynı).
 
-### ☐ P1.8 — Onboarding checklist (B13)
-`/admin` üstünde ilerleme kartı: logo yüklendi mi · saatler girildi mi · en az 1 şube · marjlar ayarlandı mı ·
-telefon/adres tam mı. `computeOnboardingState(profile, branches, adjustments)` — `surface-card`, tik/daire,
-tamamlanınca gizlenir (`localStorage: adadoviz:onboarding-dismissed`).
+### ☑ P1.8 — Onboarding checklist (B13)
+`InstitutionAdminPage.jsx`: modül seviyesi `computeOnboardingState({logoUrl, hasWorkingHours, branches,
+marginConfig})` → 5 madde (logo · çalışma saatleri · ≥1 şube · şubede telefon+adres · EUR/USD/GBP'den
+birinde marj > 0), `{items, doneCount, total, complete}`. Panel üstünde `surface-card` kart:
+`CheckCircle2`/`Circle` + tamamlananlar üstü çizili, `doneCount/total`, `X` ile gizle
+(`localStorage: adadoviz:onboarding-dismissed`). `complete` veya dismissed ise render edilmez.
+`hasWorkingHours` profile-load efektinde set ediliyor; diğer veri zaten mount'ta yüklü
+(`profileLogoUrl`, `subscriptionBranches`, `marginConfig`). i18n `onboarding*` (TR+EN).
+**Doğrulama:** `npm run build` yeşil; lint yeni hata yok (45→45); `computeOnboardingState` node ile
+0/5·5/5·kısmi senaryoları doğrulandı.
 
 ### ☐ P1.9 — Operatör durum sayfası (S14)
 `/super-admin` "Sistem" sekmesi: `system-health` + scraper son başarı/yaş · dual-write hata kuyruğu

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell, LifeBuoy } from "lucide-react";
+import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell, LifeBuoy, CheckCircle2, Circle } from "lucide-react";
 import Cropper from "react-easy-crop";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -52,6 +52,32 @@ L.Icon.Default.mergeOptions({
 });
 
 const KKTC_MAP_CENTER = [35.2281, 33.5136];
+
+const ONBOARDING_DISMISS_KEY = "adadoviz:onboarding-dismissed";
+
+/**
+ * P1.8 — onboarding checklist (B13). Panel verisinden ilerleme durumu üretir.
+ */
+function computeOnboardingState({ logoUrl, hasWorkingHours, branches, marginConfig }) {
+  const list = Array.isArray(branches) ? branches : [];
+  const hasContact = list.some(
+    (b) => String(b?.phone || "").trim() && String(b?.address || "").trim()
+  );
+  const hasMargins = ["EUR", "USD", "GBP"].some((c) => {
+    const m = marginConfig?.[c];
+    if (!m) return false;
+    return [m.buy?.value, m.sell?.value].some((v) => Number(v) > 0);
+  });
+  const items = [
+    { key: "logo", labelKey: "onboardingLogo", done: Boolean(logoUrl) },
+    { key: "hours", labelKey: "onboardingHours", done: Boolean(hasWorkingHours) },
+    { key: "branch", labelKey: "onboardingBranch", done: list.length > 0 },
+    { key: "contact", labelKey: "onboardingContact", done: hasContact },
+    { key: "margins", labelKey: "onboardingMargins", done: hasMargins },
+  ];
+  const doneCount = items.filter((i) => i.done).length;
+  return { items, doneCount, total: items.length, complete: doneCount === items.length };
+}
 
 function BranchMapClickHandler({ onPick, disabled }) {
   useMapEvents({
@@ -274,6 +300,15 @@ export function InstitutionAdminPage() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const notifPanelRef = useRef(null);
+  // P1.8 — onboarding checklist
+  const [hasWorkingHours, setHasWorkingHours] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_DISMISS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   // P1.7 — panel-içi destek / sorun bildirimi
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [supportSubject, setSupportSubject] = useState("");
@@ -344,6 +379,7 @@ export function InstitutionAdminPage() {
         if (profile.branch_count != null) setBranchCount(Number(profile.branch_count) || 0);
         if (profile.working_hours && typeof profile.working_hours === "object") {
           setBusinessHours((prev) => ({ ...prev, ...profile.working_hours }));
+          setHasWorkingHours(Object.keys(profile.working_hours).length > 0);
         }
       } catch (err) {
         console.warn("[PROFILE] Yüklenemedi:", err.message);
@@ -1522,6 +1558,23 @@ export function InstitutionAdminPage() {
   const expired = isExpired;
   const nearExpiry = days != null && days <= 30;
 
+  const onboarding = computeOnboardingState({
+    logoUrl: profileLogoUrl,
+    hasWorkingHours,
+    branches: subscriptionBranches,
+    marginConfig,
+  });
+  const showOnboarding = !onboardingDismissed && !onboarding.complete;
+
+  const dismissOnboarding = () => {
+    setOnboardingDismissed(true);
+    try {
+      localStorage.setItem(ONBOARDING_DISMISS_KEY, "1");
+    } catch {
+      /* yok say */
+    }
+  };
+
   return (
     <div className="min-h-screen bg-ink-50 text-ink-800 dark:bg-ink-950 dark:text-white">
       {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
@@ -1672,6 +1725,52 @@ export function InstitutionAdminPage() {
           </button>
         </div>
       </div>
+
+      {showOnboarding ? (
+        <div className="surface-card mb-4 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-ink-900 dark:text-white">
+                {t("onboardingTitle")}{" "}
+                <span className="font-mono text-xs font-normal text-ink-500 tabular-nums dark:text-ink-400">
+                  {onboarding.doneCount}/{onboarding.total}
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-ink-500 dark:text-ink-400">
+                {t("onboardingSubtitle")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={dismissOnboarding}
+              className="shrink-0 rounded-lg p-1 text-ink-400 transition hover:bg-ink-100 hover:text-ink-600 dark:hover:bg-ink-800 dark:hover:text-ink-200"
+              aria-label={t("onboardingDismiss")}
+              title={t("onboardingDismiss")}
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <ul className="mt-3 space-y-1.5">
+            {onboarding.items.map((item) => (
+              <li
+                key={item.key}
+                className={`flex items-center gap-2 text-sm ${
+                  item.done
+                    ? "text-ink-400 line-through dark:text-ink-500"
+                    : "text-ink-700 dark:text-ink-200"
+                }`}
+              >
+                {item.done ? (
+                  <CheckCircle2 className="size-4 shrink-0 text-success-600 dark:text-success-400" />
+                ) : (
+                  <Circle className="size-4 shrink-0 text-ink-300 dark:text-ink-600" />
+                )}
+                {t(item.labelKey)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="flex gap-3 flex-wrap items-start">
         <button
