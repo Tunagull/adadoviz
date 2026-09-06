@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, MapPin, MessageCircle, Phone } from "lucide-react";
@@ -8,6 +8,7 @@ import { BrandLogo } from "../components/BrandLogo";
 import { useLanguage } from "../context/LanguageContext";
 import { apiUrl, mediaUrl } from "../lib/api";
 import { whatsappHref } from "../lib/contact";
+import { trackEvent } from "../lib/analytics";
 import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { cityDisplayName, exchangeOfficePath, extractCitySlug, slugify } from "../lib/slug";
 
@@ -103,6 +104,20 @@ export function ExchangeOfficePage() {
       "";
     return cityDisplayName(citySlug, lang);
   }, [branches, payload?.matchedBranchId, lang]);
+
+  // P2.5 — büro sayfası görüntülenme olayı: kurum başına bir kez.
+  const viewTrackedRef = useRef(null);
+  useEffect(() => {
+    const id = business?.id;
+    if (!id || viewTrackedRef.current === id) return;
+    viewTrackedRef.current = id;
+    trackEvent("view", { institutionId: id, city: primaryCity || undefined });
+  }, [business?.id, primaryCity]);
+
+  const trackOfficeAction = (event) => {
+    if (!business?.id) return;
+    trackEvent(event, { institutionId: business.id, city: primaryCity || undefined });
+  };
 
   const pageTitle = useMemo(() => {
     if (!displayName) return lang === "en" ? "Exchange Office | AdaDöviz" : "Döviz Bürosu | AdaDöviz";
@@ -223,6 +238,7 @@ export function ExchangeOfficePage() {
                       // U-01: telefon düz metindi; mobilde tıklanabilir olmalı.
                       <a
                         href={`tel:${String(branch.phone).replace(/[^\d+]/g, "")}`}
+                        onClick={() => trackOfficeAction("call")}
                         className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline dark:text-brand-300"
                       >
                         <Phone size={14} aria-hidden="true" />
@@ -242,6 +258,7 @@ export function ExchangeOfficePage() {
                           href={`https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => trackOfficeAction("directions")}
                           className="btn-ghost btn-sm min-h-[2.25rem]"
                         >
                           <MapPin size={14} aria-hidden="true" />
@@ -253,6 +270,7 @@ export function ExchangeOfficePage() {
                           href={whatsappHref(branch.whatsapp || branch.phone)}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => trackOfficeAction("whatsapp")}
                           className="btn-ghost btn-sm min-h-[2.25rem] text-success-600 dark:text-success-400"
                         >
                           <MessageCircle size={14} aria-hidden="true" />

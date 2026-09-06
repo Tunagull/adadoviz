@@ -219,11 +219,28 @@ plan zaten "opsiyonel" diyor; backend tablo+job gerektirir, ayrı bir iş olarak
 "Dünküyle aynı" → pratikte "son kayıtlıya dön" olarak yorumlandı (marjlar sunucuda kalıcı; günlük
 sıfırlanmıyor, dolayısıyla ayrı gün-bazlı geçmiş saklamaya gerek yok).
 
-### ☐ P2.5 — İşletme analitik paneli (B3)
-Olay tablosu (`analytics_events`: `institution_id`, `event` [view|call|directions|whatsapp|search_impression],
-`session_id`, `created_at`). Frontend büro detay + kartlarda bu olayları `POST /api/analytics/event`.
-`/admin` "Analiz" sekmesi: 7/30 gün zaman serisi (görüntüleme, tıklama türleri), şehir+para-birimi bazlı
-sıralaman, "USD'de Girne'de #3", dönüşüm. Recharts (lazy, zaten var).
+### ◐ P2.5 — İşletme analitik paneli (B3)
+`migrations/0004_analytics_events.sql` (Supabase) + `db.js` initDb eş tablo (Supabase sync yok —
+`admin_notifications` gerekçesi). `db.js`: `recordAnalyticsEvent({institution_id,event,session_id,
+currency,city})` (event whitelist: view|call|whatsapp|directions|search_impression; bilinmeyen/geçersiz
+id sessiz yok sayılır) + `getBusinessAnalytics(id,{days})` → gün ızgaralı `series` (boş günler 0) +
+`totals` + `byCurrency`/`byCity` (top 8). `server.js`: `POST /api/analytics/event` (analyticsLimiter,
+genel; `institution_id` numerik ya da slug → slug ise `getInstitutionFullBySlug` ile çözülür; analitik
+asla akışı bozmaz, her zaman 200) + `GET /api/business/analytics?days=7|30` (requireAuth,
+`req.user.institution_id` slug → `full.id`). Frontend: `lib/analytics.js` `trackEvent(event,{institutionId,
+currency,city})` (çerez onayı yoksa sessiz; `keepalive` fetch); `lib/auth.js` `fetchBusinessAnalytics`.
+Olay yayını: `ExchangeOfficePage` (kurum başına bir kez `view` + tel/yol-tarifi/WhatsApp linklerinde
+`call`/`directions`/`whatsapp`), `MapPage` popup (`directions`/`whatsapp`/`call` + `goToOffice`'te `view`),
+`BusinessDetailModal` (şube tel/WhatsApp → `call`/`whatsapp`). `components/BusinessAnalyticsPanel.jsx`:
+7/30 gün toggle + 4 toplam kartı + Recharts `ComposedChart` (view alanı + call/whatsapp/directions çizgi,
+`chartSkin`) + para-birimi/şehir sıralaması; `InstitutionAdminPage` marj formu ile işlem geçmişi arasında
+render. i18n `bizAnalytics*` (TR+EN).
+**Doğrulama:** `node --check` db.js + server.js; node ile `recordAnalyticsEvent`/`getBusinessAnalytics`
+(totals + gün ızgarası + kırılım) doğrulandı, test satırları temizlendi; `npm run build` yeşil
+(InstitutionAdminPage 72→80 kB, vendor-charts ayrı lazy chunk); lint 45→45.
+**Ertelendi:** `search_impression` olayı (arama sonucunda büro görünmesi) — V0 dashboard/OfficeSearch'e
+gürültülü olay yayını gerektirir; whitelist'te var, yayıncı bağlanmadı. "Dönüşüm hunisi" (ziyaret→lead)
+P3.4'e ait.
 
 ### ☐ P2.6 — Pazar yeri sağlığı UI (S2 + S3)
 `/super-admin` "Pazar Sağlığı": N gündür kur güncellemeyen bürolar · kur sanity-band dışı kalanlar ·

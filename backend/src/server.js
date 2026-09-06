@@ -62,6 +62,8 @@ const {
   getSupportTicketById,
   countOpenSupportTickets,
   updateSupportTicket,
+  recordAnalyticsEvent,
+  getBusinessAnalytics,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -2294,6 +2296,43 @@ app.put("/api/analytics/update", analyticsLimiter, (req, res) => {
   } catch (err) {
     const status = err.message === "Oturum bulunamadı." ? 404 : 400;
     return res.status(status).json({ error: err.message || "Güncelleme başarısız." });
+  }
+});
+
+/**
+ * P2.5 — tekil analitik olay (B3). Genel uç nokta; istemci çerez onayına göre
+ * gönderir. Bilinmeyen event / geçersiz kurum sessizce yok sayılır (200).
+ */
+app.post("/api/analytics/event", analyticsLimiter, (req, res) => {
+  try {
+    // institution_id numerik PK ya da slug olabilir — slug ise çöz.
+    let instId = req.body?.institution_id;
+    if (instId != null && instId !== "" && !/^\d+$/.test(String(instId))) {
+      instId = getInstitutionFullBySlug(String(instId))?.id ?? null;
+    }
+    recordAnalyticsEvent({
+      institution_id: instId,
+      event: req.body?.event,
+      session_id: req.body?.session_id,
+      currency: req.body?.currency,
+      city: req.body?.city,
+    });
+    return res.json({ ok: true });
+  } catch {
+    // Analitik hiçbir zaman kullanıcı akışını bozmasın.
+    return res.json({ ok: true });
+  }
+});
+
+/** P2.5 — işletmenin kendi analitik özeti (7/30 gün). */
+app.get("/api/business/analytics", requireAuth, (req, res) => {
+  try {
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    const days = Number(req.query?.days) === 30 ? 30 : 7;
+    return res.json(getBusinessAnalytics(full.id, { days }));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Analitik alınamadı." });
   }
 });
 

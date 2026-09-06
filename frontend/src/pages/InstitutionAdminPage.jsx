@@ -11,6 +11,7 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { ActivityLogPanel } from "../components/ActivityLogPanel";
+import { BusinessAnalyticsPanel } from "../components/BusinessAnalyticsPanel";
 import {
   fetchAdminRates,
   saveAdminRates,
@@ -2358,6 +2359,11 @@ export function InstitutionAdminPage() {
           </button>
         </div>
       </form>
+
+      {/* P2.5 — işletme analitik paneli (B3): görüntülenme, arama, yol tarifi, WhatsApp. */}
+      <div className="mt-8">
+        <BusinessAnalyticsPanel token={auth?.token} />
+      </div>
 
       {/*
         İşlem geçmişi: işletmenin kendi profilinde, kurlarında ve şubelerinde

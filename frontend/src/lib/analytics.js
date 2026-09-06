@@ -73,6 +73,34 @@ export function trackBusinessClick(businessName, businessId) {
   trackAnalyticsUpdate({ business: name || undefined, business_id: id || undefined });
 }
 
+/**
+ * P2.5 — işletme analitik olayı (B3): view | call | whatsapp | directions |
+ * search_impression. Çerez onayı yoksa sessizce atlanır; oturum kimliği varsa
+ * eklenir. Fire-and-forget (`keepalive` ile sayfa geçişinde de teslim edilir).
+ */
+export function trackEvent(event, { institutionId, currency, city } = {}) {
+  if (!hasAnalyticsConsent()) return;
+  const type = String(event || "").trim();
+  if (!type) return;
+  const body = {
+    event: type,
+    institution_id: institutionId != null ? Number(institutionId) : undefined,
+    session_id: getAnalyticsSessionId() || undefined,
+    currency: currency ? String(currency).toUpperCase() : undefined,
+    city: city ? String(city) : undefined,
+  };
+  try {
+    fetch(apiUrl("/api/analytics/event"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* analitik hiçbir zaman akışı bozmasın */
+  }
+}
+
 export function trackCurrencyView(currency) {
   const code = String(currency || "").trim().toUpperCase();
   if (!code) return;

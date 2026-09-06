@@ -16,7 +16,7 @@ import { apiUrl, fetchRatesWithRetry, mediaUrl } from "../lib/api";
 import { cityLabel } from "../lib/cities";
 import { whatsappHref, telHref } from "../lib/contact";
 import { buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
-import { trackBusinessClick } from "../lib/analytics";
+import { trackBusinessClick, trackEvent } from "../lib/analytics";
 
 import "leaflet/dist/leaflet.css";
 
@@ -266,8 +266,12 @@ export function MapPage() {
     );
   }, [t]);
 
+  const pinEvent = (p, event) =>
+    trackEvent(event, { institutionId: p.institution_id, city: cityLabel(p.city, lang) || undefined });
+
   const goToOffice = (p) => {
     trackBusinessClick(p.institutionName || p.name, p.institution_id);
+    pinEvent(p, "view");
     const slug = p.slug || buildBusinessSlug({ institutionId: p.institution_id, name: p.institutionName });
     navigate(exchangeOfficePath(slug), { state: { openDetail: true } });
   };
@@ -431,6 +435,7 @@ export function MapPage() {
                             href={`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={() => pinEvent(p, "directions")}
                           >
                             <Navigation size={13} aria-hidden="true" />
                             {t("mapDirections")}
@@ -441,11 +446,16 @@ export function MapPage() {
                               href={whatsappHref(p.whatsapp || p.phone)}
                               target="_blank"
                               rel="noopener noreferrer"
+                              onClick={() => pinEvent(p, "whatsapp")}
                             >
                               WhatsApp
                             </a>
                           ) : telHref(p.phone) ? (
-                            <a className="btn btn-ghost h-8 gap-1 text-xs" href={telHref(p.phone)}>
+                            <a
+                              className="btn btn-ghost h-8 gap-1 text-xs"
+                              href={telHref(p.phone)}
+                              onClick={() => pinEvent(p, "call")}
+                            >
                               <Phone size={13} aria-hidden="true" />
                               {t("phoneLabel")}
                             </a>

@@ -689,6 +689,25 @@ function initDb({ skipBusinessSeed = false } = {}) {
     )
   `);
 
+  // P2.5: işletme analitik olayları (B3). visitor_sessions oturum-özeti tutar;
+  // bu tablo tekil zaman damgalı olayları tutar (7/30 gün seri + kırılım).
+  // migrations/0004 ile eş şema; Supabase sync yok (admin_notifications gerekçesi).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS analytics_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      institution_id INTEGER,
+      event TEXT NOT NULL,
+      session_id TEXT,
+      currency TEXT,
+      city TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS analytics_events_inst_created_idx
+       ON analytics_events (institution_id, created_at)`
+  );
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -4819,6 +4838,116 @@ function listPartnershipApplications(limit = 200) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// P2.5 — işletme analitik olayları (analytics_events)
+// ---------------------------------------------------------------------------
+
+const ANALYTICS_EVENT_TYPES = new Set([
+  "view",
+  "call",
+  "whatsapp",
+  "directions",
+  "search_impression",
+]);
+
+/** Tek analitik olay yaz. Bilinmeyen event tipi / geçersiz id sessizce yok sayılır. */
+function recordAnalyticsEvent({
+  institution_id = null,
+  event,
+  session_id = null,
+  currency = null,
+  city = null,
+} = {}) {
+  const type = String(event || "").trim();
+  if (!ANALYTICS_EVENT_TYPES.has(type)) return null;
+  const instId = Number(institution_id);
+  const info = db
+    .prepare(
+      `INSERT INTO analytics_events (institution_id, event, session_id, currency, city)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(
+      Number.isFinite(instId) && instId > 0 ? instId : null,
+      type,
+      session_id ? String(session_id).slice(0, 80) : null,
+      currency ? String(currency).trim().toUpperCase().slice(0, 8) : null,
+      city ? String(city).trim().slice(0, 80) : null
+    );
+  return info.lastInsertRowid;
+}
+
+/**
+ * Bir işletmenin son N günlük analitiği:
+ *   { days, series:[{date, view, call, whatsapp, directions, search_impression}],
+ *     totals:{...}, byCurrency:[{currency,count}], byCity:[{city,count}] }
+ */
+function getBusinessAnalytics(institutionId, { days = 7 } = {}) {
+  const instId = Number(institutionId);
+  const win = Math.min(Math.max(Number(days) || 7, 1), 90);
+  const empty = {
+    days: win,
+    series: [],
+    totals: { view: 0, call: 0, whatsapp: 0, directions: 0, search_impression: 0 },
+    byCurrency: [],
+    byCity: [],
+  };
+  if (!Number.isFinite(instId) || instId <= 0) return empty;
+
+  const since = `-${win} days`;
+  const rows = db
+    .prepare(
+      `SELECT date(created_at) AS d, event, currency, city
+         FROM analytics_events
+        WHERE institution_id = ?
+          AND created_at >= datetime('now', ?)`
+    )
+    .all(instId, since);
+
+  // Gün ızgarasını doldur (boş günler 0).
+  const byDate = new Map();
+  for (let i = win - 1; i >= 0; i -= 1) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    byDate.set(d, {
+      date: d,
+      view: 0,
+      call: 0,
+      whatsapp: 0,
+      directions: 0,
+      search_impression: 0,
+    });
+  }
+  const totals = { view: 0, call: 0, whatsapp: 0, directions: 0, search_impression: 0 };
+  const currencyCounts = new Map();
+  const cityCounts = new Map();
+
+  for (const r of rows) {
+    if (totals[r.event] === undefined) continue;
+    totals[r.event] += 1;
+    const bucket = byDate.get(r.d);
+    if (bucket) bucket[r.event] += 1;
+    if (r.currency) {
+      currencyCounts.set(r.currency, (currencyCounts.get(r.currency) || 0) + 1);
+    }
+    if (r.city) {
+      cityCounts.set(r.city, (cityCounts.get(r.city) || 0) + 1);
+    }
+  }
+
+  const toRanked = (m, key) =>
+    [...m.entries()]
+      .map(([k, count]) => ({ [key]: k, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+
+  return {
+    days: win,
+    series: [...byDate.values()],
+    totals,
+    byCurrency: toRanked(currencyCounts, "currency"),
+    byCity: toRanked(cityCounts, "city"),
+  };
+}
+
 module.exports = {
   initDb,
   seedAdminsIfNeeded,
@@ -4862,6 +4991,8 @@ module.exports = {
   getSupportTicketById,
   countOpenSupportTickets,
   updateSupportTicket,
+  recordAnalyticsEvent,
+  getBusinessAnalytics,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,

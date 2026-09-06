@@ -377,6 +377,18 @@ export async function fetchSupportTickets(token) {
   return data?.tickets || [];
 }
 
+export async function fetchBusinessAnalytics(token, days = 7) {
+  const d = Number(days) === 30 ? 30 : 7;
+  const response = await fetch(apiUrl(`/api/business/analytics?days=${d}`), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Analitik alınamadı.");
+  }
+  return data;
+}
+
 export async function fetchAdminSupportTickets(token, status) {
   const qs = status ? `?status=${encodeURIComponent(status)}` : "";
   const response = await fetch(apiUrl(`/api/admin/support-tickets${qs}`), {
