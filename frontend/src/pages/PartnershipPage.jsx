@@ -1,6 +1,7 @@
 import { Helmet } from "react-helmet-async";
 import { BrandLogo } from "../components/BrandLogo";
 import { HeaderActions } from "../components/HeaderActions";
+import { MobileNav } from "../components/MobileNav";
 import { PartnershipForm } from "../components/PartnershipForm";
 import { SiteNav } from "../components/SiteNav";
 import { useLanguage } from "../context/LanguageContext";
@@ -30,6 +31,7 @@ export function PartnershipPage() {
           <BrandLogo className="min-w-0 shrink" />
           <SiteNav className="mr-auto ml-2" />
           <HeaderActions />
+          <MobileNav />
         </div>
       </header>
 

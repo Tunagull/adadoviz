@@ -5,6 +5,7 @@ import { Award, BellRing, ChevronRight } from "lucide-react";
 import { BrandLogo } from "../components/BrandLogo";
 import { SiteNav } from "../components/SiteNav";
 import { HeaderActions } from "../components/HeaderActions";
+import { MobileNav } from "../components/MobileNav";
 import { BuySellToggle } from "../components/BuySellToggle";
 import { RateAlertModal } from "../components/RateAlertModal";
 import { FloatingInput } from "../components/ui/floating-label";
@@ -200,6 +201,7 @@ export function BestRatePage() {
           <BrandLogo className="min-w-0 shrink" />
           <SiteNav className="mr-auto ml-2" />
           <HeaderActions />
+          <MobileNav />
         </div>
       </header>
 

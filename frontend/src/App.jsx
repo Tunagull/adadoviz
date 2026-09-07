@@ -7,7 +7,8 @@ import {
   useNavigate,
   useNavigationType,
 } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { BusinessLoginModal } from "./components/BusinessLoginModal";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider } from "./context/LanguageContext";
 import { OfficeSearchProvider } from "./context/OfficeSearchContext";
@@ -114,6 +115,7 @@ function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const adminRoute = isAdminRoute(location.pathname);
+  const { loginModalOpen, closeLoginModal } = useAuth();
 
   return (
     <div className="flex min-h-screen flex-col bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
@@ -183,6 +185,9 @@ function AppShell() {
       {!adminRoute ? <SiteDownbar /> : null}
       {!adminRoute ? <CookieConsent /> : null}
       {!adminRoute ? <PwaInstallPrompt /> : null}
+
+      {/* İşletme girişi modalı global: her sayfanın başlığı / mobil menüsü açar. */}
+      <BusinessLoginModal isOpen={loginModalOpen} onClose={closeLoginModal} />
     </div>
   );
 }

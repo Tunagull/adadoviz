@@ -11,7 +11,6 @@ import {
 import { Area, CartesianGrid, ComposedChart, Line, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartHoverCard, ChartSwatch, ChartTooltip } from "./ui/chart";
 import { chartSkin, hollowDot } from "../lib/chartTheme";
-import { HeaderActions } from "./HeaderActions";
 import { useTheme } from "../context/ThemeContext";
 import { useLanguage } from "../context/LanguageContext";
 import { trackCurrencyView } from "../lib/analytics";
@@ -866,7 +865,6 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute right-2 top-2 z-dropdown flex items-center gap-1.5 sm:right-3 sm:top-3 sm:gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}

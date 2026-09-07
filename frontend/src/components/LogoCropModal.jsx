@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import Cropper from "react-easy-crop";
 import { X } from "lucide-react";
-import { HeaderActions } from "./HeaderActions";
 
 async function createImage(url) {
   return new Promise((resolve, reject) => {
@@ -82,7 +81,6 @@ export function LogoCropModal({ imageSrc, onConfirm, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-          <HeaderActions compact />
           <button
             type="button"
             onClick={onClose}

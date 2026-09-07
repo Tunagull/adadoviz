@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, MapPin, MessageCircle, Phone } from "lucide-react";
 import { BusinessDetailModal } from "../components/BusinessDetailModal";
 import { HeaderActions } from "../components/HeaderActions";
+import { MobileNav } from "../components/MobileNav";
 import { BrandLogo } from "../components/BrandLogo";
 import { useLanguage } from "../context/LanguageContext";
 import { apiUrl, mediaUrl } from "../lib/api";
@@ -172,13 +173,14 @@ export function ExchangeOfficePage() {
             <BrandLogo className="min-w-0 shrink" />
             <Link
               to="/"
-              className="inline-flex items-center gap-1.5 rounded-full border border-ink-300 px-3 py-1 text-xs font-semibold text-ink-700 transition hover:border-brand-400 hover:text-brand-700 dark:border-white/10 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-300"
+              className="hidden items-center gap-1.5 rounded-full border border-ink-300 px-3 py-1 text-xs font-semibold text-ink-700 transition hover:border-brand-400 hover:text-brand-700 dark:border-white/10 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-300 sm:inline-flex"
             >
               <ArrowLeft size={14} />
               {lang === "en" ? "Home" : "Ana Sayfa"}
             </Link>
           </div>
           <HeaderActions compact alwaysShow />
+          <MobileNav />
         </div>
       </header>
 

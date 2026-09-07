@@ -7,7 +7,6 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { MapPin, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
-import { HeaderActions } from "./HeaderActions";
 import { FloatingInput, FloatingSelect, FloatingTextarea } from "./ui/floating-label";
 import {
   createAdminBranch,
@@ -132,7 +131,6 @@ function BranchFormModal({
       />
       <div role="dialog" aria-modal="true" className="relative z-raised flex max-h-[min(94dvh,94vh)] w-full max-w-5xl flex-col overflow-hidden rounded-t-2xl border border-ink-200 bg-white shadow-2xl dark:border-ink-700 dark:bg-ink-900 dark:shadow-black/50 sm:max-h-[90vh] sm:w-[95%] sm:rounded-2xl md:w-full">
         <div className="absolute right-3 top-3 z-raised flex items-center gap-2">
-          <HeaderActions compact />
           <button
             type="button"
             onClick={onClose}
@@ -558,7 +556,6 @@ export function BusinessBranchesPanel({
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-                  <HeaderActions compact />
                   <button
                     type="button"
                     onClick={() => setLimitModalOpen(false)}

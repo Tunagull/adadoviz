@@ -1,10 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { Clock, LogIn, LogOut, SlidersHorizontal } from "lucide-react";
+import { Clock, LogOut, SlidersHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { V0BankCard } from "./V0BankCard";
 import { Sheet } from "./Sheet";
-import { BusinessLoginModal } from "./BusinessLoginModal";
 import { BuySellToggle } from "./BuySellToggle";
 import { GooeyPillField, GooeySearchBar, GooeyToggle } from "./ui/animated-search-bar";
 import { SlidingTabs } from "./ui/sliding-tabs";
@@ -21,6 +20,7 @@ import { HeaderActions } from "./HeaderActions";
 import { HeaderClock } from "./HeaderClock";
 import { BrandLogo } from "./BrandLogo";
 import { SiteNav } from "./SiteNav";
+import { MobileNav } from "./MobileNav";
 import { cityOptionsFromBranches } from "../lib/cities";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
@@ -329,7 +329,7 @@ function getRate(bank, currency, type) {
 
 export function V0FinancialDashboard() {
   const navigate = useNavigate();
-  const { isAuthenticated, isSuperAdmin, logout } = useAuth();
+  const { isAuthenticated, isSuperAdmin, logout, openLoginModal } = useAuth();
   const { t, lang } = useLanguage();
   const localeCode = lang === 'en' ? 'en-US' : 'tr-TR';
 
@@ -431,7 +431,6 @@ export function V0FinancialDashboard() {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [, setRawCentralBankRates] = useState(null); // ✅ SAF XML kurları
   const [calculatorBank, setCalculatorBank] = useState("");
-  const [isBusinessLoginOpen, setIsBusinessLoginOpen] = useState(false);
   const [showLogoutPopup, setShowLogoutPopup] = useState(false);  // ✅ YENİ: Çıkış Modal
   const [chartPeriod, setChartPeriod] = useState('Günlük');  // ✅ YENİ: Market Summary filtresi
   const [liveRates, setLiveRates] = useState(null); // ✅ TEK merkezi SSE mesajı - tüm banka kartları bunu paylaşır
@@ -1088,12 +1087,9 @@ export function V0FinancialDashboard() {
       </Helmet>
       <header className="sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-ink-950/80 sm:px-6 sm:py-4 md:py-5">
         <div className="mx-auto flex w-full max-w-[1600px] min-w-0 items-center justify-between gap-2 sm:gap-4">
-        <BrandLogo className="min-w-0 shrink overflow-hidden" />
-        {/* Ana gezinme: Kurlar / Kıyasla / İşletme (md ve üzeri). */}
-        <SiteNav className="mr-auto ml-2" />
-        {/* ⚠️ MOBİL: `flex-wrap` sağ küme 2 satıra çıkarıp genişletiyor ve
-            marka yazısının üstüne biniyordu. Tek satırda kalıp logo gerekirse
-            kırpılsın. */}
+        <BrandLogo className="shrink-0" />
+        {/* Ana gezinme: Kurlar / Kıyasla / … (md ve üzeri). Mobilde <MobileNav />. */}
+        <SiteNav className="mr-auto ml-2 min-w-0" />
         <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-3">
           {/* Business Login'in solunda canlı saat — kendi state'inde tik atar. */}
           <HeaderClock />
@@ -1102,7 +1098,7 @@ export function V0FinancialDashboard() {
             onClick={() =>
               isAuthenticated
                 ? navigate(isSuperAdmin ? "/super-admin" : "/admin")
-                : setIsBusinessLoginOpen(true)
+                : openLoginModal()
             }
             /*
               ⚠️ HATA DÜZELTMESİ: `brand-400`/`brand-600` — palette bu emekli
@@ -1120,31 +1116,21 @@ export function V0FinancialDashboard() {
               yeniden tanımlıyoruz — tıklama geri bildirimi kaybolmuyor.
             */
             data-no-press
-            aria-label={
-              isAuthenticated
-                ? isSuperAdmin
-                  ? t("adminPanel")
-                  : t("businessPanel")
-                : t("businessLogin")
-            }
-            className={`${headerBtnClass} max-w-[9.5rem] gap-1.5 truncate border-ink-300 bg-white text-ink-700 transition-[color,transform] duration-base ease-out active:scale-[0.97] hover:text-ink-950 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:text-white max-sm:px-2.5 sm:max-w-none`}
+            /* Mobilde gezinme + giriş <MobileNav /> hamburgerinde; bu buton md+. */
+            className={`${headerBtnClass} hidden max-w-[9.5rem] truncate border-ink-300 bg-white text-ink-700 transition-[color,transform] duration-base ease-out active:scale-[0.97] hover:text-ink-950 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:text-white sm:max-w-none md:inline-flex`}
           >
-            {/* Dar telefon başlığında ikon-only: marka yazısıyla çakışmasın. */}
-            <LogIn className="size-4 shrink-0 sm:hidden" aria-hidden="true" />
-            <span className="hidden sm:inline">
-              {isAuthenticated
-                ? isSuperAdmin
-                  ? t("adminPanel")
-                  : t("businessPanel")
-                : t("businessLogin")}
-            </span>
+            {isAuthenticated
+              ? isSuperAdmin
+                ? t("adminPanel")
+                : t("businessPanel")
+              : t("businessLogin")}
           </button>
 
           {isAuthenticated && (
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex min-h-[2.75rem] items-center gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-1 text-xs font-semibold text-danger-700 transition-all duration-300 hover:border-danger-500/60 hover:bg-danger-500/20 dark:text-danger-200 dark:text-danger-400"
+              className="hidden min-h-[2.75rem] items-center gap-2 rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-1 text-xs font-semibold text-danger-700 transition-all duration-300 hover:border-danger-500/60 hover:bg-danger-500/20 dark:text-danger-200 dark:text-danger-400 md:inline-flex"
               title={t("logout")}
             >
               <LogOut className="size-4" />
@@ -1153,10 +1139,10 @@ export function V0FinancialDashboard() {
           )}
 
           <HeaderActions />
+          <MobileNav />
         </div>
         </div>
       </header>
-      <BusinessLoginModal isOpen={isBusinessLoginOpen} onClose={() => setIsBusinessLoginOpen(false)} />
       {/*
         ⚠️ TASARIM DÜZELTMESİ (mat siyah): Bu iki küre %20 opaklıkla duruyordu
         ve ekranın iki yanını renkli bir yıkamayla kaplıyordu — "mat siyah"

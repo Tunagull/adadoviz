@@ -13,6 +13,9 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [auth, setAuth] = useState(() => getStoredAuth());
   const [bootstrapping, setBootstrapping] = useState(true);
+  // İşletme girişi modalı artık global: her sayfanın başlığından / mobil
+  // menüsünden açılabilsin diye state burada, modal App.jsx'te render ediliyor.
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +88,9 @@ export function AuthProvider({ children }) {
     setAuth(null);
   }, []);
 
+  const openLoginModal = useCallback(() => setLoginModalOpen(true), []);
+  const closeLoginModal = useCallback(() => setLoginModalOpen(false), []);
+
   const value = useMemo(
     () => ({
       auth,
@@ -95,8 +101,11 @@ export function AuthProvider({ children }) {
       bootstrapping,
       login,
       logout,
+      loginModalOpen,
+      openLoginModal,
+      closeLoginModal,
     }),
-    [auth, bootstrapping, login, logout]
+    [auth, bootstrapping, login, logout, loginModalOpen, openLoginModal, closeLoginModal]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

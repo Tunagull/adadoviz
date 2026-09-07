@@ -4,6 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { BrandLogo } from "../components/BrandLogo";
 import { SiteNav } from "../components/SiteNav";
 import { HeaderActions } from "../components/HeaderActions";
+import { MobileNav } from "../components/MobileNav";
 import { Faq } from "../components/Faq";
 import { useLanguage } from "../context/LanguageContext";
 import { getContentPage } from "../content/contentPages";
@@ -88,6 +89,7 @@ export function ContentPage({ type }) {
           <BrandLogo className="min-w-0 shrink" />
           <SiteNav className="mr-auto ml-2" />
           <HeaderActions />
+          <MobileNav />
         </div>
       </header>
 

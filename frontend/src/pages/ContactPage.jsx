@@ -1,6 +1,7 @@
 import { Helmet } from "react-helmet-async";
 import { BrandLogo } from "../components/BrandLogo";
 import { HeaderActions } from "../components/HeaderActions";
+import { MobileNav } from "../components/MobileNav";
 import { RadialOrbitalContact } from "../components/RadialOrbitalContact";
 import { SiteNav } from "../components/SiteNav";
 import { useLanguage } from "../context/LanguageContext";
@@ -29,6 +30,7 @@ export function ContactPage() {
           <BrandLogo className="min-w-0 shrink" />
           <SiteNav className="mr-auto ml-2" />
           <HeaderActions />
+          <MobileNav />
         </div>
       </header>
 

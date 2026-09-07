@@ -2258,7 +2258,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <HeaderActions compact />
                   <button
                     type="button"
                     onClick={closeEditModal}
@@ -2570,7 +2569,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <HeaderActions compact />
                   <button
                     type="button"
                     onClick={closeBranchSubscriptionModal}
@@ -4319,7 +4317,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={closeSubscriptionLedger}
@@ -4418,7 +4415,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <HeaderActions compact />
                   <button
                     type="button"
                     onClick={closeSeoModal}
@@ -4547,7 +4543,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowLogModal(false)}
@@ -4795,7 +4790,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setBusinessToDelete(null)}
@@ -4861,7 +4855,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowResetConfirm(false)}
@@ -4914,7 +4907,6 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowSuccessModal(false)}

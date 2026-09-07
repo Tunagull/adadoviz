@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 import { BrandLogo } from "../components/BrandLogo";
 import { HeaderActions } from "../components/HeaderActions";
+import { MobileNav } from "../components/MobileNav";
 import { SiteNav } from "../components/SiteNav";
 import { FloatingInput, FloatingSelect, FloatingTextarea } from "../components/ui/floating-label";
 import { useLanguage } from "../context/LanguageContext";
@@ -85,6 +86,7 @@ export function SignupPage() {
           <BrandLogo className="min-w-0 shrink" />
           <SiteNav className="mr-auto ml-2" />
           <HeaderActions />
+          <MobileNav />
         </div>
       </header>
 

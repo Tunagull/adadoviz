@@ -2412,7 +2412,6 @@ export function InstitutionAdminPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowSuccessModal(false)}
@@ -2486,7 +2485,6 @@ export function InstitutionAdminPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => !logoLoading && setShowLogoModal(false)}
@@ -2675,7 +2673,6 @@ export function InstitutionAdminPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => !infoLoading && closeInfoModal()}
@@ -2956,7 +2953,6 @@ export function InstitutionAdminPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={closeBranchRequestModal}
@@ -3276,7 +3272,6 @@ export function InstitutionAdminPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={closePasswordModal}

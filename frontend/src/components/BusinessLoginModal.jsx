@@ -4,7 +4,6 @@ import { Building2, Lock, Mail, User, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { apiUrl } from "../lib/api";
-import { HeaderActions } from "./HeaderActions";
 import { FloatingInput } from "./ui/floating-label";
 
 export function BusinessLoginModal({ isOpen, onClose }) {
@@ -128,7 +127,6 @@ export function BusinessLoginModal({ isOpen, onClose }) {
 
       <div className="relative z-raised max-h-[min(94dvh,94vh)] w-full max-w-md overflow-y-auto overflow-x-hidden rounded-t-2xl border border-ink-200 bg-white shadow-2xl shadow-brand-900/20 backdrop-blur-xl dark:border-white/10 dark:bg-ink-900/95 dark:shadow-brand-900/50 sm:rounded-2xl">
         <div className="absolute right-3 top-3 z-raised flex items-center gap-2">
-          <HeaderActions compact />
           <button
             type="button"
             onClick={onClose}
@@ -277,7 +275,6 @@ export function BusinessLoginModal({ isOpen, onClose }) {
           />
           <div className="relative z-raised w-full max-w-sm overflow-hidden rounded-2xl border border-ink-200 bg-white p-5 shadow-2xl dark:border-ink-700 dark:bg-ink-900">
             <div className="absolute top-3 right-3 z-raised flex items-center gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={() => setShowForgotModal(false)}

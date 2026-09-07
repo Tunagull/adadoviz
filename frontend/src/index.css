@@ -2659,3 +2659,19 @@ button.float-field__control {
 .dual-range[data-disabled] .dual-range__input {
   cursor: not-allowed;
 }
+
+/**
+ * ── iOS ODAK ZOOM'U ─────────────────────────────────────────────────────
+ * iOS Safari, font-size'ı 16px'in ALTINDA olan bir alana dokununca sayfayı
+ * otomatik yakınlaştırır (ve geri çıkmaz) — kullanıcı "garip zoom" diyor.
+ * Tek güvenilir çözüm: dar ekranda tüm metin girişlerini ≥16px yapmak.
+ * Yalnızca font-size; padding/height/line-height dokunulmuyor, düzen kaymıyor.
+ */
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  select,
+  textarea,
+  .float-field__control {
+    font-size: 16px;
+  }
+}

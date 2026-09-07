@@ -21,7 +21,6 @@ import { trackEvent } from "../lib/analytics";
 import { apiUrl, mediaUrl } from "../lib/api";
 import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
-import { HeaderActions } from "./HeaderActions";
 import { Helmet } from "react-helmet-async";
 import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { buildBusinessSlug, buildBranchSlug } from "../lib/slug";
@@ -534,7 +533,6 @@ export function BusinessDetailModal({
               </h2>
             </div>
             <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-              <HeaderActions compact />
               <button
                 type="button"
                 onClick={onClose}
