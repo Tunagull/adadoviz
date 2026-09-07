@@ -70,6 +70,13 @@ const {
   getSignupRequestById,
   countPendingSignupRequests,
   updateSignupRequestStatus,
+  listLeads,
+  upsertLeadMeta,
+  getLeadCrmStats,
+  recordSearchMiss,
+  getSearchMissStats,
+  getDemandAnalytics,
+  getLeadFunnel,
   createRateAlert,
   getRateAlertByToken,
   listRateAlertsByEmail,
@@ -2357,6 +2364,23 @@ app.post("/api/analytics/event", analyticsLimiter, (req, res) => {
   }
 });
 
+/**
+ * P3.4 — anasayfa büro araması sonuç bulamadığında çağrılır (S6).
+ * Kimlik yok, akışı asla bozmaz (her zaman 200).
+ */
+app.post("/api/search-miss", analyticsLimiter, (req, res) => {
+  try {
+    recordSearchMiss({
+      query: req.body?.query,
+      city: req.body?.city,
+      session_id: req.body?.session_id,
+    });
+  } catch {
+    /* yut */
+  }
+  return res.json({ ok: true });
+});
+
 /** P2.5 — işletmenin kendi analitik özeti (7/30 gün). */
 app.get("/api/business/analytics", requireAuth, (req, res) => {
   try {
@@ -3371,6 +3395,59 @@ app.get("/api/admin/signup-requests", requireSuperAdmin, (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Başvurular alınamadı." });
+  }
+});
+
+/**
+ * P3.4 — Lead CRM (S5): signup_requests + partnership_applications birleşik.
+ */
+app.get("/api/admin/leads", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      leads: listLeads({ status: req.query?.status, limit: req.query?.limit }),
+      stats: getLeadCrmStats(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Lead listesi alınamadı." });
+  }
+});
+
+app.patch("/api/admin/leads/:source/:id", requireSuperAdmin, async (req, res) => {
+  try {
+    const meta = upsertLeadMeta({
+      source: req.params.source,
+      source_id: req.params.id,
+      status: req.body?.status,
+      note: req.body?.note,
+      reminder_date: req.body?.reminder_date,
+      assignee: req.body?.assignee,
+      updated_by: req.user?.username || "superadmin",
+    });
+    await recordAudit({
+      action: "lead_update",
+      actor: req.user?.username || "superadmin",
+      detail: `Lead ${req.params.source}#${req.params.id} → ${meta.status}${
+        meta.reminder_date ? ` (hatırlatma ${meta.reminder_date})` : ""
+      }`,
+    });
+    return res.json({ meta });
+  } catch (err) {
+    const status = err.message === "Lead bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Lead güncellenemedi." });
+  }
+});
+
+/** P3.4 — talep analitiği (S6): eşleşmeyen aramalar + talep kırılımı + huni. */
+app.get("/api/admin/demand", requireSuperAdmin, (req, res) => {
+  try {
+    const days = Number(req.query?.days) || 30;
+    return res.json({
+      searchMisses: getSearchMissStats({ days }),
+      demand: getDemandAnalytics({ days }),
+      funnel: getLeadFunnel(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Talep analitiği alınamadı." });
   }
 });
 

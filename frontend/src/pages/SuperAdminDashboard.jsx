@@ -52,6 +52,9 @@ import {
   createAdminDiscountCode,
   toggleAdminDiscountCode,
   deleteAdminDiscountCode,
+  fetchAdminLeads,
+  updateAdminLead,
+  fetchAdminDemand,
   fetchAdminPlans,
   fetchAdminExpiring,
   fetchAdminPartnershipApplications,
@@ -622,6 +625,7 @@ export function SuperAdminDashboard() {
       { id: "create", label: t("tabCreate") },
       { id: "requests", label: t("tabRequests") },
       { id: "signups", label: t("tabSignups") },
+      { id: "leads", label: t("tabLeads") },
       /*
         ⚠️ HATA DÜZELTMESİ (R-01): `revenue`, `expiring`, `plans` ve
         `partnershipApps` her panel açılışında `loadRevenue` ile çekiliyor ama
@@ -1025,6 +1029,57 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
       setSignupActingId(null);
     }
   };
+
+  // P3.4 — Lead CRM + talep analitiği
+  const [leads, setLeads] = useState([]);
+  const [leadStats, setLeadStats] = useState(null);
+  const [demand, setDemand] = useState(null);
+  const [leadFilter, setLeadFilter] = useState("");
+  const [leadLoading, setLeadLoading] = useState(false);
+  const [leadError, setLeadError] = useState("");
+  const [leadActing, setLeadActing] = useState("");
+  const [leadDrafts, setLeadDrafts] = useState({});
+
+  const loadLeads = useCallback(async () => {
+    if (!token) return;
+    setLeadLoading(true);
+    setLeadError("");
+    try {
+      const [ld, dm] = await Promise.all([
+        fetchAdminLeads(token, leadFilter || undefined),
+        fetchAdminDemand(token, 30),
+      ]);
+      setLeads(ld.leads || []);
+      setLeadStats(ld.stats || null);
+      setDemand(dm || null);
+    } catch (err) {
+      setLeadError(err.message || t("statsLoadFailedMsg"));
+    } finally {
+      setLeadLoading(false);
+    }
+  }, [token, leadFilter, t]);
+
+  useEffect(() => {
+    if (tab !== "leads" || !token) return;
+    loadLeads();
+  }, [tab, token, loadLeads]);
+
+  const handleUpdateLead = useCallback(
+    async (lead, patch) => {
+      if (!token) return;
+      setLeadActing(lead.lead_key);
+      setLeadError("");
+      try {
+        await updateAdminLead(token, lead.source, lead.source_id, patch);
+        await loadLeads();
+      } catch (err) {
+        setLeadError(err.message || t("signupAdminActionFailed"));
+      } finally {
+        setLeadActing("");
+      }
+    },
+    [token, loadLeads, t]
+  );
 
   const loadBranchRequests = useCallback(async () => {
     if (!token) return;
@@ -2860,6 +2915,308 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
               })}
             </ul>
           )}
+        </section>
+      )}
+
+      {/* P3.4 — Lead CRM + talep analitiği */}
+      {tab === "leads" && (
+        <section className="space-y-4">
+          {leadError ? (
+            <p className="rounded-control border border-danger-600/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-700 dark:text-danger-300">
+              {leadError}
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              { label: t("leadTotal"), value: leadStats?.total },
+              { label: t("leadNew"), value: leadStats?.byStatus?.new },
+              { label: t("leadContacted"), value: leadStats?.byStatus?.contacted },
+              { label: t("leadWon"), value: leadStats?.byStatus?.won },
+              { label: t("leadLost"), value: leadStats?.byStatus?.lost },
+              {
+                label: t("leadRemindersDue"),
+                value: leadStats
+                  ? `${leadStats.remindersDue}${
+                      leadStats.remindersUpcoming ? ` (+${leadStats.remindersUpcoming})` : ""
+                    }`
+                  : null,
+                danger: (leadStats?.remindersDue || 0) > 0,
+              },
+            ].map((c) => (
+              <div key={c.label} className="surface-card p-3">
+                <p className="text-xs font-medium text-ink-600 dark:text-ink-400">{c.label}</p>
+                <p
+                  className={`mt-1 font-mono text-lg font-bold tabular-nums ${
+                    c.danger ? "text-danger-700 dark:text-danger-400" : "text-ink-900 dark:text-white"
+                  }`}
+                >
+                  {leadLoading || leadStats == null ? "—" : c.value ?? 0}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {["", "new", "contacted", "won", "lost"].map((s) => (
+              <button
+                key={s || "all"}
+                type="button"
+                onClick={() => setLeadFilter(s)}
+                className={`rounded-control px-3 py-1 text-xs font-medium transition ${
+                  leadFilter === s
+                    ? "bg-brand-500 text-white"
+                    : "bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-300"
+                }`}
+              >
+                {s ? t(`lead${s[0].toUpperCase()}${s.slice(1)}`) : t("leadAll")}
+              </button>
+            ))}
+          </div>
+
+          {leads.length ? (
+            <ul className="space-y-3">
+              {leads.map((lead) => {
+                const draft = leadDrafts[lead.lead_key] || {
+                  note: lead.note || "",
+                  reminder_date: lead.reminder_date || "",
+                  assignee: lead.assignee || "",
+                };
+                const setDraft = (patch) =>
+                  setLeadDrafts((d) => ({
+                    ...d,
+                    [lead.lead_key]: { ...draft, ...patch },
+                  }));
+                const dirty =
+                  (draft.note || "") !== (lead.note || "") ||
+                  (draft.reminder_date || "") !== (lead.reminder_date || "") ||
+                  (draft.assignee || "") !== (lead.assignee || "");
+                return (
+                  <li key={lead.lead_key} className="surface-card p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-ink-900 dark:text-white">
+                          {lead.institution_name || "—"}
+                        </span>
+                        <span
+                          className={`rounded-control px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                            lead.source === "signup"
+                              ? "bg-brand-500/15 text-brand-700 dark:text-brand-300"
+                              : "bg-ink-200 text-ink-600 dark:bg-ink-700 dark:text-ink-300"
+                          }`}
+                        >
+                          {lead.source === "signup" ? t("leadSrcSignup") : t("leadSrcPartner")}
+                        </span>
+                        {lead.source_status && lead.source_status !== "pending" ? (
+                          <span className="text-[10px] text-ink-500 dark:text-ink-400">
+                            {lead.source_status}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        {String(lead.created_at || "").slice(0, 10)}
+                      </span>
+                    </div>
+
+                    <p className="mt-1 truncate text-xs text-ink-600 dark:text-ink-400">
+                      {[lead.contact_person, lead.email, lead.phone, lead.city]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                    {lead.message ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-ink-600 dark:text-ink-400">
+                        {lead.message}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <select
+                        className="field"
+                        value={lead.status}
+                        disabled={leadActing === lead.lead_key}
+                        onChange={(e) => handleUpdateLead(lead, { status: e.target.value })}
+                      >
+                        <option value="new">{t("leadNew")}</option>
+                        <option value="contacted">{t("leadContacted")}</option>
+                        <option value="won">{t("leadWon")}</option>
+                        <option value="lost">{t("leadLost")}</option>
+                      </select>
+                      <input
+                        className="field"
+                        type="text"
+                        placeholder={t("leadAssignee")}
+                        value={draft.assignee}
+                        onChange={(e) => setDraft({ assignee: e.target.value })}
+                      />
+                      <input
+                        className="field"
+                        type="date"
+                        aria-label={t("leadReminder")}
+                        value={draft.reminder_date}
+                        onChange={(e) => setDraft({ reminder_date: e.target.value })}
+                      />
+                      <input
+                        className="field"
+                        type="text"
+                        placeholder={t("leadNote")}
+                        value={draft.note}
+                        onChange={(e) => setDraft({ note: e.target.value })}
+                      />
+                    </div>
+                    {dirty ? (
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm mt-2"
+                        disabled={leadActing === lead.lead_key}
+                        onClick={() =>
+                          handleUpdateLead(lead, {
+                            note: draft.note,
+                            reminder_date: draft.reminder_date || "",
+                            assignee: draft.assignee,
+                          })
+                        }
+                      >
+                        {t("leadSave")}
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-600 dark:text-ink-400">
+              {leadLoading ? "—" : t("leadEmpty")}
+            </p>
+          )}
+
+          {/* Talep analitiği */}
+          <h3 className="pt-2 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+            {t("demandTitle")}
+          </h3>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandFunnel")}
+              </h4>
+              {demand?.funnel?.length ? (
+                <ul className="space-y-2">
+                  {demand.funnel.map((step, i) => {
+                    const top = demand.funnel[0]?.value || 1;
+                    const prev = i > 0 ? demand.funnel[i - 1]?.value || 0 : null;
+                    const pct = Math.max(2, Math.round((step.value / top) * 100));
+                    return (
+                      <li key={step.key}>
+                        <div className="flex items-center justify-between text-xs text-ink-600 dark:text-ink-400">
+                          <span>{t(`funnel_${step.key}`)}</span>
+                          <span className="font-mono tabular-nums">
+                            {Number(step.value).toLocaleString("tr-TR")}
+                            {prev != null && prev > 0
+                              ? ` · ${Math.round((step.value / prev) * 100)}%`
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-2 rounded-full bg-ink-100 dark:bg-ink-800">
+                          <div
+                            className="h-2 rounded-full bg-brand-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
+
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandMisses")}
+                {demand?.searchMisses?.total ? (
+                  <span className="ml-2 font-mono text-xs text-ink-500 dark:text-ink-400">
+                    {demand.searchMisses.total}
+                  </span>
+                ) : null}
+              </h4>
+              {demand?.searchMisses?.top?.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {demand.searchMisses.top.map((m) => (
+                    <li
+                      key={m.query_norm}
+                      className="flex items-center justify-between gap-3 py-1.5"
+                    >
+                      <span className="min-w-0 truncate text-ink-800 dark:text-ink-200">
+                        {m.ornek || m.query_norm}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        × {m.adet}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("demandMissesEmpty")}</p>
+              )}
+            </div>
+
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandByCity")}
+              </h4>
+              {demand?.demand?.byCity?.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {demand.demand.byCity.map((r) => (
+                    <li key={r.city} className="flex items-center justify-between gap-3 py-1.5">
+                      <span className="truncate text-ink-800 dark:text-ink-200">{r.city}</span>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        {r.adet}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
+
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandTopBusinesses")}
+              </h4>
+              {demand?.demand?.byCurrency?.length ? (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {demand.demand.byCurrency.map((r) => (
+                    <span
+                      key={r.currency}
+                      className="rounded-control bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700 dark:bg-ink-800 dark:text-ink-300"
+                    >
+                      {r.currency} · {r.adet}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {demand?.demand?.topBusinesses?.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {demand.demand.topBusinesses.map((r) => (
+                    <li
+                      key={r.institution_id}
+                      className="flex items-center justify-between gap-3 py-1.5"
+                    >
+                      <span className="truncate text-ink-800 dark:text-ink-200">
+                        {r.institution_name}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        {r.adet}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
+          </div>
         </section>
       )}
 

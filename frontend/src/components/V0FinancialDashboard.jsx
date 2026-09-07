@@ -25,7 +25,7 @@ import { cityOptionsFromBranches } from "../lib/cities";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { useRegisterOfficeSearch } from "../context/officeSearchStore";
-import { trackBusinessClick } from "../lib/analytics";
+import { trackBusinessClick, reportSearchMiss } from "../lib/analytics";
 import { apiUrl, fetchRatesWithRetry, ratesStreamUrl } from "../lib/api";
 import { buildBranchSlug, buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
 import { shouldPlayRateIntro } from "../lib/rateIntro";
@@ -1025,6 +1025,24 @@ export function V0FinancialDashboard() {
   }, []);
 
   useRegisterOfficeSearch(officeSearchItems, searchQuery, onOfficeQuery, onOfficePick);
+
+  /*
+   * P3.4 (S6) — arama sonuç bulamadığında "eşleşmeyen arama" logla. Katalog
+   * yüklüyken, sorgu ≥ 2 karakterken ve filtrelenmiş sonuç boşken; 1.2 sn
+   * debounce + oturum içi aynı (sorgu+şehir) tekrar gönderilmez.
+   */
+  const reportedMissesRef = useRef(new Set());
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2 || banks.length === 0 || filteredAndSortedBanks.length > 0) return undefined;
+    const key = `${q.toLowerCase()}|${cityFilter || ""}`;
+    if (reportedMissesRef.current.has(key)) return undefined;
+    const timer = setTimeout(() => {
+      reportedMissesRef.current.add(key);
+      reportSearchMiss(q, cityFilter || undefined);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [searchQuery, cityFilter, banks.length, filteredAndSortedBanks.length]);
 
   const officeSearchBar = (
     <GooeySearchBar

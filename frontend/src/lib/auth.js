@@ -733,6 +733,19 @@ export const previewAdminDiscountCode = (token, code, amount) =>
     token
   );
 
+/** Super Admin: lead CRM (P3.4). */
+export const fetchAdminLeads = (token, status) =>
+  getJson(`/api/admin/leads${status ? `?status=${encodeURIComponent(status)}` : ""}`, token);
+export const updateAdminLead = (token, source, id, payload) =>
+  sendJson(
+    `/api/admin/leads/${encodeURIComponent(source)}/${encodeURIComponent(id)}`,
+    token,
+    "PATCH",
+    payload
+  );
+export const fetchAdminDemand = (token, days = 30) =>
+  getJson(`/api/admin/demand?days=${days}`, token);
+
 /** Super Admin: vade takvimi, işletme bazlı analitik, partnerlik başvuruları. */
 export const fetchAdminExpiring = (token, days = 30) =>
   getJson(`/api/admin/expiring?days=${days}`, token);

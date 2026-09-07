@@ -101,6 +101,30 @@ export function trackEvent(event, { institutionId, currency, city } = {}) {
   }
 }
 
+/**
+ * P3.4 — anasayfa büro araması sonuç bulamadı (S6). Çağıran taraf debounce
+ * eder; burada yalnızca fire-and-forget. Kimlik yok, onay şartı yok (yalnızca
+ * sorgu metni + şehir — kişisel veri değil).
+ */
+export function reportSearchMiss(query, city) {
+  const q = String(query || "").trim();
+  if (q.length < 2) return;
+  try {
+    fetch(apiUrl("/api/search-miss"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: q.slice(0, 120),
+        city: city ? String(city).slice(0, 60) : undefined,
+        session_id: getAnalyticsSessionId() || undefined,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* yut */
+  }
+}
+
 export function trackCurrencyView(currency) {
   const code = String(currency || "").trim().toUpperCase();
   if (!code) return;

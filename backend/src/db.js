@@ -786,6 +786,38 @@ function initDb({ skipBusinessSeed = false } = {}) {
     db.exec(`ALTER TABLE payments ADD COLUMN indirim_tutari REAL NOT NULL DEFAULT 0`);
   }
 
+  // P3.4: lead CRM + talep analitiği (S5 + S6). lead_meta signup_requests /
+  // partnership_applications üstüne CRM alanları bindirir (kaynak şemaya
+  // dokunmaz); search_misses anasayfa aramasının boş döndüğü sorguları tutar.
+  // migrations/0008 ile eş şema. Supabase sync yok (discount_codes gerekçesi).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lead_meta (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      source        TEXT NOT NULL,
+      source_id     INTEGER NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'new',
+      note          TEXT,
+      reminder_date TEXT,
+      assignee      TEXT,
+      updated_by    TEXT,
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(source, source_id)
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS lead_meta_status_idx ON lead_meta (status)`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS search_misses (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      query      TEXT NOT NULL,
+      query_norm TEXT NOT NULL,
+      city       TEXT,
+      session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS search_misses_norm_idx ON search_misses (query_norm)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS search_misses_created_idx ON search_misses (created_at)`);
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -5438,6 +5470,269 @@ function updateSignupRequestStatus(id, { status, reject_reason, reviewed_by, cre
 }
 
 // ---------------------------------------------------------------------------
+// P3.4 — lead CRM + talep analitiği (lead_meta, search_misses)
+// ---------------------------------------------------------------------------
+
+const LEAD_SOURCES = new Set(["signup", "partnership"]);
+const LEAD_STATUSES = new Set(["new", "contacted", "won", "lost"]);
+
+function mapLeadMetaRow(row) {
+  if (!row) return { status: "new", note: null, reminder_date: null, assignee: null, updated_at: null };
+  return {
+    status: LEAD_STATUSES.has(row.status) ? row.status : "new",
+    note: row.note || null,
+    reminder_date: row.reminder_date || null,
+    assignee: row.assignee || null,
+    updated_at: row.updated_at ? toIsoTimestamp(row.updated_at) : null,
+  };
+}
+
+/** signup_requests + partnership_applications birleşik lead görünümü. */
+function listLeads({ status, limit = 300 } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 300, 1), 1000);
+  const metaRows = db.prepare(`SELECT * FROM lead_meta`).all();
+  const metaByKey = new Map(metaRows.map((m) => [`${m.source}:${m.source_id}`, mapLeadMetaRow(m)]));
+
+  const signups = db
+    .prepare(`SELECT * FROM signup_requests ORDER BY datetime(created_at) DESC LIMIT ?`)
+    .all(lim)
+    .map((r) => {
+      const meta = metaByKey.get(`signup:${r.id}`) || mapLeadMetaRow(null);
+      return {
+        lead_key: `signup:${r.id}`,
+        source: "signup",
+        source_id: r.id,
+        institution_name: r.institution_name || "",
+        contact_person: r.contact_person || "",
+        email: r.email || "",
+        phone: r.phone || "",
+        city: r.city || null,
+        message: r.current_rate_info || null,
+        source_status: r.status || "pending",
+        created_at: toIsoTimestamp(r.created_at),
+        ...meta,
+      };
+    });
+
+  const partners = db
+    .prepare(`SELECT * FROM partnership_applications ORDER BY datetime(created_at) DESC LIMIT ?`)
+    .all(lim)
+    .map((r) => {
+      const meta = metaByKey.get(`partnership:${r.id}`) || mapLeadMetaRow(null);
+      return {
+        lead_key: `partnership:${r.id}`,
+        source: "partnership",
+        source_id: r.id,
+        institution_name: r.institution_name || "",
+        contact_person: r.contact_person || "",
+        email: r.email || "",
+        phone: r.phone || "",
+        city: null,
+        message: r.message || null,
+        source_status: null,
+        created_at: toIsoTimestamp(r.created_at),
+        ...meta,
+      };
+    });
+
+  let all = [...signups, ...partners].sort(
+    (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+  );
+  if (status && LEAD_STATUSES.has(String(status))) {
+    all = all.filter((l) => l.status === status);
+  }
+  return all.slice(0, lim);
+}
+
+function upsertLeadMeta({ source, source_id, status, note, reminder_date, assignee, updated_by } = {}) {
+  const src = String(source || "").trim();
+  if (!LEAD_SOURCES.has(src)) throw new Error("Geçersiz lead kaynağı.");
+  const sid = Number(source_id);
+  if (!Number.isFinite(sid) || sid <= 0) throw new Error("Geçersiz lead ID.");
+
+  const table = src === "signup" ? "signup_requests" : "partnership_applications";
+  const exists = db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(sid);
+  if (!exists) throw new Error("Lead bulunamadı.");
+
+  const st = status !== undefined ? String(status).trim() : undefined;
+  if (st !== undefined && !LEAD_STATUSES.has(st)) throw new Error("Geçersiz lead durumu.");
+
+  let rd = null;
+  if (reminder_date) {
+    const d = new Date(reminder_date);
+    if (Number.isNaN(d.getTime())) throw new Error("Geçersiz hatırlatma tarihi.");
+    rd = isoDay(d);
+  }
+
+  const current = db.prepare(`SELECT * FROM lead_meta WHERE source = ? AND source_id = ?`).get(src, sid);
+  const next = {
+    status: st !== undefined ? st : current?.status || "new",
+    note:
+      note !== undefined
+        ? note
+          ? String(note).trim().slice(0, 2000)
+          : null
+        : current?.note || null,
+    reminder_date: reminder_date !== undefined ? rd : current?.reminder_date || null,
+    assignee:
+      assignee !== undefined
+        ? assignee
+          ? String(assignee).trim().slice(0, 80)
+          : null
+        : current?.assignee || null,
+    updated_by: updated_by ? String(updated_by).trim().slice(0, 80) : null,
+  };
+
+  db.prepare(
+    `INSERT INTO lead_meta (source, source_id, status, note, reminder_date, assignee, updated_by, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(source, source_id) DO UPDATE SET
+       status = excluded.status,
+       note = excluded.note,
+       reminder_date = excluded.reminder_date,
+       assignee = excluded.assignee,
+       updated_by = excluded.updated_by,
+       updated_at = datetime('now')`
+  ).run(src, sid, next.status, next.note, next.reminder_date, next.assignee, next.updated_by);
+
+  return { source: src, source_id: sid, ...mapLeadMetaRow(
+    db.prepare(`SELECT * FROM lead_meta WHERE source = ? AND source_id = ?`).get(src, sid)
+  ) };
+}
+
+function getLeadCrmStats() {
+  const leads = listLeads({ limit: 1000 });
+  const byStatus = { new: 0, contacted: 0, won: 0, lost: 0 };
+  let remindersDue = 0;
+  let remindersUpcoming = 0;
+  const today = isoDay(new Date());
+  const in7 = isoDay(new Date(Date.now() + 7 * 86400000));
+  for (const l of leads) {
+    byStatus[l.status] = (byStatus[l.status] || 0) + 1;
+    if (l.reminder_date && l.status !== "won" && l.status !== "lost") {
+      if (l.reminder_date <= today) remindersDue += 1;
+      else if (l.reminder_date <= in7) remindersUpcoming += 1;
+    }
+  }
+  return { total: leads.length, byStatus, remindersDue, remindersUpcoming };
+}
+
+function normalizeSearchQuery(raw) {
+  return String(raw || "")
+    .toLocaleLowerCase("tr-TR")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Anasayfa büro araması sonuç bulamadığında çağrılır. Sessizce yutar. */
+function recordSearchMiss({ query, city, session_id } = {}) {
+  const q = String(query || "").trim().slice(0, 120);
+  const norm = normalizeSearchQuery(q);
+  if (norm.length < 2) return { skipped: true };
+  db.prepare(
+    `INSERT INTO search_misses (query, query_norm, city, session_id) VALUES (?, ?, ?, ?)`
+  ).run(
+    q,
+    norm,
+    city ? String(city).trim().slice(0, 60) : null,
+    session_id ? String(session_id).trim().slice(0, 80) : null
+  );
+  return { ok: true };
+}
+
+function getSearchMissStats({ days = 30, limit = 20 } = {}) {
+  const d = Math.min(Math.max(Number(days) || 30, 1), 365);
+  const lim = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const since = `datetime('now', '-${d} days')`;
+  const top = db
+    .prepare(
+      `SELECT query_norm, COUNT(*) AS adet, MAX(created_at) AS son,
+              (SELECT query FROM search_misses s2 WHERE s2.query_norm = s1.query_norm
+                ORDER BY datetime(created_at) DESC LIMIT 1) AS ornek
+         FROM search_misses s1
+        WHERE created_at > ${since}
+        GROUP BY query_norm
+        ORDER BY adet DESC, son DESC
+        LIMIT ?`
+    )
+    .all(lim);
+  const byCity = db
+    .prepare(
+      `SELECT city, COUNT(*) AS adet FROM search_misses
+        WHERE created_at > ${since} AND city IS NOT NULL AND city != ''
+        GROUP BY city ORDER BY adet DESC LIMIT 20`
+    )
+    .all();
+  const total =
+    Number(
+      db.prepare(`SELECT COUNT(*) AS c FROM search_misses WHERE created_at > ${since}`).get()?.c
+    ) || 0;
+  return { days: d, total, top, byCity };
+}
+
+/** analytics_events'ten talep kırılımı (şehir / para birimi / en çok görüntülenen). */
+function getDemandAnalytics({ days = 30 } = {}) {
+  const d = Math.min(Math.max(Number(days) || 30, 1), 365);
+  const since = `datetime('now', '-${d} days')`;
+  const engage = `event IN ('view','call','whatsapp','directions')`;
+
+  const byCity = db
+    .prepare(
+      `SELECT city, COUNT(*) AS adet FROM analytics_events
+        WHERE created_at > ${since} AND ${engage} AND city IS NOT NULL AND city != ''
+        GROUP BY city ORDER BY adet DESC LIMIT 15`
+    )
+    .all();
+  const byCurrency = db
+    .prepare(
+      `SELECT currency, COUNT(*) AS adet FROM analytics_events
+        WHERE created_at > ${since} AND ${engage} AND currency IS NOT NULL AND currency != ''
+        GROUP BY currency ORDER BY adet DESC`
+    )
+    .all();
+  const topBusinessesRaw = db
+    .prepare(
+      `SELECT institution_id, COUNT(*) AS adet FROM analytics_events
+        WHERE created_at > ${since} AND ${engage} AND institution_id IS NOT NULL
+        GROUP BY institution_id ORDER BY adet DESC LIMIT 15`
+    )
+    .all();
+  const nameById = new Map(
+    db
+      .prepare(`SELECT id, institution_name FROM institutions`)
+      .all()
+      .map((r) => [r.id, r.institution_name])
+  );
+  const topBusinesses = topBusinessesRaw.map((r) => ({
+    institution_id: r.institution_id,
+    institution_name: nameById.get(r.institution_id) || `#${r.institution_id}`,
+    adet: r.adet,
+  }));
+  return { days: d, byCity, byCurrency, topBusinesses };
+}
+
+/** Dönüşüm hunisi (ziyaret → büro tıklama → lead → kazanıldı). Tüm zaman. */
+function getLeadFunnel() {
+  const visitors = getVisitorStats().total_visitors || 0;
+  const clicks = getClicksByBusiness().reduce((sum, b) => sum + (Number(b.tiklama) || 0), 0);
+  const leadsTotal =
+    (Number(db.prepare(`SELECT COUNT(*) AS c FROM signup_requests`).get()?.c) || 0) +
+    (Number(db.prepare(`SELECT COUNT(*) AS c FROM partnership_applications`).get()?.c) || 0);
+  const won =
+    (Number(
+      db.prepare(`SELECT COUNT(*) AS c FROM signup_requests WHERE status = 'approved'`).get()?.c
+    ) || 0) +
+    (Number(db.prepare(`SELECT COUNT(*) AS c FROM lead_meta WHERE status = 'won'`).get()?.c) || 0);
+  return [
+    { key: "visitors", value: visitors },
+    { key: "clicks", value: clicks },
+    { key: "leads", value: leadsTotal },
+    { key: "won", value: won },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // P3.2 — kur alarmları (rate_alerts)
 // ---------------------------------------------------------------------------
 
@@ -5705,6 +6000,13 @@ module.exports = {
   getSignupRequestById,
   countPendingSignupRequests,
   updateSignupRequestStatus,
+  listLeads,
+  upsertLeadMeta,
+  getLeadCrmStats,
+  recordSearchMiss,
+  getSearchMissStats,
+  getDemandAnalytics,
+  getLeadFunnel,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,

@@ -354,11 +354,38 @@ discount CRUD + preview) doğrulandı, test satırları temizlendi; `npm run bui
 **Ertelendi:** gerçek PDF (kütüphane yok — yazdırılabilir HTML makbuz browser "PDF kaydet" ile aynı işi
 görüyor); indirim kodunun public self-servis ödeme akışına bağlanması P3.6'ya ait.
 
-### ☐ P3.4 — Lead CRM + talep analitiği (S5 + S6)
-`signup_requests` + `partnership_applications` birleşik "Lead" görünümü: durum (yeni/iletişimde/kazanıldı/kayıp),
-not, hatırlatma tarihi, atanan. Dönüşüm hunisi: ziyaret → büro tıklama → lead → onay.
-Talep analitiği: en çok aranan büro/şehir/para-birimi, **eşleşmeyen aramalar** (`search_misses` — `OfficeSearch`
-sonuç bulamadığında logla), şehir bazlı talep ısı haritası.
+### ☑ P3.4 — Lead CRM + talep analitiği (S5 + S6)
+`migrations/0008_lead_crm.sql` + `db.js` initDb eş tablo (Supabase sync yok — discount_codes gerekçesi).
+İki tablo: `lead_meta` (`source` `signup`|`partnership`, `source_id`, `status` `new`|`contacted`|`won`|`lost`,
+`note`, `reminder_date`, `assignee`, `updated_by`; UNIQUE(source,source_id) — kaynak tabloların şemasına
+dokunmadan CRM alanı bindirir) ve `search_misses` (`query`, `query_norm`, `city`, `session_id`).
+`db.js`: `listLeads({status})` — `signup_requests` + `partnership_applications` iki sorgu, JS'te birleştir +
+`lead_meta` LEFT JOIN (Map ile), `created_at` DESC. `upsertLeadMeta` (kaynak satır var mı kontrolü + status
+whitelist + `ON CONFLICT DO UPDATE`, alan verilmezse mevcut değer korunur), `getLeadCrmStats` (durum
+sayımları + vadesi gelen/yaklaşan hatırlatma). `recordSearchMiss` (`normalizeSearchQuery` tr-locale
+lowercase + noktalama sök; <2 karakter sessiz atla). `getSearchMissStats({days})` (query_norm gruplu top +
+byCity + total). `getDemandAnalytics({days})` — `analytics_events`'ten byCity/byCurrency/topBusinesses
+(`view|call|whatsapp|directions`). `getLeadFunnel()` — ziyaretçi (`getVisitorStats`) → büro tıklaması
+(`getClicksByBusiness` toplamı) → lead (signup+partnership) → kazanıldı (`status='approved'` + lead_meta
+`won`), tüm zaman.
+`server.js`: `POST /api/search-miss` (public, `analyticsLimiter`, her zaman 200); `GET /api/admin/leads`,
+`PATCH /api/admin/leads/:source/:id` (audit `lead_update`), `GET /api/admin/demand?days` (requireSuperAdmin).
+Frontend: `lib/analytics.js` `reportSearchMiss(query, city)` (fire-and-forget, `keepalive`, onay şartı yok —
+sadece sorgu+şehir); `V0FinancialDashboard` debounce'lu efekt (1.2 sn, katalog yüklüyken + sonuç boşken +
+oturum-içi (sorgu+şehir) dedupe `reportedMissesRef`). `lib/auth.js` 3 helper. `SuperAdminDashboard` yeni
+"Lead" sekmesi: 6 CRM sayaç kartı + durum filtresi çipleri + lead listesi (kaynak rozeti + iletişim satırı +
+mesaj + satır-içi `status` select (anında kaydet) + atanan/hatırlatma/not draft'lı "Notu kaydet") +
+"Talep analitiği" bölümü (dönüşüm hunisi bar'ları %-dönüşümle + eşleşmeyen aramalar + şehre göre talep +
+para birimi çipleri + en çok ilgi gören bürolar). i18n `tabLeads`/`lead*`/`demand*`/`funnel_*` (TR+EN).
+**Doğrulama:** `node --check` db.js + server.js; node ile tam akış (listLeads birleştirme + upsertLeadMeta
+alan-koruma + getLeadCrmStats + recordSearchMiss normalize/dedup + getSearchMissStats + getDemandAnalytics
++ getLeadFunnel) + canlı HTTP (login → leads → PATCH → status filtresi → demand) doğrulandı, test satırları
+temizlendi; `npm run build` yeşil (SuperAdminDashboard 129→~140 kB); lint 44→45 (tek yeni
+`set-state-in-effect` — `loadSignupRequests`/`loadRevenue` tab-yükleme efektleriyle aynı desen, P1.7'deki
+kabul gerekçesi).
+**Ertelendi:** şehir bazlı ısı haritası (harita bileşeni gerektirir — sıralı liste yeterli); `analytics_events`
+`search_impression` yayıncısı hâlâ P2.5'ten ertelenmiş durumda (talep kırılımı `view/call/...` olaylarından
+besleniyor).
 
 ### ☐ P3.5 — İçerik / landing sayfaları (C9)
 - Statik ilk sürüm: `/rehber/kktc-doviz-bozdurma`, `/kur/usd-try`, `/sehir/girne` — `SeoHead` + JSON-LD
