@@ -88,8 +88,8 @@ export function SignupPage() {
         </div>
       </header>
 
-      <main className="relative z-raised mx-auto w-full max-w-2xl px-4 py-10 sm:py-14">
-        <div className="mb-8 text-center">
+      <main className="relative z-raised mx-auto w-full max-w-2xl px-4 py-6 sm:py-14">
+        <div className="mb-6 text-center sm:mb-8">
           <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{t("signupTitle")}</h1>
           <p className="mt-3 text-sm text-ink-600 dark:text-ink-400 sm:text-base">{t("signupLead")}</p>
         </div>

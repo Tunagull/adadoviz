@@ -67,7 +67,7 @@ export function ResetPasswordPage() {
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-md flex-col justify-center px-4 py-12">
       <div className="mb-6 flex justify-end">
-        <HeaderActions compact />
+        <HeaderActions compact alwaysShow />
       </div>
       <Helmet>
         <title>{`${t("resetTitle")} | AdaDöviz`}</title>

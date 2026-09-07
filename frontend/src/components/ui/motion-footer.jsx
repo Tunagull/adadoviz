@@ -6,8 +6,10 @@ import {
   Building2,
   LineChart,
   Mail,
+  MapPinned,
   MessageCircle,
   Tag,
+  Trophy,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
@@ -331,10 +333,31 @@ export function CinematicFooter() {
 
               {/*
                 Footer sitenin ESKİ yapısını gösteriyordu: gezinme yalnızca
-                Kurlar + WhatsApp + Instagram'dı. Üst gezinme çoktan dört
-                sekmeye çıkmıştı (Kurlar / Kıyasla / Paketler / İletişim);
-                eksik ikisi buraya eklendi.
+                Kurlar + WhatsApp + Instagram'dı. Üst gezinme büyüdükçe (Kurlar /
+                En iyi kur / Harita / Kıyasla / Paketler / İletişim) buraya da
+                eklendi — özellikle telefonda SiteNav gizli olduğu için footer
+                ve alt çubuk gezinmenin tek yolu.
               */}
+              <MagneticButton
+                as={Link}
+                to="/en-iyi-kur"
+                strength={0.25}
+                className={`cursor-pointer ${pillLink}`}
+              >
+                <Trophy className="size-4" aria-hidden="true" />
+                {t("navBestRate")}
+              </MagneticButton>
+
+              <MagneticButton
+                as={Link}
+                to="/harita"
+                strength={0.25}
+                className={`cursor-pointer ${pillLink}`}
+              >
+                <MapPinned className="size-4" aria-hidden="true" />
+                {t("navMap")}
+              </MagneticButton>
+
               <MagneticButton
                 as={Link}
                 to="/paketler"

@@ -876,6 +876,8 @@ const dictionaries = {
     searchPlaceholder: "Ara",
     noResults: "Sonuç yok",
     navBestRate: "En iyi kur",
+    navMenu: "Menü",
+    navMenuTitle: "Gezinme",
     bestRateTitle: "Bugünün en iyi kuru",
     bestRateLead:
       "Para birimini ve işlemi seçin; tutar girerseniz her büronun anlık kuruyla elinize geçecek miktarı görün. Bürolar en iyi kurdan en kötüye sıralanır.",
@@ -1777,6 +1779,8 @@ const dictionaries = {
     ledgerAmountLabel: "Amount",
     ledgerEmpty: "No records in this ledger yet.",
     navBestRate: "Best rate",
+    navMenu: "Menu",
+    navMenuTitle: "Navigation",
     bestRateTitle: "Today's best rate",
     bestRateLead:
       "Pick a currency and direction; enter an amount to see what each office would give you at its live rate. Offices are ranked from the best rate to the worst.",

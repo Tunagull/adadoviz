@@ -178,7 +178,7 @@ export function ExchangeOfficePage() {
               {lang === "en" ? "Home" : "Ana Sayfa"}
             </Link>
           </div>
-          <HeaderActions compact />
+          <HeaderActions compact alwaysShow />
         </div>
       </header>
 

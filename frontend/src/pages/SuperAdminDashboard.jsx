@@ -1907,7 +1907,13 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
         </div>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-2 border-b border-ink-200 pb-3 dark:border-ink-800">
+      {/*
+        ⚠️ MOBİL DÜZELTME: `flex-wrap` telefonda sekmeleri 4 gevşek satıra
+        atıyor ve pasif sekmeler (arka planı olmayan düz metin) tıklanabilir
+        gibi durmuyordu. Dar ekranda yatay kaydırmalı tek satır şerit; pasif
+        sekmelere de hafif bir yüzey verildi.
+      */}
+      <div className="mb-6 flex gap-2 overflow-x-auto border-b border-ink-200 pb-3 [-ms-overflow-style:none] [scrollbar-width:none] dark:border-ink-800 sm:flex-wrap sm:overflow-visible [&::-webkit-scrollbar]:hidden">
         {TABS.map((item) => (
           <button
             key={item.id}
@@ -1917,10 +1923,10 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
               setError("");
               setSuccess("");
             }}
-            className={`relative inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong ${
+            className={`relative inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong sm:px-4 sm:py-2 ${
               tab === item.id
                 ? "bg-brand-500/20 text-brand-700 border border-brand-500/40 dark:text-brand-300"
-                : "text-ink-500 border border-transparent hover:border-brand-400 hover:text-brand-600 hover:bg-ink-100 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80"
+                : "border border-ink-200 bg-ink-50 text-ink-500 hover:border-brand-400 hover:text-brand-600 hover:bg-ink-100 dark:border-ink-700 dark:bg-ink-900/60 dark:text-ink-400 dark:hover:border-brand-400 dark:hover:text-brand-400 dark:hover:bg-ink-800/80"
             }`}
           >
             {item.label}

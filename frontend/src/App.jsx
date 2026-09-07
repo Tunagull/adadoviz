@@ -143,7 +143,7 @@ function AppShell() {
         className={`flex-1 ${
           adminRoute
             ? ""
-            : "max-md:pb-24 rounded-b-[2rem] border-b border-ink-200 bg-ink-50 shadow-[0_28px_60px_-28px_rgba(8,8,10,0.35)] dark:border-white/20 dark:bg-ink-950 dark:shadow-[0_2px_0_-1px_rgba(255,255,255,0.10),0_24px_50px_-20px_rgba(0,0,0,0.95)]"
+            : "max-md:pb-32 rounded-b-[2rem] border-b border-ink-200 bg-ink-50 shadow-[0_28px_60px_-28px_rgba(8,8,10,0.35)] dark:border-white/20 dark:bg-ink-950 dark:shadow-[0_2px_0_-1px_rgba(255,255,255,0.10),0_24px_50px_-20px_rgba(0,0,0,0.95)]"
         }`}
       >
         <ErrorBoundary
