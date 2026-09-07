@@ -694,8 +694,8 @@ app.get("/api/kurlar", async (_req, res) => {
           const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
           const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
           rates[currency] = enforceSellGteBuy(
-            applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type),
-            applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type)
+            applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type, "buy"),
+            applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type, "sell")
           );
         }
         const nameKey = String(biz.institution_name || "")
@@ -2459,8 +2459,8 @@ app.get("/api/admin/market-health", requireSuperAdmin, (req, res) => {
           if (!kur || kur.buy == null || kur.sell == null) continue;
           const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
           const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
-          const buy = applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type);
-          const sell = applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type);
+          const buy = applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type, "buy");
+          const sell = applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type, "sell");
           if (!Number.isFinite(buy) || !Number.isFinite(sell)) continue;
 
           let issue = null;
@@ -2884,8 +2884,8 @@ function buildCurrencyPayload(institutionId, institutionName) {
     const buyAdj = adjustments[buyKey] || { margin_type: "fixed", margin_value: 0 };
     const sellAdj = adjustments[sellKey] || { margin_type: "fixed", margin_value: 0 };
     const ordered = enforceSellGteBuy(
-      applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type),
-      applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type)
+      applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type, "buy"),
+      applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type, "sell")
     );
 
     result.push({
@@ -2962,8 +2962,8 @@ app.put("/api/admin/rates", requireAuth, requireWritableBusiness, async (req, re
       // İş kuralı (project_audit_report.md §1.2): finalSell >= finalBuy
       const kur = cachedRates.centralBankRates?.[currency];
       if (kur) {
-        const finalBuy = applyMarginToValue(kur.buy, buyMarginValue, buyMarginType);
-        const finalSell = applyMarginToValue(kur.sell, sellMarginValue, sellMarginType);
+        const finalBuy = applyMarginToValue(kur.buy, buyMarginValue, buyMarginType, "buy");
+        const finalSell = applyMarginToValue(kur.sell, sellMarginValue, sellMarginType, "sell");
         if (
           finalBuy != null &&
           finalSell != null &&

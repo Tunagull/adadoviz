@@ -188,12 +188,21 @@ function formatBranchRemainingLabel(branch, t) {
   return `${days} ${t("daysUnit")}`;
 }
 
-function applyGranularMargin(kur, marginType, marginValue) {
+/**
+ * Marjı MB kuruna uygular — önizleme (yayınlanan kuru backend hesaplar).
+ *
+ * ⚠️ KÂR YÖNÜ (2026-09 düzeltmesi, backend `rateMath.applyMarginToValue` ile aynı):
+ *   ALIŞ  → MB kurunun ALTINDA fiyat (kâr = MB − ilan; alış düştükçe kâr artar)
+ *   SATIŞ → MB kurunun ÜSTÜNDE fiyat (kâr = ilan − MB)
+ * `side` verilmezse geriye dönük uyum için toplama (satış davranışı).
+ */
+function applyGranularMargin(kur, marginType, marginValue, side = "sell") {
   const base = Number(kur);
   const m = Math.max(0, Number(marginValue) || 0);
   if (!Number.isFinite(base) || !Number.isFinite(m)) return null;
-  if (marginType === "percent") return base + (base * m) / 100;
-  return base + m;
+  const delta = marginType === "percent" ? (base * m) / 100 : m;
+  const result = side === "buy" ? base - delta : base + delta;
+  return result < 0 ? 0 : result;
 }
 
 /** Marj yapısının derin kopyası — string değerler korunur (yükleme ile aynı biçim). */
@@ -2196,7 +2205,7 @@ export function InstitutionAdminPage() {
             {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'buy').map((item) => {
             const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
             const kur = centralBankRates?.[item?.currency]?.[item?.type] || null;
-            const final = applyGranularMargin(kur, cfg?.type, cfg?.value);
+            const final = applyGranularMargin(kur, cfg?.type, cfg?.value, item?.type);
             const itemLabel = marginLabels[item.labelKey] || item.labelKey;
 
             return (
@@ -2257,7 +2266,8 @@ export function InstitutionAdminPage() {
                   <p className="text-sm font-bold">
                     <span className="text-brand-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-brand-700 dark:text-brand-300 text-base">{formatNum(final)}</span>
                     {(() => {
-                      const kar = final && kur ? final - kur : 0;
+                      // ALIŞ kârı = MB kuru − ilan edilen alış (büro referansın altında alır).
+                      const kar = final && kur ? kur - final : 0;
                       return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
                     })()}
                   </p>
@@ -2275,7 +2285,7 @@ export function InstitutionAdminPage() {
             {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
               const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
               const kur = centralBankRates?.[item?.currency]?.[item?.type] || null;
-              const final = applyGranularMargin(kur, cfg?.type, cfg?.value);
+              const final = applyGranularMargin(kur, cfg?.type, cfg?.value, item?.type);
               const itemLabel = marginLabels[item.labelKey] || item.labelKey;
 
               return (
@@ -2336,6 +2346,7 @@ export function InstitutionAdminPage() {
                     <p className="text-sm font-bold">
                       <span className="text-danger-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-danger-700 dark:text-danger-400 text-base">{formatNum(final)}</span>
                       {(() => {
+                        // SATIŞ kârı = ilan edilen satış − MB kuru (büro referansın üstünde satar).
                         const kar = final && kur ? final - kur : 0;
                         return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
                       })()}

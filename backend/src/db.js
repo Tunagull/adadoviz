@@ -2953,12 +2953,18 @@ function marginValueAt(sortedHistoryRows, currentAdjustment, tsMs) {
   };
 }
 
-function applyMarginToRate(rawRate, marginType, marginValue) {
+/**
+ * Marjı referans kura uygular. `side='buy'` → referansın ALTINDA (kâr = referans
+ * − ilan), `side='sell'` → ÜSTÜNDE. Bkz. rateMath.js applyMarginToValue kâr-yönü
+ * notu (2026-09 düzeltmesi). `side` verilmezse geriye dönük uyum için toplama.
+ */
+function applyMarginToRate(rawRate, marginType, marginValue, side = "sell") {
   const base = Number(rawRate);
   const m = Math.max(0, Number(marginValue) || 0);
   if (!Number.isFinite(base)) return null;
-  if (normalizeKind(marginType) === "percent") return base + (base * m) / 100;
-  return base + m;
+  const delta = normalizeKind(marginType) === "percent" ? (base * m) / 100 : m;
+  const result = String(side).toLowerCase() === "buy" ? base - delta : base + delta;
+  return result < 0 ? 0 : result;
 }
 
 /**
@@ -3028,8 +3034,8 @@ function getBusinessRateHistory(institutionId, currency, period = "Günlük") {
     const buyMargin = marginValueAt(buyHistory, currentBuyAdj, tsMs);
     const sellMargin = marginValueAt(sellHistory, currentSellAdj, tsMs);
 
-    const finalBuy = applyMarginToRate(buyRate, buyMargin.margin_type, buyMargin.margin_value);
-    const finalSell = applyMarginToRate(sellRate, sellMargin.margin_type, sellMargin.margin_value);
+    const finalBuy = applyMarginToRate(buyRate, buyMargin.margin_type, buyMargin.margin_value, "buy");
+    const finalSell = applyMarginToRate(sellRate, sellMargin.margin_type, sellMargin.margin_value, "sell");
     if (finalBuy == null || finalSell == null) continue;
 
     const ordered = enforceSellGteBuy(finalBuy, finalSell);
