@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef } from "react";
-import { ArrowUp, BarChart3, Building2, LineChart, Mail, MessageCircle, Tag } from "lucide-react";
+import {
+  ArrowUp,
+  BarChart3,
+  BookOpen,
+  Building2,
+  LineChart,
+  Mail,
+  MessageCircle,
+  Tag,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
 import { contactLinks } from "../../lib/contact";
@@ -344,6 +353,16 @@ export function CinematicFooter() {
               >
                 <Mail className="size-4" aria-hidden="true" />
                 {t("navContact")}
+              </MagneticButton>
+
+              <MagneticButton
+                as={Link}
+                to="/rehber/kktc-doviz-bozdurma"
+                strength={0.25}
+                className={`cursor-pointer ${pillLink}`}
+              >
+                <BookOpen className="size-4" aria-hidden="true" />
+                {t("navGuide")}
               </MagneticButton>
 
               <MagneticButton

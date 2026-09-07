@@ -387,12 +387,27 @@ kabul gerekçesi).
 `search_impression` yayıncısı hâlâ P2.5'ten ertelenmiş durumda (talep kırılımı `view/call/...` olaylarından
 besleniyor).
 
-### ☐ P3.5 — İçerik / landing sayfaları (C9)
-- Statik ilk sürüm: `/rehber/kktc-doviz-bozdurma`, `/kur/usd-try`, `/sehir/girne` — `SeoHead` + JSON-LD
-  (FAQPage, Article). İçerik markdown → build-time.
-- SSS bileşeni (accordion, `ease-out-strong`).
-- `sitemap.xml`'e ekle. `llms.txt` (AEO).
-- Sonra: superadmin'den düzenlenebilir (CMS-lite) — `content_pages` tablosu.
+### ☑ P3.5 — İçerik / landing sayfaları (C9)
+Backend değişmedi — tamamen statik/frontend. `frontend/src/content/contentPages.js` — 3 sayfa
+yapılandırılmış veri olarak (TR+EN her biri: `title/description/h1/lead/sections[]/faq[]/related[]`),
+`getContentPage(type,slug)` / `listContentPages` / `contentPath` yardımcıları. Markdown+build-time
+derleyici yerine JS veri (eklenti yok). Sayfalar: `/rehber/kktc-doviz-bozdurma`, `/kur/usd-try`,
+`/sehir/girne`. `components/Faq.jsx` — kütüphanesiz akordeon (`<button>`+`aria-expanded/-controls`,
+`grid-template-rows` 1fr/0fr geçişi, `ease-out-strong`+`duration-base`, `ChevronDown` rotate).
+`pages/ContentPage.jsx` (lazy, `type` prop) — PricingPage başlık deseni (`BrandLogo`+`SiteNav`+
+`HeaderActions`), grid arka plan, breadcrumb nav, `<article>` (h1/lead/updated + section h2+p+list),
+`<Faq>`, "İlgili sayfalar", alt CTA (`/en-iyi-kur`). `Helmet`: `<title> | AdaDöviz` + description +
+`<link canonical>` + og:article + 3 JSON-LD (`BreadcrumbList` + `Article` + `FAQPage`). Eşleşmeyen
+slug → `<Navigate to="/">`. `App.jsx`: 3 lazy rota (`/rehber/:slug`, `/kur/:slug`, `/sehir/:slug`).
+`public/sitemap.xml` — 1 → 9 URL (ana + 5 araç + 3 içerik). `public/llms.txt` — yeni (AEO; araçlar +
+rehber + işletme bölümleri, TR/EN karışık). `components/ui/motion-footer.jsx` — pill sırasına "Rehber"
+(`BookOpen`, `/rehber/kktc-doviz-bozdurma`). i18n `content*` + `navGuide` (TR+EN).
+**Doğrulama:** `npm run build` yeşil (ContentPage 4.9 kB lazy chunk, Faq bundle içinde); lint 45→45
+(yeni hata yok); `vite preview` ile `/llms.txt` (200 text/plain), `/sitemap.xml` (200, 9 `<loc>`),
+`/rehber/kktc-doviz-bozdurma` (200) doğrulandı; içerik registry node ile denendi (3 sayfa + eksik slug null).
+**Ertelendi:** superadmin'den düzenlenebilir CMS-lite (`content_pages` tablosu) — plan zaten "Sonra:" diyor;
+statik veri fallback olarak kalır. Daha fazla şehir/parite sayfası içerik yazımı işi (altyapı hazır — yeni
+giriş `contentPages.js`'e eklenir + sitemap satırı).
 
 ### ☐ P3.6 — Self-servis ödeme / dekont (B5)
 Panelden "Yenile / Yükselt" → plan seç → havale bilgileri + "dekont yükle" (`payment_proofs`) →
