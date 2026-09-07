@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell, LifeBuoy, CheckCircle2, Circle } from "lucide-react";
+import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell, LifeBuoy, CheckCircle2, Circle, CreditCard } from "lucide-react";
 import Cropper from "react-easy-crop";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -31,6 +31,7 @@ import {
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
 import { Sheet } from "../components/Sheet";
+import { RenewSubscriptionModal } from "../components/RenewSubscriptionModal";
 import { DualRangeSlider } from "../components/DualRangeSlider";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { FloatingInput, FloatingTextarea } from "../components/ui/floating-label";
@@ -344,6 +345,8 @@ export function InstitutionAdminPage() {
       return false;
     }
   });
+  // P3.6 — self-servis yenileme / dekont
+  const [showRenewModal, setShowRenewModal] = useState(false);
   // P1.7 — panel-içi destek / sorun bildirimi
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [supportSubject, setSupportSubject] = useState("");
@@ -1881,6 +1884,19 @@ export function InstitutionAdminPage() {
           {t("supportButton")}
         </button>
 
+        <button
+          type="button"
+          onClick={() => setShowRenewModal(true)}
+          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong ${
+            expired || nearExpiry
+              ? "border-brand-500 bg-brand-500/10 text-brand-800 hover:bg-brand-500/20 dark:border-brand-400 dark:text-brand-200"
+              : "border-ink-200 bg-white text-ink-700 hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400"
+          }`}
+        >
+          <CreditCard className="size-4" />
+          {t("renewButton")}
+        </button>
+
         <div className="relative" ref={subscriptionPanelRef}>
           <button
             type="button"
@@ -3352,6 +3368,15 @@ export function InstitutionAdminPage() {
           </div>
         </div>
       )}
+
+      {showRenewModal ? (
+        <RenewSubscriptionModal
+          key={`renew-${showRenewModal}`}
+          open={showRenewModal}
+          onOpenChange={(next) => { if (!next) setShowRenewModal(false); }}
+          token={auth?.token}
+        />
+      ) : null}
     </div>
   </div>
   );

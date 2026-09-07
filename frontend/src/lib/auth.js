@@ -733,6 +733,22 @@ export const previewAdminDiscountCode = (token, code, amount) =>
     token
   );
 
+/** İşletme: self-servis ödeme / dekont (P3.6). */
+export const fetchBankDetails = (token) => getJson("/api/business/bank-details", token);
+export const fetchMyPaymentProofs = (token) => getJson("/api/business/payment-proofs", token);
+export const submitPaymentProof = (token, payload) =>
+  sendJson("/api/business/payment-proofs", token, "POST", payload);
+
+/** Super Admin: ödeme dekontları (P3.6). */
+export const fetchAdminPaymentProofs = (token, status) =>
+  getJson(`/api/admin/payment-proofs${status ? `?status=${encodeURIComponent(status)}` : ""}`, token);
+export const fetchAdminPaymentProof = (token, id) =>
+  getJson(`/api/admin/payment-proofs/${id}`, token);
+export const approveAdminPaymentProof = (token, id) =>
+  sendJson(`/api/admin/payment-proofs/${id}/approve`, token, "POST");
+export const rejectAdminPaymentProof = (token, id, reason) =>
+  sendJson(`/api/admin/payment-proofs/${id}/reject`, token, "POST", { reason });
+
 /** Super Admin: lead CRM (P3.4). */
 export const fetchAdminLeads = (token, status) =>
   getJson(`/api/admin/leads${status ? `?status=${encodeURIComponent(status)}` : ""}`, token);

@@ -27,7 +27,11 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * S-H4: Pasif işletmenin YAZABİLECEĞİ tek yol — abonelik uzatma / şube talebi
  * (ürün kararı: pasif hesap da yenileme talebi gönderebilmeli).
  */
-const INACTIVE_WRITE_ALLOW = [/^\/api\/business\/branch-requests(\/|$)/];
+const INACTIVE_WRITE_ALLOW = [
+  /^\/api\/business\/branch-requests(\/|$)/,
+  // P3.6: süresi dolmuş işletme yenileme dekontu yükleyebilmeli.
+  /^\/api\/business\/payment-proofs(\/|$)/,
+];
 
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });

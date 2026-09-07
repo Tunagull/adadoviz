@@ -55,6 +55,10 @@ import {
   fetchAdminLeads,
   updateAdminLead,
   fetchAdminDemand,
+  fetchAdminPaymentProofs,
+  fetchAdminPaymentProof,
+  approveAdminPaymentProof,
+  rejectAdminPaymentProof,
   fetchAdminPlans,
   fetchAdminExpiring,
   fetchAdminPartnershipApplications,
@@ -75,6 +79,12 @@ import { SearchableSelect } from "../components/SearchableSelect";
 
 
 /** Aylık 500 ₺ · Yıllık 5000 ₺ · Test ücretsiz · Manuel elle girilir */
+const STATUS_TONE_PROOF = {
+  pending: "text-warning-700 dark:text-warning-400",
+  approved: "text-success-700 dark:text-success-400",
+  rejected: "text-danger-700 dark:text-danger-400",
+};
+
 function defaultSubscriptionPrice(subscriptionType) {
   if (subscriptionType === "Aylık") return 500;
   if (subscriptionType === "Yıllık") return 5000;
@@ -626,6 +636,7 @@ export function SuperAdminDashboard() {
       { id: "requests", label: t("tabRequests") },
       { id: "signups", label: t("tabSignups") },
       { id: "leads", label: t("tabLeads") },
+      { id: "proofs", label: t("tabProofs") },
       /*
         ⚠️ HATA DÜZELTMESİ (R-01): `revenue`, `expiring`, `plans` ve
         `partnershipApps` her panel açılışında `loadRevenue` ile çekiliyor ama
@@ -1079,6 +1090,86 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
       }
     },
     [token, loadLeads, t]
+  );
+
+  // P3.6 — ödeme dekontları
+  const [proofs, setProofs] = useState([]);
+  const [proofsPending, setProofsPending] = useState(0);
+  const [proofFilter, setProofFilter] = useState("pending");
+  const [proofLoading, setProofLoading] = useState(false);
+  const [proofError, setProofError] = useState("");
+  const [proofActing, setProofActing] = useState(null);
+  const [proofImage, setProofImage] = useState(null); // { id, proof_image, institution_name }
+
+  const loadProofs = useCallback(async () => {
+    if (!token) return;
+    setProofLoading(true);
+    setProofError("");
+    try {
+      const data = await fetchAdminPaymentProofs(token, proofFilter || undefined);
+      setProofs(data.proofs || []);
+      setProofsPending(Number(data.pending) || 0);
+    } catch (err) {
+      setProofError(err.message || t("statsLoadFailedMsg"));
+    } finally {
+      setProofLoading(false);
+    }
+  }, [token, proofFilter, t]);
+
+  useEffect(() => {
+    if (tab !== "proofs" || !token) return;
+    loadProofs();
+  }, [tab, token, loadProofs]);
+
+  const handleViewProof = useCallback(
+    async (id) => {
+      if (!token) return;
+      try {
+        const data = await fetchAdminPaymentProof(token, id);
+        setProofImage(data.proof || null);
+      } catch (err) {
+        setProofError(err.message || t("statsLoadFailedMsg"));
+      }
+    },
+    [token, t]
+  );
+
+  const handleApproveProof = useCallback(
+    async (id) => {
+      if (!token) return;
+      setProofActing(id);
+      setProofError("");
+      try {
+        await approveAdminPaymentProof(token, id);
+        setProofImage(null);
+        await loadProofs();
+      } catch (err) {
+        setProofError(err.message || t("signupAdminActionFailed"));
+      } finally {
+        setProofActing(null);
+      }
+    },
+    [token, loadProofs, t]
+  );
+
+  const handleRejectProof = useCallback(
+    async (id) => {
+      if (!token) return;
+      const reason = window.prompt(t("proofRejectPrompt")) ?? null;
+      if (reason === null) return;
+      setProofActing(id);
+      setProofError("");
+      try {
+        await rejectAdminPaymentProof(token, id, reason);
+        setProofImage(null);
+        await loadProofs();
+      } catch (err) {
+        setProofError(err.message || t("signupAdminActionFailed"));
+      } finally {
+        setProofActing(null);
+      }
+    },
+    [token, loadProofs, t]
   );
 
   const loadBranchRequests = useCallback(async () => {
@@ -3217,6 +3308,140 @@ tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
               )}
             </div>
           </div>
+        </section>
+      )}
+
+      {/* P3.6 — ödeme dekontları onay kuyruğu */}
+      {tab === "proofs" && (
+        <section className="space-y-4">
+          {proofError ? (
+            <p className="rounded-control border border-danger-600/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-700 dark:text-danger-300">
+              {proofError}
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            {["pending", "approved", "rejected", ""].map((s) => (
+              <button
+                key={s || "all"}
+                type="button"
+                onClick={() => setProofFilter(s)}
+                className={`rounded-control px-3 py-1 text-xs font-medium transition ${
+                  proofFilter === s
+                    ? "bg-brand-500 text-white"
+                    : "bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-300"
+                }`}
+              >
+                {s ? t(`renewStatus_${s}`) : t("leadAll")}
+                {s === "pending" && proofsPending > 0 ? ` (${proofsPending})` : ""}
+              </button>
+            ))}
+          </div>
+
+          {proofs.length ? (
+            <ul className="space-y-3">
+              {proofs.map((p) => (
+                <li key={p.id} className="surface-card p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold text-ink-900 dark:text-white">
+                      {p.institution_name || p.institution_id}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                      {String(p.created_at || "").slice(0, 10)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-600 dark:text-ink-400">
+                    {p.plan_adi || p.plan_code}
+                    {p.amount != null
+                      ? ` · ${Number(p.amount).toLocaleString("tr-TR")} ₺`
+                      : ""}
+                    {p.method ? ` · ${p.method}` : ""}
+                    {" · "}
+                    <span className={STATUS_TONE_PROOF[p.status] || ""}>
+                      {t(`renewStatus_${p.status}`)}
+                    </span>
+                  </p>
+                  {p.note ? (
+                    <p className="mt-1 line-clamp-2 text-xs text-ink-600 dark:text-ink-400">
+                      {p.note}
+                    </p>
+                  ) : null}
+                  {p.reject_reason ? (
+                    <p className="mt-1 text-xs text-danger-700 dark:text-danger-400">
+                      {p.reject_reason}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleViewProof(p.id)}
+                      className="btn-ghost btn-sm"
+                    >
+                      {t("proofView")}
+                    </button>
+                    {p.status === "pending" ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={proofActing === p.id}
+                          onClick={() => handleApproveProof(p.id)}
+                          className="rounded-lg border border-success-500/40 bg-success-500/10 px-3 py-1.5 text-xs font-semibold text-success-700 hover:bg-success-500/20 disabled:opacity-50 dark:text-success-300"
+                        >
+                          {t("proofApprove")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={proofActing === p.id}
+                          onClick={() => handleRejectProof(p.id)}
+                          className="rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-semibold text-danger-700 hover:bg-danger-500/20 disabled:opacity-50 dark:text-danger-300"
+                        >
+                          {t("proofReject")}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-600 dark:text-ink-400">
+              {proofLoading ? "—" : t("proofEmpty")}
+            </p>
+          )}
+
+          {proofImage ? (
+            <div
+              className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 p-4"
+              onClick={() => setProofImage(null)}
+              role="presentation"
+            >
+              <div
+                className="max-h-[90vh] max-w-2xl overflow-auto rounded-xl bg-white p-3 dark:bg-ink-900"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label={t("proofImageTitle")}
+              >
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-ink-900 dark:text-white">
+                    {proofImage.institution_name || proofImage.institution_id}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setProofImage(null)}
+                    className="text-sm text-ink-500 hover:text-ink-900 dark:hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <img
+                  src={proofImage.proof_image}
+                  alt={t("proofImageTitle")}
+                  className="max-h-[75vh] w-full rounded-lg object-contain"
+                />
+              </div>
+            </div>
+          ) : null}
         </section>
       )}
 

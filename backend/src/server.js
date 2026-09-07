@@ -77,6 +77,12 @@ const {
   getSearchMissStats,
   getDemandAnalytics,
   getLeadFunnel,
+  createPaymentProof,
+  listPaymentProofs,
+  getPaymentProofById,
+  countPendingPaymentProofs,
+  updatePaymentProofStatus,
+  extendSubscriptionForPlan,
   createRateAlert,
   getRateAlertByToken,
   listRateAlertsByEmail,
@@ -164,7 +170,7 @@ const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./in
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, sendSignupReceivedEmail, sendSignupApprovedEmail, sendSignupRejectedEmail, sendRateAlertVerifyEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, sendSignupReceivedEmail, sendSignupApprovedEmail, sendSignupRejectedEmail, sendRateAlertVerifyEmail, sendGenericNotificationEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
 const { runSubscriptionReminders } = require("./jobs/subscriptionReminders");
 const { runRateAlertCheck, checkSingleAlertNow } = require("./jobs/rateAlerts");
 const { buildBusinessSlug } = require("./slug");
@@ -411,6 +417,12 @@ const supportLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 10,
   message: "Çok fazla destek talebi gönderildi. Lütfen bir saat sonra tekrar deneyin.",
+});
+// P3.6: dekont yükleme — kimlik doğrulamalı; büyük base64 gövde + e-posta tetikler.
+const paymentProofLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 6,
+  message: "Çok fazla dekont gönderildi. Lütfen bir saat sonra tekrar deneyin.",
 });
 // P3.1: self-signup başvurusu — public, hesap oluşturmaz ama e-posta + bildirim tetikler.
 const signupLimiter = createRateLimiter({
@@ -3334,6 +3346,238 @@ app.get("/api/business/subscription", requireAuth, (req, res) => {
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Abonelik bilgisi alınamadı." });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* P3.6 — self-servis ödeme / dekont (B5)                              */
+/* ------------------------------------------------------------------ */
+
+/** Havale bilgileri — env ile geçersiz kılınabilir, aksi halde yer tutucu. */
+function getBankTransferInfo() {
+  return {
+    account_name: process.env.BANK_ACCOUNT_NAME || "AdaDöviz",
+    bank_name: process.env.BANK_NAME || "",
+    iban: process.env.BANK_IBAN || "",
+    branch: process.env.BANK_BRANCH || "",
+    note:
+      process.env.BANK_TRANSFER_NOTE ||
+      "Açıklamaya işletme adınızı ve seçtiğiniz paketi yazın. Havale sonrası dekontu yükleyin.",
+  };
+}
+
+/** İşletme: havale bilgileri + aktif paketler. */
+app.get("/api/business/bank-details", requireAuth, (req, res) => {
+  if (req.user?.role === "superadmin") {
+    return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+  }
+  return res.json({
+    bank: getBankTransferInfo(),
+    plans: listPlans({ onlyActive: true }),
+  });
+});
+
+/** İşletme: kendi dekontlarını listele. */
+app.get("/api/business/payment-proofs", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    return res.json({
+      proofs: listPaymentProofs({ institution_id: req.user.institution_id, limit: 30 }),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Dekontlar alınamadı." });
+  }
+});
+
+/** İşletme: yenile / yükselt için havale dekontu yükle. */
+app.post("/api/business/payment-proofs", requireAuth, paymentProofLimiter, async (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    // Not: süresi dolmuş (pasif) işletme de dekont yükleyebilir —
+    // auth.js INACTIVE_WRITE_ALLOW bu yolu yazmaya açar.
+    const proof = createPaymentProof({
+      institution_id: req.user.institution_id,
+      plan_code: req.body?.plan_code,
+      amount: req.body?.amount,
+      method: req.body?.method || "havale",
+      note: req.body?.note,
+      proof_image: req.body?.proof_image,
+    });
+
+    createAdminNotification({
+      type: "payment_proof",
+      title: "Yeni ödeme dekontu",
+      message: `${req.user.institution_name} "${proof.plan_code}" paketi için dekont yükledi. İncelemenizi bekliyor.`,
+      data: { proof_id: proof.id, institution_id: req.user.institution_id },
+    });
+
+    if (isMailConfigured()) {
+      sendGenericNotificationEmail({
+        to: process.env.PARTNERSHIP_TO_EMAIL || process.env.GMAIL_USER,
+        title: "Yeni ödeme dekontu bekliyor",
+        message: `${req.user.institution_name} (${req.user.institution_id}) "${proof.plan_code}" paketi için dekont yükledi. Süper admin panelinden inceleyin.`,
+        ctaText: "Panele git",
+        ctaUrl: `${getFrontendBaseUrl()}/super-admin`,
+      }).catch((e) => console.warn("[EMAIL] dekont bildirimi:", e.message));
+    }
+
+    await recordAudit({
+      action: "payment_proof_submit",
+      actor: req.user?.username || req.user.institution_id,
+      institution_id: req.user.institution_id,
+      detail: `Dekont yüklendi: ${proof.plan_code} (id=${proof.id})`,
+    });
+
+    return res.status(201).json({ proof });
+  } catch (err) {
+    return res.status(400).json({ error: clientErrorMessage(err, "Dekont gönderilemedi.") });
+  }
+});
+
+/** Super Admin: bekleyen/tüm dekontlar (görsel hariç — liste hafif). */
+app.get("/api/admin/payment-proofs", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      proofs: listPaymentProofs({ status: req.query?.status, limit: req.query?.limit }),
+      pending: countPendingPaymentProofs(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Dekontlar alınamadı." });
+  }
+});
+
+/** Super Admin: tek dekont + görsel. */
+app.get("/api/admin/payment-proofs/:id", requireSuperAdmin, (req, res) => {
+  try {
+    const proof = getPaymentProofById(req.params.id, { includeImage: true });
+    if (!proof) return res.status(404).json({ error: "Dekont bulunamadı." });
+    return res.json({ proof });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Dekont alınamadı." });
+  }
+});
+
+/** Super Admin: dekontu ONAYLA → createPayment + abonelik uzat + makbuz. */
+app.post("/api/admin/payment-proofs/:id/approve", requireSuperAdmin, async (req, res) => {
+  try {
+    const proof = getPaymentProofById(req.params.id);
+    if (!proof) return res.status(404).json({ error: "Dekont bulunamadı." });
+    if (proof.status !== "pending") {
+      return res.status(409).json({ error: "Bu dekont zaten işlenmiş." });
+    }
+
+    const payment = createPayment({
+      institution_id: proof.institution_id,
+      plan_code: proof.plan_code,
+      tutar: proof.amount ?? undefined,
+      yontem: proof.method || "havale",
+      aciklama: `Self-servis dekont onayı (proof #${proof.id})`,
+      olusturan: req.user?.username || "superadmin",
+    });
+    await syncPaymentUpsert(payment).catch((e) =>
+      console.error("[PROOF] payment sync başarısız:", e.message)
+    );
+
+    const ext = extendSubscriptionForPlan(proof.institution_id, proof.plan_code);
+    const full = getInstitutionFullBySlug(proof.institution_id);
+    if (full) {
+      await syncInstitutionUpsert(full).catch((e) =>
+        console.warn("[PROOF] institution sync:", e.message)
+      );
+    }
+
+    updatePaymentProofStatus(proof.id, {
+      status: "approved",
+      reviewed_by: req.user?.username || "superadmin",
+      payment_id: payment.id,
+    });
+
+    if (full?.id) {
+      createBusinessNotification({
+        business_id: full.id,
+        type: "payment_approved",
+        title: "Ödemeniz onaylandı",
+        message: `"${proof.plan_code}" paketi ödemeniz onaylandı. Aboneliğiniz ${ext.added_days} gün uzatıldı.`,
+      });
+    }
+
+    if (full?.email && isMailConfigured()) {
+      const plan = listPlans().find((p) => p.code === proof.plan_code);
+      sendPaymentReceiptEmail({
+        to: full.email,
+        institutionName: full.institution_name,
+        planName: plan?.ad,
+        planCode: proof.plan_code,
+        amount: payment.tutar,
+        vat: payment.kdv,
+        periodStart: payment.donem_baslangic,
+        periodEnd: payment.donem_bitis,
+        invoiceNo: payment.fatura_no,
+        method: payment.yontem,
+        paidAt: payment.odeme_tarihi,
+      }).catch((e) => console.warn("[EMAIL] makbuz:", e.message));
+    }
+
+    await recordAudit(
+      {
+        action: "payment_proof_approve",
+        actor: req.user?.username || "superadmin",
+        institution_id: proof.institution_id,
+        detail: `Dekont #${proof.id} onaylandı → tahsilat ${payment.tutar} ₺, abonelik +${ext.added_days} gün (bitiş ${ext.subscription_end_date})`,
+      },
+      { strict: true }
+    );
+
+    return res.json({ proof: getPaymentProofById(proof.id), payment, subscription: ext });
+  } catch (err) {
+    return res.status(400).json({ error: clientErrorMessage(err, "Dekont onaylanamadı.") });
+  }
+});
+
+/** Super Admin: dekontu REDDET. */
+app.post("/api/admin/payment-proofs/:id/reject", requireSuperAdmin, async (req, res) => {
+  try {
+    const proof = getPaymentProofById(req.params.id);
+    if (!proof) return res.status(404).json({ error: "Dekont bulunamadı." });
+    if (proof.status !== "pending") {
+      return res.status(409).json({ error: "Bu dekont zaten işlenmiş." });
+    }
+    const reason = String(req.body?.reason || "").trim();
+    updatePaymentProofStatus(proof.id, {
+      status: "rejected",
+      reviewed_by: req.user?.username || "superadmin",
+      reject_reason: reason,
+    });
+
+    const full = getInstitutionFullBySlug(proof.institution_id);
+    if (full?.id) {
+      createBusinessNotification({
+        business_id: full.id,
+        type: "payment_rejected",
+        title: "Ödeme dekontu reddedildi",
+        message: reason
+          ? `Dekontunuz reddedildi: ${reason}`
+          : "Dekontunuz reddedildi. Lütfen destek ile iletişime geçin.",
+      });
+    }
+
+    await recordAudit(
+      {
+        action: "payment_proof_reject",
+        actor: req.user?.username || "superadmin",
+        institution_id: proof.institution_id,
+        detail: `Dekont #${proof.id} reddedildi${reason ? `: ${reason}` : ""}`,
+      },
+      { strict: true }
+    );
+
+    return res.json({ proof: getPaymentProofById(proof.id) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Dekont reddedilemedi." });
   }
 });
 

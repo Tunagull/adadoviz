@@ -409,16 +409,47 @@ rehber + işletme bölümleri, TR/EN karışık). `components/ui/motion-footer.j
 statik veri fallback olarak kalır. Daha fazla şehir/parite sayfası içerik yazımı işi (altyapı hazır — yeni
 giriş `contentPages.js`'e eklenir + sitemap satırı).
 
-### ☐ P3.6 — Self-servis ödeme / dekont (B5)
-Panelden "Yenile / Yükselt" → plan seç → havale bilgileri + "dekont yükle" (`payment_proofs`) →
-superadmin "onayla" → `createPayment` + abonelik uzat + `sendPaymentReceiptEmail`. (Online ödeme sağlayıcısı
-KKTC'de sınırlı — havale-öncelikli.)
+### ☑ P3.6 — Self-servis ödeme / dekont (B5)
+`migrations/0009_payment_proofs.sql` + `db.js` initDb eş tablo (Supabase sync yok — onaydaki `createPayment`
+kalıcı tahsilatı zaten senkronluyor). `payment_proofs`: institution_id, plan_code, amount, method, note,
+`proof_image` (base64 data URI), status (pending|approved|rejected), reviewed_by/-at, reject_reason,
+`payment_id`. `db.js`: `sanitizeProofImage` (logo sniff mantığı, ~2.5 MB sınır), `createPaymentProof`
+(anti-abuse: bekleyen dekont varsa yeni engellenir), `listPaymentProofs`/`getPaymentProofById`
+(`includeImage` opsiyonu — liste hafif), `countPendingPaymentProofs`, `updatePaymentProofStatus`
+(pending değilse hata), `extendSubscriptionForPlan` (kalan güne planın süresini EKLE, süresi geçmişse
+bugünden; `subscription_type` plana yükselt, `is_active=1`), `subscriptionTypeFromPlanCode`.
+`server.js`: `paymentProofLimiter` (6/sa); `GET /api/business/bank-details` (env `BANK_*` → aksi halde
+yer tutucu + aktif paketler), `GET/POST /api/business/payment-proofs` (POST `auth.js` `INACTIVE_WRITE_ALLOW`'a
+eklendi — süresi dolmuş işletme yenileyebilir), `GET /api/admin/payment-proofs[?status]` (görselsiz liste +
+pending sayısı), `GET /api/admin/payment-proofs/:id` (görselli), `.../approve` (`createPayment` +
+`syncPaymentUpsert` + `extendSubscriptionForPlan` + `syncInstitutionUpsert` + `payment_approved` işletme
+bildirimi + `sendPaymentReceiptEmail` + audit strict), `.../reject` (sebep + `payment_rejected` bildirimi +
+audit strict). Dekont yükleme → `createAdminNotification` + `sendGenericNotificationEmail` operatör kutusuna.
+Frontend: `lib/auth.js` 7 helper; `components/RenewSubscriptionModal.jsx` (`Sheet`; plan `SearchableSelect` +
+havale bilgi kartı + `FileReader` base64 yükleme + önizleme + not + gönder; kendi dekont geçmişi;
+`InstitutionAdminPage` "Yenile / Yükselt" butonu + parent `key` remount). `SuperAdminDashboard` yeni
+"Dekontlar" sekmesi (durum filtresi + pending rozeti + liste + görsel modalı + Onayla/Reddet, ret sebebi
+`window.prompt`). i18n `renew*` / `renewStatus_*` / `tabProofs` / `proof*` (TR+EN).
+**Doğrulama:** `node --check` db.js + server.js + auth.js; node akış testi (createPaymentProof → dedup →
+extendSubscriptionForPlan → updatePaymentProofStatus → re-process engeli); canlı HTTP e2e (işletme login →
+bank-details → dekont gönder → dup 400 → kendi listesi görselsiz → admin pending liste → görselli tek →
+approve: tahsilat 500 + abonelik +30 gün + status approved), test satırları temizlendi; `npm run build`
+yeşil (SuperAdminDashboard ~140→~144 kB, RenewSubscriptionModal InstitutionAdminPage bundle'ında); lint 45→46
+(tek yeni `set-state-in-effect` — tab-yükleme deseni, P1.7/P3.4 gerekçesi).
+**Ertelendi:** online ödeme sağlayıcısı entegrasyonu (KKTC'de sınırlı — havale-öncelikli, plan da öyle diyor);
+KDV/fatura alanları dekont formunda toplanmıyor (superadmin `createPayment` ile ayarlar).
+
+---
+
+**FAZ 3 TAMAM** (P3.1–P3.6). Ayrıca bu turda: alış marjı kâr-yönü düzeltmesi (`ac2008e` — alış marjı
+referanstan çıkarılır). FAZ 1–3 bitti; ertelenen alt-maddeler ayrı iş olarak işaretli. Sıra: FAZ 4 (sonra).
 
 ---
 
 ## FAZ 4 — sonra
 
-☐ C8 ALTIN/gram altın (scraper + kart + çevirici) · ☐ C11 RU (belki AR) dil · ☐ B8 şube-bazlı kur ·
+~~C8 ALTIN/gram altın~~ — İPTAL: KKTC döviz ofislerinde altın işlemi yok (kullanıcı, 2026-09-07).
+☐ C11 RU (belki AR) dil · ☐ B8 şube-bazlı kur ·
 ☐ B9 şube personel rolleri · ☐ B10 banka kur API (`POST /api/partner/rates` + API key) ·
 ☐ S9 ekip rolleri (analist/fatura/destek) + admin 2FA · ☐ S8 CMS-lite / duyuru bandı ·
 ☐ S11 CSV toplu içe aktarma · ☐ B12 işletme 2FA · ☐ S12 plan→özellik gating motoru

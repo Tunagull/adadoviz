@@ -818,6 +818,30 @@ function initDb({ skipBusinessSeed = false } = {}) {
   db.exec(`CREATE INDEX IF NOT EXISTS search_misses_norm_idx ON search_misses (query_norm)`);
   db.exec(`CREATE INDEX IF NOT EXISTS search_misses_created_idx ON search_misses (created_at)`);
 
+  // P3.6: self-servis ödeme / dekont (B5). İşletme plan seçip havale dekontu
+  // yükler; superadmin onayında createPayment + abonelik uzatma tetiklenir.
+  // migrations/0009 ile eş şema. Supabase sync yok (onaydaki createPayment
+  // kalıcı tahsilatı zaten senkronluyor).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS payment_proofs (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      institution_id TEXT NOT NULL,
+      plan_code      TEXT NOT NULL,
+      amount         REAL,
+      method         TEXT,
+      note           TEXT,
+      proof_image    TEXT NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'pending',
+      reviewed_by    TEXT,
+      reviewed_at    TEXT,
+      reject_reason  TEXT,
+      payment_id     INTEGER,
+      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS payment_proofs_status_idx ON payment_proofs (status, created_at)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS payment_proofs_inst_idx ON payment_proofs (institution_id)`);
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -5739,6 +5763,200 @@ function getLeadFunnel() {
 }
 
 // ---------------------------------------------------------------------------
+// P3.6 — self-servis ödeme / dekont (payment_proofs)
+// ---------------------------------------------------------------------------
+
+const PROOF_STATUSES = new Set(["pending", "approved", "rejected"]);
+
+/** Dekont görseli — logo doğrulayıcının aynı sniff mantığı, daha büyük sınır. */
+function sanitizeProofImage(raw) {
+  const s = String(raw || "").trim();
+  if (!s) throw new Error("Dekont görseli zorunludur.");
+  if (s.length > 3_500_000) {
+    throw new Error("Dekont dosyası çok büyük (en fazla ~2.5 MB).");
+  }
+  const m = s.match(/^data:([^;,]+)(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i);
+  if (!m) throw new Error("Dekont yalnızca base64 kodlu görsel olabilir (data:image/...;base64,).");
+  const declaredMime = String(m[1] || "").toLowerCase().trim();
+  if (declaredMime.includes("svg")) throw new Error("SVG kabul edilmez. PNG, JPEG, WEBP veya GIF kullanın.");
+  if (!LOGO_ALLOWED_MIME.has(declaredMime)) {
+    throw new Error("Desteklenmeyen dosya türü. PNG, JPEG, WEBP veya GIF kullanın.");
+  }
+  let buf;
+  try {
+    buf = Buffer.from(m[2], "base64");
+  } catch (_e) {
+    throw new Error("Dekont verisi çözülemedi.");
+  }
+  const sniffed = sniffImageMime(buf);
+  if (!sniffed) throw new Error("Dekont içeriği geçerli bir görsel değil.");
+  const norm = (x) => (x === "image/jpg" ? "image/jpeg" : x);
+  return `data:${norm(sniffed)};base64,${buf.toString("base64")}`;
+}
+
+/** plan kodu → subscription_type etiketi (planCodeFromSubscriptionType tersi). */
+function subscriptionTypeFromPlanCode(code) {
+  const c = String(code || "").toLowerCase();
+  if (c === "yillik") return "Yıllık";
+  if (c === "aylik") return "Aylık";
+  if (c === "ucretsiz") return "Ücretsiz";
+  return "Test";
+}
+
+function mapPaymentProofRow(row, { includeImage = false } = {}) {
+  if (!row) return null;
+  const out = {
+    id: row.id,
+    institution_id: row.institution_id,
+    plan_code: row.plan_code,
+    amount: row.amount == null ? null : Number(row.amount),
+    method: row.method || null,
+    note: row.note || null,
+    status: PROOF_STATUSES.has(row.status) ? row.status : "pending",
+    reviewed_by: row.reviewed_by || null,
+    reviewed_at: row.reviewed_at ? toIsoTimestamp(row.reviewed_at) : null,
+    reject_reason: row.reject_reason || null,
+    payment_id: row.payment_id == null ? null : Number(row.payment_id),
+    created_at: toIsoTimestamp(row.created_at),
+    institution_name: row.institution_name || null,
+    plan_adi: row.plan_adi || null,
+  };
+  if (includeImage) out.proof_image = row.proof_image;
+  return out;
+}
+
+function createPaymentProof({ institution_id, plan_code, amount, method, note, proof_image } = {}) {
+  const inst = String(institution_id || "").trim();
+  if (!inst) throw new Error("İşletme zorunludur.");
+  const plan = getPlan(plan_code);
+  if (!plan) throw new Error("Geçersiz paket.");
+  const image = sanitizeProofImage(proof_image);
+
+  // Anti-abuse: aynı işletmenin bekleyen dekontu varsa yenisini engelle.
+  const pending = db
+    .prepare(`SELECT 1 FROM payment_proofs WHERE institution_id = ? AND status = 'pending' LIMIT 1`)
+    .get(inst);
+  if (pending) {
+    throw new Error("Zaten inceleme bekleyen bir dekontunuz var. Sonucu bekleyin.");
+  }
+
+  const amt =
+    amount !== undefined && amount !== null && amount !== "" ? Number(amount) : plan.fiyat;
+  const info = db
+    .prepare(
+      `INSERT INTO payment_proofs (institution_id, plan_code, amount, method, note, proof_image)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      inst,
+      plan.code,
+      Number.isFinite(amt) ? amt : null,
+      method ? String(method).trim().slice(0, 40) : null,
+      note ? String(note).trim().slice(0, 1000) : null,
+      image
+    );
+  return mapPaymentProofRow(
+    db.prepare(`SELECT * FROM payment_proofs WHERE id = ?`).get(info.lastInsertRowid)
+  );
+}
+
+function listPaymentProofs({ status, institution_id, limit = 200, includeImage = false } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 200, 1), 500);
+  const where = [];
+  const args = [];
+  if (status && PROOF_STATUSES.has(String(status))) {
+    where.push(`pp.status = ?`);
+    args.push(String(status));
+  }
+  if (institution_id) {
+    where.push(`pp.institution_id = ?`);
+    args.push(String(institution_id));
+  }
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  args.push(lim);
+  return db
+    .prepare(
+      `SELECT pp.*, i.institution_name, pl.ad AS plan_adi
+         FROM payment_proofs pp
+         LEFT JOIN institutions i ON i.institution_id = pp.institution_id
+         LEFT JOIN plans pl ON pl.code = pp.plan_code
+         ${clause}
+         ORDER BY datetime(pp.created_at) DESC
+         LIMIT ?`
+    )
+    .all(...args)
+    .map((r) => mapPaymentProofRow(r, { includeImage }));
+}
+
+function getPaymentProofById(id, { includeImage = false } = {}) {
+  const row = db
+    .prepare(
+      `SELECT pp.*, i.institution_name, pl.ad AS plan_adi
+         FROM payment_proofs pp
+         LEFT JOIN institutions i ON i.institution_id = pp.institution_id
+         LEFT JOIN plans pl ON pl.code = pp.plan_code
+        WHERE pp.id = ?`
+    )
+    .get(Number(id));
+  return mapPaymentProofRow(row, { includeImage });
+}
+
+function countPendingPaymentProofs() {
+  return Number(db.prepare(`SELECT COUNT(*) AS c FROM payment_proofs WHERE status = 'pending'`).get()?.c) || 0;
+}
+
+/**
+ * Onay: mevcut kalan güne planın süresini EKLE (süresi geçmişse bugünden başlat),
+ * subscription_type'ı plana yükselt, hesabı aktive et. `payments` satırı ayrıca
+ * server.js'te createPayment ile yazılır; burada yalnızca abonelik uzatılır.
+ */
+function extendSubscriptionForPlan(institutionId, planCode) {
+  const plan = getPlan(planCode);
+  if (!plan) throw new Error("Geçersiz paket.");
+  const row = db
+    .prepare(
+      `SELECT id, subscription_type, subscription_end_date FROM institutions WHERE institution_id = ?`
+    )
+    .get(String(institutionId));
+  if (!row) throw new Error("İşletme bulunamadı.");
+
+  const currentRemaining = daysRemainingFrom(row.subscription_end_date);
+  const base = Number.isFinite(currentRemaining) && currentRemaining > 0 ? currentRemaining : 0;
+  const addDays = plan.sure_gun || 30;
+  const nextType = subscriptionTypeFromPlanCode(planCode);
+  const nextEnd =
+    nextType === "Ücretsiz" ? null : endDateFromRemainingDays(base + addDays);
+
+  db.prepare(
+    `UPDATE institutions
+        SET subscription_type = ?, subscription = ?, subscription_end_date = ?, is_active = 1
+      WHERE institution_id = ?`
+  ).run(nextType, buildSubscriptionLabel(nextType), nextEnd, String(institutionId));
+
+  return { institution_id: String(institutionId), subscription_type: nextType, subscription_end_date: nextEnd, added_days: addDays };
+}
+
+function updatePaymentProofStatus(id, { status, reviewed_by, reject_reason, payment_id } = {}) {
+  const existing = getPaymentProofById(id);
+  if (!existing) throw new Error("Dekont bulunamadı.");
+  if (existing.status !== "pending") throw new Error("Bu dekont zaten işlenmiş.");
+  const s = String(status || "").trim();
+  if (s !== "approved" && s !== "rejected") throw new Error("Geçersiz dekont durumu.");
+  db.prepare(
+    `UPDATE payment_proofs
+        SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), reject_reason = ?, payment_id = ?
+      WHERE id = ?`
+  ).run(
+    s,
+    reviewed_by ? String(reviewed_by).trim().slice(0, 80) : null,
+    s === "rejected" ? String(reject_reason || "").trim().slice(0, 1000) || null : null,
+    payment_id != null ? Number(payment_id) : null,
+    Number(id)
+  );
+  return getPaymentProofById(id);
+}
+
+// ---------------------------------------------------------------------------
 // P3.2 — kur alarmları (rate_alerts)
 // ---------------------------------------------------------------------------
 
@@ -6013,6 +6231,13 @@ module.exports = {
   getSearchMissStats,
   getDemandAnalytics,
   getLeadFunnel,
+  createPaymentProof,
+  listPaymentProofs,
+  getPaymentProofById,
+  countPendingPaymentProofs,
+  updatePaymentProofStatus,
+  extendSubscriptionForPlan,
+  subscriptionTypeFromPlanCode,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
