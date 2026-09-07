@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { Clock, LogOut, SlidersHorizontal } from "lucide-react";
+import { Clock, LogIn, LogOut, SlidersHorizontal } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { V0BankCard } from "./V0BankCard";
 import { Sheet } from "./Sheet";
@@ -1088,10 +1088,13 @@ export function V0FinancialDashboard() {
       </Helmet>
       <header className="sticky top-0 z-sticky w-full border-b border-ink-200/80 bg-white/80 px-3 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-ink-950/80 sm:px-6 sm:py-4 md:py-5">
         <div className="mx-auto flex w-full max-w-[1600px] min-w-0 items-center justify-between gap-2 sm:gap-4">
-        <BrandLogo className="min-w-0 shrink" />
+        <BrandLogo className="min-w-0 shrink overflow-hidden" />
         {/* Ana gezinme: Kurlar / Kıyasla / İşletme (md ve üzeri). */}
         <SiteNav className="mr-auto ml-2" />
-        <div className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-3">
+        {/* ⚠️ MOBİL: `flex-wrap` sağ küme 2 satıra çıkarıp genişletiyor ve
+            marka yazısının üstüne biniyordu. Tek satırda kalıp logo gerekirse
+            kırpılsın. */}
+        <div className="flex shrink-0 items-center justify-end gap-1.5 sm:gap-3">
           {/* Business Login'in solunda canlı saat — kendi state'inde tik atar. */}
           <HeaderClock />
           <button
@@ -1117,13 +1120,24 @@ export function V0FinancialDashboard() {
               yeniden tanımlıyoruz — tıklama geri bildirimi kaybolmuyor.
             */
             data-no-press
-            className={`${headerBtnClass} max-w-[9.5rem] truncate border-ink-300 bg-white text-ink-700 transition-[color,transform] duration-base ease-out active:scale-[0.97] hover:text-ink-950 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:text-white sm:max-w-none`}
+            aria-label={
+              isAuthenticated
+                ? isSuperAdmin
+                  ? t("adminPanel")
+                  : t("businessPanel")
+                : t("businessLogin")
+            }
+            className={`${headerBtnClass} max-w-[9.5rem] gap-1.5 truncate border-ink-300 bg-white text-ink-700 transition-[color,transform] duration-base ease-out active:scale-[0.97] hover:text-ink-950 dark:border-white/10 dark:bg-ink-950/60 dark:text-ink-200 dark:hover:text-white max-sm:px-2.5 sm:max-w-none`}
           >
-            {isAuthenticated
-              ? isSuperAdmin
-                ? t("adminPanel")
-                : t("businessPanel")
-              : t("businessLogin")}
+            {/* Dar telefon başlığında ikon-only: marka yazısıyla çakışmasın. */}
+            <LogIn className="size-4 shrink-0 sm:hidden" aria-hidden="true" />
+            <span className="hidden sm:inline">
+              {isAuthenticated
+                ? isSuperAdmin
+                  ? t("adminPanel")
+                  : t("businessPanel")
+                : t("businessLogin")}
+            </span>
           </button>
 
           {isAuthenticated && (
@@ -1252,13 +1266,14 @@ export function V0FinancialDashboard() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           {['USD', 'EUR', 'GBP'].map((currency) => (
             /*
-              Fallback dolu kartla AYNI 294 px — grafik chunk'ı yüklenirken
-              sayfa zıplamasın (CLS koruması).
+              Fallback dolu kartla AYNI yükseklik (MarketSummaryCard
+              CHART_CARD_HEIGHT = 356) — grafik chunk'ı yüklenirken sayfa
+              zıplamasın (CLS koruması).
             */
             <Suspense
               key={currency}
               fallback={
-                <div className="h-[294px] rounded-xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900" />
+                <div className="h-[356px] rounded-xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900" />
               }
             >
               <MarketSummaryCard currency={currency} period={chartPeriod} />

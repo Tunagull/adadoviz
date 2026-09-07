@@ -49,25 +49,37 @@ function RatePointTooltip({ active, payload, label, formatLabel, seriesLabel, co
 }
 
 /**
- * Grafik gezinme okları — kartın iki kenarındaki dairesel düğmeler.
- * Tek yerde tanımlı: iki buton aynı yüzeyi paylaşıyor, yalnızca konumu
- * (`left-2` / `right-2`) farklı.
+ * Kart yüksekliği — dolu kart, yükleme/hata yer tutucusu ve V0FinancialDashboard'daki
+ * Suspense fallback'i HEP aynı değeri kullanır; küçük yer tutucu veri gelince sayfayı
+ * zıplatır (ölçülen CLS 0.75). x-ekseni etiket bandı da bu yüksekliğe dahildir —
+ * eskiden `overflow-hidden` + 294 px, alt satırdaki saat etiketlerini kırpıyordu.
  */
-/**
- * Grafik kartının yükleme / veri-yok hâli. Yükseklik dolu kartla aynı
- * (ölçülen 294 px) — yer tutucu küçük kalırsa veri geldiğinde sayfa zıplıyor.
- */
-const CHART_CARD_PLACEHOLDER_CLASS =
-  "flex h-[294px] items-center justify-center rounded-xl border border-ink-200 " +
-  "bg-white p-4 backdrop-blur-md dark:border-ink-800 dark:bg-ink-900/80";
+export const CHART_CARD_HEIGHT = 356;
 
-const CHART_ARROW_CLASS =
-  "absolute top-1/2 z-raised flex size-9 -translate-y-1/2 items-center justify-center " +
-  "rounded-full border transition-colors duration-fast ease-out-strong " +
-  "border-ink-200 bg-white/90 text-ink-600 hover:bg-ink-100 hover:text-ink-950 " +
-  "dark:border-white/10 dark:bg-ink-900/90 dark:text-ink-300 dark:hover:bg-ink-800 dark:hover:text-white " +
-  "disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-white/90 " +
-  "dark:disabled:hover:bg-ink-900/90";
+const CHART_CARD_PLACEHOLDER_CLASS =
+  "flex items-center justify-center rounded-xl border border-ink-200 " +
+  "bg-white p-4 dark:border-ink-800 dark:bg-ink-900";
+
+/**
+ * Dönem gezinme oku — grafiğin ÜSTÜNDEKİ kontrol şeridinde, tarih aralığının iki
+ * yanında. Eskiden grafiğin üstüne binen iki serbest daireydi (çizgiyi örtüyordu,
+ * "yapıya uymuyor"du). Artık mevcut kontrol dili: kare ölçü, `rounded-control`,
+ * bas-geri-bildirimi (`active:scale`), tema-farkındalıklı yüzey.
+ */
+function NavButton({ dir, onClick, disabled, label }) {
+  const Icon = dir === "prev" ? ChevronLeft : ChevronRight;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className="flex size-7 shrink-0 items-center justify-center rounded-control border border-ink-200 bg-white text-ink-600 transition-[background-color,color,transform] duration-fast ease-out-strong hover:bg-ink-100 hover:text-ink-900 active:scale-95 disabled:pointer-events-none disabled:opacity-40 dark:border-white/10 dark:bg-ink-800 dark:text-ink-300 dark:hover:bg-ink-700 dark:hover:text-white"
+    >
+      <Icon size={14} aria-hidden="true" />
+    </button>
+  );
+}
 
 export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const { theme } = useTheme();
@@ -312,7 +324,6 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
       }
     }
 
-    const span = Math.max(windowEnd - windowStart, 1);
     // Sol ok: bir adım daha geri gitmek start'ı oldest'in altına iterse kilitli
     const isLeftDisabled =
       !Number.isFinite(oldestDataTime) ||
@@ -327,13 +338,6 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
       isLeftDisabled,
       isInvalidCustomRange: false,
       maxTimeOffset,
-      customTicks: [
-        windowStart,
-        windowStart + span * 0.25,
-        windowStart + span * 0.5,
-        windowStart + span * 0.75,
-        windowEnd,
-      ],
     };
   }, [
     period,
@@ -512,8 +516,8 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     [timeWindow]
   );
 
-  // ✅ Sabit domain üzerinde eşit aralıklı 5 tick
-  const xAxisTicks = useMemo(() => timeWindow.customTicks, [timeWindow]);
+  // X ekseni tick'leri `renderChartContent` içinde kenarlardan içeri kaydırılmış
+  // hesaplanır (5 tick, kenarlardan içeri). `timeWindow.customTicks` artık kullanılmıyor.
 
   // Eşit aralıklı Y ekseni (Recharts'ın düzensiz "nice" tick'lerini bypass)
   const yAxisConfig = useMemo(() => {
@@ -545,27 +549,44 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     return { domain: [min, max], ticks };
   }, [displayChartData]);
 
-  // Kart üstü tarih aralığı etiketi (Gün Ay Yıl)
+  // Modal başlığı / aria: tam "7 Eylül 2026". Kart navigatörü: kısa "7 Eyl"
+  // (1/3 genişliğindeki kartta uzun biçim iki nav butonuyla yan yana sığmıyor).
   const formatHeaderDate = (ms) => {
     if (!ms) return "";
-    return new Date(ms).toLocaleDateString(localeCode, { day: 'numeric', month: 'long', year: 'numeric' });
+    return new Date(ms).toLocaleDateString(localeCode, { day: "numeric", month: "long", year: "numeric" });
+  };
+  const formatNavDate = (ms) => {
+    if (!ms) return "";
+    return new Date(ms).toLocaleDateString(localeCode, { day: "numeric", month: "short" });
   };
 
-  // ✅ X ekseni: DD/MM + 24 saat (AM/PM yok)
+  /*
+    ⚠️ TASARIM DÜZELTMESİ: X ekseni etiketleri hem BİRBİRİNE BİNİYOR hem de
+    ORANSIZ duruyordu. Üç neden vardı:
+      1. Tick'ler tam pencere kenarlarına (%0 ve %100) konuyordu → ilk etiket
+         Y-eksenine, son etiket kartın kenarına yapışıp kırpılıyordu.
+      2. 1/3 genişliğindeki kartta 5 adet "08/09, 14:00" (12 karakter) etiket
+         için yer yok.
+      3. Tam tarih aralığı zaten kartın üst şeridinde yazıyor; eksende
+         tekrar etmek gürültü.
+    Çözüm: etiket biçimi PENCERE GENİŞLİĞİNE göre (period'a değil — özel
+    aralıklar da doğru olsun): ≤2 gün → sadece saat, ≤~6 hafta → "3 Eyl",
+    daha uzun → "Eyl 25". Tick sayısı ve konumu `renderChartContent`'te
+    kenarlardan içeri kaydırılmış olarak hesaplanır.
+  */
   const formatXAxis = (ms) => {
     if (!ms) return "";
     const d = new Date(ms);
-    if (isNaN(d.getTime())) return "";
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    if (period === "Saatlik" || period === "Günlük") {
-      const hh = String(d.getHours()).padStart(2, "0");
-      return `${dd}/${mm}, ${hh}:00`;
+    if (Number.isNaN(d.getTime())) return "";
+    const spanMs = timeWindow.windowEnd - timeWindow.windowStart;
+    const DAY = 86400000;
+    if (spanMs <= 2 * DAY) {
+      return `${String(d.getHours()).padStart(2, "0")}:00`;
     }
-    if (period === "Yıllık") {
-      return d.toLocaleDateString(localeCode, { month: "short", year: "numeric" });
+    if (spanMs <= 45 * DAY) {
+      return d.toLocaleDateString(localeCode, { day: "numeric", month: "short" });
     }
-    return `${dd}/${mm}`;
+    return d.toLocaleDateString(localeCode, { month: "short", year: "2-digit" });
   };
 
   const formatChartTooltipLabel = (ms) => {
@@ -590,7 +611,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   */
   if (loading) {
     return (
-      <div className={CHART_CARD_PLACEHOLDER_CLASS}>
+      <div className={CHART_CARD_PLACEHOLDER_CLASS} style={{ height: CHART_CARD_HEIGHT }}>
         <p className="text-xs text-ink-500 dark:text-ink-400">{t("loadingGeneric")}</p>
       </div>
     );
@@ -599,7 +620,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   // Yalnızca gerçekten hiç rate yoksa "Veri yok" — navigasyon sonrası boş pencere kartı öldürmesin
   if (error || chartData.length === 0) {
     return (
-      <div className={CHART_CARD_PLACEHOLDER_CLASS}>
+      <div className={CHART_CARD_PLACEHOLDER_CLASS} style={{ height: CHART_CARD_HEIGHT }}>
         <p className="text-xs text-ink-500 dark:text-ink-400">{error ? `❌ ${error}` : t("chartNoData")}</p>
       </div>
     );
@@ -607,7 +628,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
 
   if (displayChartData.length === 0) {
     return (
-      <div className="rounded-xl border border-ink-200 bg-white p-4 backdrop-blur-md h-32 flex items-center justify-center dark:border-ink-800 dark:bg-ink-900/80">
+      <div className={CHART_CARD_PLACEHOLDER_CLASS} style={{ height: CHART_CARD_HEIGHT }}>
         <p className="text-xs text-ink-500 dark:text-ink-400">{t("chartNoPointsInRange")}</p>
       </div>
     );
@@ -621,36 +642,46 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   const showDots = displayChartData.length <= 16;
   // ✅ DRY: Aynı grafik hem küçük kartta hem tam ekran modalda kullanılır
   const renderChartContent = (isExpanded = false) => {
-    const tickFont = isExpanded ? 12 : 11;
+    const tickFont = isExpanded ? 12 : 10;
     const gradId = `${gradientId}${isExpanded ? "-modal" : ""}`;
     const dot = hollowDot(strokeColor, skin.dotFill, isExpanded ? 6 : 5);
 
+    // Kenarlardan içeri kaydırılmış eşit aralıklı 5 tick. İlk/son tick kartın
+    // kenarına yapışmaz → kırpılma ve Y-ekseniyle çakışma biter.
+    const tickCount = 5;
+    const inset = isExpanded ? 0.05 : 0.1;
+    const span = Math.max(timeWindow.windowEnd - timeWindow.windowStart, 1);
+    const axisTicks = Array.from({ length: tickCount }, (_, i) => {
+      const f = inset + (i * (1 - 2 * inset)) / (tickCount - 1);
+      return Math.round(timeWindow.windowStart + span * f);
+    });
+
     return (
       <div
-        className={`relative w-full ${isExpanded ? "h-full" : ""}`}
+        className="relative h-full w-full"
         role="img"
         aria-label={`${currency}/TRY ${t("chartDetailedAnalysis")} — ${change >= 0 ? "+" : ""}${change}% (${formatHeaderDate(timeWindow.windowStart)} – ${formatHeaderDate(timeWindow.windowEnd)})`}
       >
         <div
-          className={`w-full ${isExpanded ? "h-full" : ""}`}
+          className="h-full w-full"
           style={
             isExpanded
-              ? { height: "100%", paddingLeft: "20px", paddingRight: "20px" }
-              : { height: 200, paddingLeft: "20px", paddingRight: "20px" }
+              ? { height: "100%", paddingLeft: "16px", paddingRight: "16px" }
+              : { paddingLeft: "2px", paddingRight: "2px" }
           }
         >
           <ChartContainer
             config={chartConfig}
-            className={`aspect-auto w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-ink-300 dark:[&_.recharts-curve.recharts-tooltip-cursor]:stroke-white/20 ${
-              isExpanded ? "h-full min-h-[400px]" : "h-[200px]"
+            className={`aspect-auto h-full w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-ink-300 dark:[&_.recharts-curve.recharts-tooltip-cursor]:stroke-white/20 ${
+              isExpanded ? "min-h-[400px]" : "min-h-[172px]"
             }`}
           >
             <ComposedChart
               data={displayChartData}
               margin={
                 isExpanded
-                  ? { top: 20, bottom: 30, left: 10, right: 20 }
-                  : { top: 5, bottom: 5, left: 0, right: 0 }
+                  ? { top: 20, bottom: 30, left: 8, right: 16 }
+                  : { top: 8, bottom: 4, left: 4, right: 12 }
               }
             >
               <defs>
@@ -660,7 +691,6 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                 </linearGradient>
               </defs>
               <CartesianGrid
-                strokeDasharray="4 4"
                 stroke={skin.grid}
                 strokeOpacity={1}
                 horizontal
@@ -671,22 +701,25 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                 type="number"
                 scale="time"
                 domain={chartDomain}
-                ticks={xAxisTicks}
+                ticks={axisTicks}
+                interval={0}
+                minTickGap={8}
                 tickFormatter={formatXAxis}
                 tick={{ fontSize: tickFont, fill: skin.tick }}
                 axisLine={false}
                 tickLine={false}
-                tickMargin={8}
+                tickMargin={10}
+                padding={{ left: 2, right: 2 }}
               />
               <YAxis
                 domain={yAxisConfig.domain}
                 ticks={yAxisConfig.ticks}
-                width={45}
+                width={isExpanded ? 48 : 40}
                 tickFormatter={(val) => Number(val).toFixed(2)}
                 tick={{ fontSize: tickFont, fill: skin.tick }}
                 axisLine={false}
                 tickLine={false}
-                tickMargin={8}
+                tickMargin={6}
               />
               <ChartTooltip
                 content={
@@ -728,127 +761,99 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     );
   };
 
+  const goPrev = () => {
+    setCustomDateRange({ start: null, end: null });
+    setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
+  };
+  const goNext = () => {
+    setCustomDateRange({ start: null, end: null });
+    setTimeOffset((prev) => Math.max(0, prev - 1));
+  };
+
   return (
     <>
       {/*
-        Yükseklik SABİT (yer tutucuyla aynı 294 px). İçeriğe bağlı bırakıldığında
-        veri/uyarı satırları geldikçe kart büyüyor, üç kart yan yana durduğu için
-        altındaki her şey zıplıyordu. İçteki grafik zaten sabit yükseklikte,
-        dolayısıyla sabitlemek içeriği kırpmıyor.
+        ⚠️ TASARIM DÜZELTMESİ (piyasa özeti grafiği): önceki hâlde
+          • sol/sağ dönem okları grafiğin ÜSTÜNE binen iki serbest daireydi —
+            çizgiyi/alanı örtüyor, "mevcut yapıya uymuyor"du;
+          • tarih aralığı `absolute top-3` ile kur/parite etiketiyle AYNI y'de
+            duruyor, dar kartta üst üste geliyordu;
+          • kart `h-[294px] overflow-hidden` idi ama içerik daha uzundu →
+            x-eksenindeki saat etiketleri alttan kırpılıyordu.
+        Artık tek bir dikey akış: (1) parite + kur + değişim, (2) dönem
+        navigatörü [‹ tarih ›] + büyüteç TEK kontrol şeridi olarak grafiğin
+        ÜSTÜNDE, (3) düz-dil trend cümlesi sabit 2 satır, (4) grafik kalan
+        alanı kaplar. Yükseklik x-ekseni bandını da içerir (CHART_CARD_HEIGHT).
       */}
-      <div className="relative h-[294px] overflow-hidden rounded-xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
-        {/*
-          ⚠️ TASARIM DÜZELTMESİ: Bu iki ok hem ORANSIZ hem TEMA KÖRÜ idi.
-          `dark:` sınıfları açık tema sınıflarının BİREBİR AYNISIYDI
-          (`bg-ink-900/90`, `text-ink-300`), yani açık temada da koyu bir hap
-          çiziyorlardı. Ölçüsü de yoktu: kutu yalnızca `p-1.5` + ikon kadar
-          büyüyor, kartın kenarında iri bir daire gibi duruyordu.
-
-          Artık sabit kare ölçü, temaya göre iki ayrı yüzey, ve devre dışı hâli
-          ternary yerine `disabled:` varyantıyla — aynı sınıf listesi iki kez
-          yazılmıyor. Etiketler de sözlükten geliyor (eskiden sabit Türkçe).
-        */}
-        <button
-          type="button"
-          onClick={() => {
-            setCustomDateRange({ start: null, end: null });
-            setTimeOffset((prev) => Math.min(prev + 1, maxTimeOffset));
-          }}
-          disabled={timeWindow.isLeftDisabled}
-          className={`${CHART_ARROW_CLASS} left-2`}
-          aria-label={t("chartPrevPeriod")}
-        >
-          <ChevronLeft size={15} aria-hidden="true" />
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setCustomDateRange({ start: null, end: null });
-            setTimeOffset((prev) => Math.max(0, prev - 1));
-          }}
-          disabled={timeOffset === 0}
-          className={`${CHART_ARROW_CLASS} right-2`}
-          aria-label={t("chartNextPeriod")}
-        >
-          <ChevronRight size={15} aria-hidden="true" />
-        </button>
-
-        {/*
-          ⚠️ TASARIM DÜZELTMESİ (D-19): Kart başlığında ÜÇ ayrı hizalama vardı —
-          parite ve kur solda, tarih aralığı ortada, yön oku sağda. Ortadaki
-          blok üstelik dikey diziliyordu: tarihin ALTINDA, hiçbir etiketi
-          olmayan bir büyüteç ikonu tek başına asılı duruyordu; ne neye ait
-          olduğu ne de tıklanabilir olduğu okunuyordu.
-
-          Artık tarih ve büyüteç tek yatay öbek: "şu aralığı görüyorsun, büyütmek
-          için tıkla" tek bir fikir olarak okunuyor. Buton `press` ile basma
-          geri bildirimi de kazandı.
-        */}
-        <div className="absolute left-1/2 top-3 z-raised flex max-w-[calc(100%-5.5rem)] -translate-x-1/2 items-center justify-center gap-1.5 px-1">
-          <span className="max-w-full truncate text-[10px] font-medium text-ink-500 dark:text-ink-400">
-            {formatHeaderDate(timeWindow.windowStart)} - {formatHeaderDate(timeWindow.windowEnd)}
-          </span>
-          <button
-            type="button"
-            onClick={() => setIsModalOpen(true)}
-            className="press flex min-h-[2.75rem] min-w-[2.75rem] shrink-0 items-center justify-center rounded-md text-ink-500 transition-colors hover:text-ink-800 dark:text-ink-400 dark:hover:text-white"
-            title={t("chartDetailedAnalysis")}
-            aria-label={t("chartExpand")}
-          >
-            <ZoomIn size={14} />
-          </button>
-        </div>
-
-        {/*
-          ⚠️ TASARIM DÜZELTMESİ (D-17): Kart başlığı tek bir bilgiyi ikiye
-          bölüyordu — değişim yüzdesi solda kurun altında, onun yön oku ise
-          kartın TAM DİĞER UCUNDA duruyordu. İkisi aynı şeyi söylüyor; okuyucu
-          "%-0.21" ile aşağı oku birleştirmek için gözünü kartın bir ucundan
-          diğerine götürmek zorundaydı. Artık ok ve yüzde tek bir öbekte.
-
-          İkinci düzeltme: ana kur `text-lg font-bold` ile yazılıyordu, oysa
-          ofis kartlarındaki aynı türden rakamlar `font-mono tabular-nums`
-          kullanıyor. Aynı veri iki ekranda iki farklı tipografiyle
-          gösteriliyordu. Sabit genişlikli rakam ayrıca kur her saniye
-          değişirken sayıların yerinden oynamasını da engelliyor.
-
-          `min-h-[4.5rem]` kaldırıldı: uyarı satırı yokken 72 px'lik boşluk
-          bırakıyordu.
-        */}
-        <div className="relative mb-3 flex items-start justify-between gap-3">
+      <div
+        className="relative flex flex-col overflow-hidden rounded-xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900"
+        style={{ height: CHART_CARD_HEIGHT }}
+      >
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-xs font-medium text-ink-500 dark:text-ink-400">{currency}/TRY</p>
-            <p className="mt-1 font-mono text-xl font-bold tabular-nums tracking-tight text-ink-900 dark:text-white">
+            <p className="mt-0.5 font-mono text-xl font-bold tabular-nums tracking-tight text-ink-900 dark:text-white">
               {last.toFixed(4)}
             </p>
-            {dataInfo?.isLimitedByAvailableData && period !== 'Yıllık' && (
-              <p className="mt-1 text-[10px] text-warning-600/90 dark:text-warning-400/80">
-                Sınırlı geçmiş veri ({dataInfo.actualSpanDays} gün / {dataInfo.requestedSpanDays} gün gerekli)
-              </p>
-            )}
           </div>
-
           <span
             className={`inline-flex shrink-0 items-center gap-1 rounded-control px-2 py-1 font-mono text-xs font-semibold tabular-nums ${
               isPositive
-                ? 'bg-success-500/10 text-success-700 dark:text-success-400'
-                : 'bg-danger-500/10 text-danger-700 dark:text-danger-400'
+                ? "bg-success-500/10 text-success-700 dark:text-success-400"
+                : "bg-danger-500/10 text-danger-700 dark:text-danger-400"
             }`}
           >
             {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-            {isPositive ? '+' : ''}{change}%
+            {isPositive ? "+" : ""}{change}%
           </span>
         </div>
 
+        {/* Dönem navigatörü — tek kontrol şeridi, grafiğin üstünde */}
+        <div className="mt-2.5 flex items-center gap-1.5">
+          <NavButton
+            dir="prev"
+            onClick={goPrev}
+            disabled={timeWindow.isLeftDisabled}
+            label={t("chartPrevPeriod")}
+          />
+          <span
+            className="min-w-0 flex-1 truncate text-center text-[11px] font-medium tabular-nums text-ink-600 dark:text-ink-300"
+            title={`${formatHeaderDate(timeWindow.windowStart)} – ${formatHeaderDate(timeWindow.windowEnd)}`}
+          >
+            {formatNavDate(timeWindow.windowStart)} – {formatNavDate(timeWindow.windowEnd)}
+          </span>
+          <NavButton
+            dir="next"
+            onClick={goNext}
+            disabled={timeOffset === 0}
+            label={t("chartNextPeriod")}
+          />
+          <button
+            type="button"
+            onClick={() => setIsModalOpen(true)}
+            className="ml-0.5 flex size-7 shrink-0 items-center justify-center rounded-control border border-ink-200 bg-white text-ink-500 transition-[background-color,color,transform] duration-fast ease-out-strong hover:bg-ink-100 hover:text-ink-900 active:scale-95 dark:border-white/10 dark:bg-ink-800 dark:text-ink-400 dark:hover:bg-ink-700 dark:hover:text-white"
+            title={t("chartDetailedAnalysis")}
+            aria-label={t("chartExpand")}
+          >
+            <ZoomIn size={13} aria-hidden="true" />
+          </button>
+        </div>
+
+        {/* Düz-dil trend cümlesi — sabit 2 satırlık yuva (grafik kaymasın) */}
         <p
-          className="mb-2 text-[11px] leading-snug text-ink-600 dark:text-ink-300"
+          className="mt-2 line-clamp-2 min-h-[2.25rem] text-[11px] leading-snug text-ink-600 dark:text-ink-300"
           aria-live="polite"
         >
           {rateTrendSentence({ currency, period, percent: displayPercentage, lang })}
         </p>
 
-        {renderChartContent(false)}
+        {dataInfo?.isLimitedByAvailableData && period !== "Yıllık" && (
+          <p className="text-[10px] text-warning-600/90 dark:text-warning-400/80">
+            Sınırlı geçmiş veri ({dataInfo.actualSpanDays} gün / {dataInfo.requestedSpanDays} gün gerekli)
+          </p>
+        )}
+
+        <div className="mt-1 min-h-0 flex-1">{renderChartContent(false)}</div>
       </div>
 
       {isModalOpen && createPortal(

@@ -1,5 +1,12 @@
-import { Suspense, lazy } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Suspense, lazy, useEffect } from "react";
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useNavigationType,
+} from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider } from "./context/LanguageContext";
@@ -84,6 +91,25 @@ function isAdminRoute(pathname) {
   );
 }
 
+/**
+ * ⚠️ UX DÜZELTMESİ: SPA'da rota değişince tarayıcı kaydırma konumunu
+ * KORUYOR — kullanıcı footer'dayken başlıktaki bir sekmeye tıklayınca yeni
+ * sayfada da footer hizasında kalıyor, yukarı elle çıkması gerekiyordu.
+ * Artık her yeni gezinmede (PUSH/REPLACE) sayfa en üstten başlar; geri/ileri
+ * (POP) için tarayıcının kendi konum geri-yüklemesi korunur.
+ */
+function ScrollToTopOnNavigate() {
+  const { pathname } = useLocation();
+  const navigationType = useNavigationType();
+
+  useEffect(() => {
+    if (navigationType === "POP") return;
+    window.scrollTo(0, 0);
+  }, [pathname, navigationType]);
+
+  return null;
+}
+
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -91,6 +117,7 @@ function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
+      <ScrollToTopOnNavigate />
       {/* Klavye kullanıcıları için içeriğe atlama bağlantısı (A-01). */}
       <a
         href="#main-content"
@@ -116,7 +143,7 @@ function AppShell() {
         className={`flex-1 ${
           adminRoute
             ? ""
-            : "max-md:pb-24 rounded-b-[2rem] border-b border-ink-200 bg-ink-50 shadow-[0_28px_60px_-28px_rgba(8,8,10,0.35)] dark:border-white/20 dark:bg-ink-950 dark:shadow-[0_2px_0_-1px_rgba(255,255,255,0.10),0_24px_50px_-20px_rgba(0,0,0,0.95)]"
+            : "max-md:pb-32 rounded-b-[2rem] border-b border-ink-200 bg-ink-50 shadow-[0_28px_60px_-28px_rgba(8,8,10,0.35)] dark:border-white/20 dark:bg-ink-950 dark:shadow-[0_2px_0_-1px_rgba(255,255,255,0.10),0_24px_50px_-20px_rgba(0,0,0,0.95)]"
         }`}
       >
         <ErrorBoundary

@@ -429,7 +429,7 @@ export function MapPage() {
                           <p className="text-xs text-ink-500">{p.address}</p>
                         ) : null}
 
-                        <div className="flex flex-wrap gap-1.5 pt-1">
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
                           <a
                             className="btn btn-ghost h-8 gap-1 text-xs"
                             href={`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`}
