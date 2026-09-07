@@ -54,7 +54,7 @@ function RatePointTooltip({ active, payload, label, formatLabel, seriesLabel, co
  * zıplatır (ölçülen CLS 0.75). x-ekseni etiket bandı da bu yüksekliğe dahildir —
  * eskiden `overflow-hidden` + 294 px, alt satırdaki saat etiketlerini kırpıyordu.
  */
-export const CHART_CARD_HEIGHT = 316;
+export const CHART_CARD_HEIGHT = 356;
 
 const CHART_CARD_PLACEHOLDER_CLASS =
   "flex items-center justify-center rounded-xl border border-ink-200 " +
@@ -517,7 +517,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
   );
 
   // X ekseni tick'leri `renderChartContent` içinde kenarlardan içeri kaydırılmış
-  // hesaplanır (küçük kart 3, modal 5). `timeWindow.customTicks` artık kullanılmıyor.
+  // hesaplanır (5 tick, kenarlardan içeri). `timeWindow.customTicks` artık kullanılmıyor.
 
   // Eşit aralıklı Y ekseni (Recharts'ın düzensiz "nice" tick'lerini bypass)
   const yAxisConfig = useMemo(() => {
@@ -646,11 +646,10 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
     const gradId = `${gradientId}${isExpanded ? "-modal" : ""}`;
     const dot = hollowDot(strokeColor, skin.dotFill, isExpanded ? 6 : 5);
 
-    // Kenarlardan içeri kaydırılmış eşit aralıklı tick'ler: küçük kartta 3,
-    // modalda 5. İlk/son tick kartın kenarına yapışmaz → kırpılma ve
-    // Y-ekseniyle çakışma biter.
-    const tickCount = isExpanded ? 5 : 3;
-    const inset = isExpanded ? 0.05 : 0.12;
+    // Kenarlardan içeri kaydırılmış eşit aralıklı 5 tick. İlk/son tick kartın
+    // kenarına yapışmaz → kırpılma ve Y-ekseniyle çakışma biter.
+    const tickCount = 5;
+    const inset = isExpanded ? 0.05 : 0.1;
     const span = Math.max(timeWindow.windowEnd - timeWindow.windowStart, 1);
     const axisTicks = Array.from({ length: tickCount }, (_, i) => {
       const f = inset + (i * (1 - 2 * inset)) / (tickCount - 1);
@@ -674,7 +673,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
           <ChartContainer
             config={chartConfig}
             className={`aspect-auto h-full w-full [&_.recharts-curve.recharts-tooltip-cursor]:stroke-ink-300 dark:[&_.recharts-curve.recharts-tooltip-cursor]:stroke-white/20 ${
-              isExpanded ? "min-h-[400px]" : "min-h-[130px]"
+              isExpanded ? "min-h-[400px]" : "min-h-[172px]"
             }`}
           >
             <ComposedChart
@@ -704,7 +703,7 @@ export function MarketSummaryCard({ currency = 'USD', period = 'Günlük' }) {
                 domain={chartDomain}
                 ticks={axisTicks}
                 interval={0}
-                minTickGap={16}
+                minTickGap={8}
                 tickFormatter={formatXAxis}
                 tick={{ fontSize: tickFont, fill: skin.tick }}
                 axisLine={false}

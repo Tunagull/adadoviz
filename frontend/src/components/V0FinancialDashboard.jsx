@@ -1253,13 +1253,13 @@ export function V0FinancialDashboard() {
           {['USD', 'EUR', 'GBP'].map((currency) => (
             /*
               Fallback dolu kartla AYNI yükseklik (MarketSummaryCard
-              CHART_CARD_HEIGHT = 316) — grafik chunk'ı yüklenirken sayfa
+              CHART_CARD_HEIGHT = 356) — grafik chunk'ı yüklenirken sayfa
               zıplamasın (CLS koruması).
             */
             <Suspense
               key={currency}
               fallback={
-                <div className="h-[316px] rounded-xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900" />
+                <div className="h-[356px] rounded-xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900" />
               }
             >
               <MarketSummaryCard currency={currency} period={chartPeriod} />
