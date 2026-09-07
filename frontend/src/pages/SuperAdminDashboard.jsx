@@ -27,6 +27,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { ActivityLogPanel } from "../components/ActivityLogPanel";
 import { MarketHealthPanel } from "../components/MarketHealthPanel";
+import { RateAlertPanel } from "../components/RateAlertPanel";
 import {
   createAdminBusiness,
   fetchAdminBusinesses,
@@ -3166,6 +3167,9 @@ export function SuperAdminDashboard() {
 
           {/* P2.6 — pazar yeri sağlığı (S2): bayat marj, kur sanity, kapsama boşluğu. */}
           <MarketHealthPanel token={token} />
+
+          {/* P3.2 — kur alarmı değer sinyali (C3). */}
+          <RateAlertPanel token={token} />
 
           {healthLoading ? (
             <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>

@@ -297,14 +297,33 @@ createBusiness → createPasswordResetToken → updateSignupRequestStatus) doğr
 temizlendi; `npm run build` yeşil (SignupPage 5.3 kB lazy chunk, SuperAdminDashboard 111→116 kB);
 lint 45→45.
 
-### ☐ P3.2 — Kur alarmı sistemi (C3)
-- `rate_alerts` tablosu: `email`, `currency`, `side`, `direction` (above|below), `threshold`, `active`,
-  `verified` (çift-opt-in), `last_fired_at`, `unsubscribe_token`.
-- Public: ana sayfada / kur kartında "alarm kur" → e-posta + eşik. Doğrulama e-postası.
-- Job: her `refreshRatesCacheWithChangeDetection` sonrası eşleşen alarmları kontrol et → `sendRateAlertEmail`
-  (debounce: aynı alarm 12 saatte bir). Unsubscribe linki.
-- Frontend: hafif modal (`Sheet` dili), "alarmlarım" yönetimi token'lı sayfa (`/alarm/:token`).
-- Değer sinyali: superadmin panelinde "X aktif alarm (USD<Y en popüler eşik)".
+### ☑ P3.2 — Kur alarmı sistemi (C3)
+`migrations/0006_rate_alerts.sql` + `db.js` initDb eş tablo (Supabase sync yok — signup_requests
+gerekçesi). Kolonlar: `email`, `currency` (USD|EUR|GBP), `side` (buy|sell), `direction` (above|below),
+`threshold`, `verified` (çift-opt-in), `active`, `armed` (eşik GEÇİŞİ tetiği — koşul önce FALSE olmalı),
+`last_fired_at` (12 sa debounce), `manage_token` (hex, unique). Referans kur = `cachedRates.centralBankRates`
+(KKTC MB alış/satış). `db.js`: `createRateAlert` (anti-abuse: e-posta başına ≤15 aktif, birebir aynı alarm
+tekrarında `reused:true`), `getRateAlertByToken`, `listRateAlertsByEmail`, `verifyRateAlert`,
+`setRateAlertActive`/`deleteRateAlert`/`deactivateAllRateAlertsByToken` (token'ın e-postası hedefle eşleşmeli),
+`getActiveVerifiedRateAlerts`, `recordRateAlertFired`, `setRateAlertArmed`, `getRateAlertStats`.
+`jobs/rateAlerts.js`: `runRateAlertCheck(centralBankRates)` — `refreshRatesCacheWithChangeDetection`
+sonunda fire-and-forget çağrılır; koşul FALSE→armed=1, koşul TRUE & armed & debounce-ok → `sendRateAlertEmail`
++ armed=0 + `last_fired_at`. `checkSingleAlertNow` doğrulama anında (kur zaten eşiği geçmişse hemen haber).
+`email.js`: `sendRateAlertVerifyEmail` + `sendRateAlertEmail` (markalı shell). `server.js`: `rateAlertLimiter`
+(5/sa); `POST /api/rate-alerts` (honeypot `company_website` + KVKK zorunlu, generic 201), `POST
+.../verify/:token`, `GET .../manage/:token`, `PATCH|DELETE .../:id?token=`, `POST .../unsubscribe-all`,
+`GET /api/admin/rate-alerts` + `POST .../run-check` (requireSuperAdmin). Frontend: `lib/rateAlerts.js` +
+`auth.js` (`fetchAdminRateAlerts`/`runRateAlertCheck`); `components/RateAlertModal.jsx` (`Sheet` dili —
+para birimi pill + `BuySellToggle` + üst/alt toggle + eşik + e-posta + KVKK + honeypot; parent `key` ile
+remount, reset efekti yok), `components/RateAlertPanel.jsx` (superadmin "Sistem Sağlığı" sekmesinde
+MarketHealthPanel altında — aktif/bekleyen/toplam + eşik kırılımı + son 30 maskeli + "şimdi kontrol et"),
+`pages/RateAlertManagePage.jsx` (lazy `/alarm/:token`, noindex; `?v=1` → önce doğrula), `App.jsx` rota,
+`BestRatePage.jsx` "Kur alarmı kur" butonu (birim+işlem önceden dolu). i18n `rateAlert*` (TR+EN).
+**Doğrulama:** `node --check` 4 dosya; node ile tam akış (createRateAlert → dedup → verify → armed-flag
+eşik geçişi: below→no-fire, above→fire+disarm, still-above→no-refire, drop→re-arm → stats → deactivate →
+delete) doğrulandı; server modülü temiz yüklendi; canlı HTTP (KVKK 400 / valid 201 / honeypot sessiz 201 /
+admin 401); `npm run build` yeşil (RateAlertManagePage 5.1 kB lazy chunk, BestRatePage 12.6 kB); lint
+44 (RateAlert dosyaları temiz).
 
 ### ☐ P3.3 — Gelir paneli (S1)
 `/super-admin` "Gelir": MRR (aktif aboneliklerden), bu ay tahsil edilen, gecikmiş (bitmiş + ödemesiz),

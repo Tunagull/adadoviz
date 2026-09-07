@@ -542,6 +542,77 @@ async function sendSupportReplyEmail({ to, institutionName, subject, reply, pane
   });
 }
 
+// --- P3.2 kur alarmları ---------------------------------------------------
+
+function rateAlertPhrase({ currency, side, direction, threshold }) {
+  const sideLabel = side === "sell" ? "satış" : "alış";
+  const dirLabel = direction === "below" ? "altına inince" : "üstüne çıkınca";
+  const thr = Number(threshold).toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+  return `${escapeHtml(currency)} ${sideLabel} kuru ${thr} ₺ ${dirLabel}`;
+}
+
+/** Çift-opt-in doğrulama e-postası — link tıklanana kadar alarm pasif. */
+async function sendRateAlertVerifyEmail({
+  to,
+  currency,
+  side,
+  direction,
+  threshold,
+  verifyUrl,
+  manageUrl,
+}) {
+  assertMailConfigured();
+  const phrase = rateAlertPhrase({ currency, side, direction, threshold });
+  const body = `
+    <p style="margin:0 0 12px;">Merhaba,</p>
+    <p style="margin:0 0 12px;">Şu alarmı kurmak istediniz: <strong>${phrase}</strong> — gerçekleştiğinde size e-posta göndeririz.</p>
+    <p style="margin:0 0 12px;">Alarmı etkinleştirmek için aşağıdaki bağlantıya tıklayın. Onaylamazsanız hiçbir e-posta göndermeyiz.</p>
+    ${manageUrl ? `<p style="margin:16px 0 0;font-size:12px;color:#9a9aa2;">Bu isteği siz yapmadıysanız e-postayı yok sayın ya da <a href="${escapeHtml(manageUrl)}" style="color:#9a9aa2;">alarmı iptal edin</a>.</p>` : ""}
+  `;
+  return sendBrandedMail({
+    to,
+    subject: "Kur alarmınızı onaylayın",
+    title: "Kur alarmınızı onaylayın",
+    bodyHtml: body,
+    cta: { text: "Alarmı etkinleştir", url: verifyUrl },
+  });
+}
+
+/** Eşik aşıldı — alarm tetiklendi. */
+async function sendRateAlertEmail({
+  to,
+  currency,
+  side,
+  direction,
+  threshold,
+  currentRate,
+  manageUrl,
+}) {
+  assertMailConfigured();
+  const phrase = rateAlertPhrase({ currency, side, direction, threshold });
+  const sideLabel = side === "sell" ? "satış" : "alış";
+  const cur = Number(currentRate).toLocaleString("tr-TR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
+  });
+  const body = `
+    <p style="margin:0 0 12px;">Merhaba,</p>
+    <p style="margin:0 0 12px;">Kurduğunuz alarm gerçekleşti: <strong>${phrase}</strong>.</p>
+    <p style="margin:0 0 12px;">KKTC Merkez Bankası ${escapeHtml(currency)} ${sideLabel} kuru şu an <strong>${cur} ₺</strong>.</p>
+    <p style="margin:0;font-size:12px;color:#9a9aa2;">Aynı alarm için en fazla 12 saatte bir e-posta gönderilir.</p>
+  `;
+  return sendBrandedMail({
+    to,
+    subject: `Kur alarmı: ${currency} ${sideLabel} ${cur} ₺`,
+    title: "Kur alarmınız gerçekleşti",
+    bodyHtml: body,
+    cta: manageUrl ? { text: "Alarmlarımı yönet", url: manageUrl } : undefined,
+  });
+}
+
 function logMailConfigOnBoot() {
   console.log(
     `[EMAIL] Yapılandırma: configured=${isMailConfigured()} user=${getGmailUser() || "(yok)"} frontend=${getFrontendBaseUrl()}`
@@ -560,6 +631,8 @@ module.exports = {
   sendSignupReceivedEmail,
   sendSignupApprovedEmail,
   sendSignupRejectedEmail,
+  sendRateAlertVerifyEmail,
+  sendRateAlertEmail,
   sendSupportTicketEmail,
   sendSupportReplyEmail,
   buildPartnershipDefaultMessage,

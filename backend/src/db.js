@@ -734,6 +734,33 @@ function initDb({ skipBusinessSeed = false } = {}) {
        ON signup_requests (status, created_at)`
   );
 
+  // P3.2: kur alarmları (C3). Public ziyaretçi bir e-posta + eşik girer;
+  // çift-opt-in (verified) sonrası her kur yenilemesinde job kontrol eder.
+  // migrations/0006 ile eş şema. Supabase sync yok (signup_requests gerekçesi).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rate_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      currency TEXT NOT NULL,
+      side TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      threshold REAL NOT NULL,
+      verified INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      armed INTEGER NOT NULL DEFAULT 1,
+      last_fired_at TEXT,
+      manage_token TEXT NOT NULL,
+      verified_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS rate_alerts_token_idx ON rate_alerts (manage_token)`
+  );
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS rate_alerts_active_idx ON rate_alerts (active, verified)`
+  );
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -5181,8 +5208,225 @@ function updateSignupRequestStatus(id, { status, reject_reason, reviewed_by, cre
   return getSignupRequestById(id);
 }
 
+// ---------------------------------------------------------------------------
+// P3.2 — kur alarmları (rate_alerts)
+// ---------------------------------------------------------------------------
+
+const RATE_ALERT_CURRENCIES = new Set(["USD", "EUR", "GBP"]);
+const RATE_ALERT_SIDES = new Set(["buy", "sell"]);
+const RATE_ALERT_DIRECTIONS = new Set(["above", "below"]);
+const RATE_ALERT_MAX_PER_EMAIL = 15;
+const RATE_ALERT_DEBOUNCE_HOURS = 12;
+
+function mapRateAlertRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    email: row.email || "",
+    currency: row.currency,
+    side: row.side,
+    direction: row.direction,
+    threshold: Number(row.threshold),
+    verified: row.verified === 1 || row.verified === true,
+    active: row.active === 1 || row.active === true,
+    armed: row.armed === 1 || row.armed === true,
+    last_fired_at: row.last_fired_at ? toIsoTimestamp(row.last_fired_at) : null,
+    manage_token: row.manage_token,
+    verified_at: row.verified_at ? toIsoTimestamp(row.verified_at) : null,
+    created_at: toIsoTimestamp(row.created_at),
+  };
+}
+
+/**
+ * Public alarm kaydı (verified=0). Aynı alarm (e-posta+birim+yön+eşik) zaten
+ * varsa yeni satır AÇMAZ, mevcut kaydı `reused:true` ile döndürür.
+ */
+function createRateAlert({ email, currency, side, direction, threshold } = {}) {
+  const mail = String(email || "").trim().toLowerCase().slice(0, 160);
+  const cur = String(currency || "").trim().toUpperCase();
+  const sd = String(side || "").trim().toLowerCase();
+  const dir = String(direction || "").trim().toLowerCase();
+  const thr = Number(String(threshold).replace(",", "."));
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) {
+    throw new Error("Geçerli bir e-posta girin.");
+  }
+  if (!RATE_ALERT_CURRENCIES.has(cur)) throw new Error("Geçersiz para birimi.");
+  if (!RATE_ALERT_SIDES.has(sd)) throw new Error("Geçersiz işlem yönü.");
+  if (!RATE_ALERT_DIRECTIONS.has(dir)) throw new Error("Geçersiz alarm yönü.");
+  if (!Number.isFinite(thr) || thr <= 0 || thr > 100000) {
+    throw new Error("Geçerli bir eşik değeri girin.");
+  }
+  const threshRounded = Math.round(thr * 10000) / 10000;
+
+  const existing = db
+    .prepare(
+      `SELECT * FROM rate_alerts
+        WHERE lower(email) = ? AND currency = ? AND side = ? AND direction = ?
+          AND ABS(threshold - ?) < 0.00005
+        LIMIT 1`
+    )
+    .get(mail, cur, sd, dir, threshRounded);
+  if (existing) return { alert: mapRateAlertRow(existing), reused: true };
+
+  const activeCount = db
+    .prepare(`SELECT COUNT(*) AS c FROM rate_alerts WHERE lower(email) = ? AND active = 1`)
+    .get(mail);
+  if (Number(activeCount?.c) >= RATE_ALERT_MAX_PER_EMAIL) {
+    throw new Error("Bu e-posta için alarm sınırına ulaşıldı. Önce bazılarını kaldırın.");
+  }
+
+  const token = crypto.randomBytes(24).toString("hex");
+  const info = db
+    .prepare(
+      `INSERT INTO rate_alerts (email, currency, side, direction, threshold, manage_token)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(mail, cur, sd, dir, threshRounded, token);
+  return {
+    alert: mapRateAlertRow(
+      db.prepare(`SELECT * FROM rate_alerts WHERE id = ?`).get(info.lastInsertRowid)
+    ),
+    reused: false,
+  };
+}
+
+function getRateAlertByToken(token) {
+  return mapRateAlertRow(
+    db.prepare(`SELECT * FROM rate_alerts WHERE manage_token = ?`).get(String(token || ""))
+  );
+}
+
+function listRateAlertsByEmail(email) {
+  return db
+    .prepare(
+      `SELECT * FROM rate_alerts WHERE lower(email) = ? ORDER BY datetime(created_at) DESC`
+    )
+    .all(String(email || "").trim().toLowerCase())
+    .map(mapRateAlertRow);
+}
+
+/** Çift-opt-in doğrulama — verified=1, aktifleşir, armed=1. */
+function verifyRateAlert(token) {
+  const alert = getRateAlertByToken(token);
+  if (!alert) throw new Error("Alarm bulunamadı.");
+  if (!alert.verified) {
+    db.prepare(
+      `UPDATE rate_alerts SET verified = 1, active = 1, armed = 1, verified_at = datetime('now')
+        WHERE id = ?`
+    ).run(alert.id);
+  }
+  return getRateAlertByToken(token);
+}
+
+/** token'in e-postası hedef alarmın e-postasıyla aynı olmalı (yetki). */
+function setRateAlertActive({ token, id, active } = {}) {
+  const owner = getRateAlertByToken(token);
+  if (!owner) throw new Error("Yetkisiz.");
+  const target = mapRateAlertRow(
+    db.prepare(`SELECT * FROM rate_alerts WHERE id = ?`).get(Number(id))
+  );
+  if (!target || target.email.toLowerCase() !== owner.email.toLowerCase()) {
+    throw new Error("Alarm bulunamadı.");
+  }
+  db.prepare(`UPDATE rate_alerts SET active = ?, armed = 1 WHERE id = ?`).run(
+    active ? 1 : 0,
+    target.id
+  );
+  return mapRateAlertRow(db.prepare(`SELECT * FROM rate_alerts WHERE id = ?`).get(target.id));
+}
+
+function deleteRateAlert({ token, id } = {}) {
+  const owner = getRateAlertByToken(token);
+  if (!owner) throw new Error("Yetkisiz.");
+  const target = db.prepare(`SELECT * FROM rate_alerts WHERE id = ?`).get(Number(id));
+  if (!target || String(target.email).toLowerCase() !== owner.email.toLowerCase()) {
+    throw new Error("Alarm bulunamadı.");
+  }
+  db.prepare(`DELETE FROM rate_alerts WHERE id = ?`).run(target.id);
+  return { ok: true };
+}
+
+function deactivateAllRateAlertsByToken(token) {
+  const owner = getRateAlertByToken(token);
+  if (!owner) throw new Error("Yetkisiz.");
+  const info = db
+    .prepare(`UPDATE rate_alerts SET active = 0 WHERE lower(email) = ?`)
+    .run(owner.email.toLowerCase());
+  return { ok: true, updated: info.changes };
+}
+
+function getActiveVerifiedRateAlerts() {
+  return db
+    .prepare(`SELECT * FROM rate_alerts WHERE active = 1 AND verified = 1`)
+    .all()
+    .map(mapRateAlertRow);
+}
+
+/** Alarm tetiklendi — last_fired_at damgası + armed=0 (eşik geçişi sıfırlanır). */
+function recordRateAlertFired(id) {
+  db.prepare(
+    `UPDATE rate_alerts SET last_fired_at = datetime('now'), armed = 0 WHERE id = ?`
+  ).run(Number(id));
+}
+
+function setRateAlertArmed(id, armed) {
+  db.prepare(`UPDATE rate_alerts SET armed = ? WHERE id = ?`).run(armed ? 1 : 0, Number(id));
+}
+
+/** Superadmin değer sinyali — toplam / aktif / kırılım / son 30 (e-posta maskeli). */
+function getRateAlertStats() {
+  const total = db.prepare(`SELECT COUNT(*) AS c FROM rate_alerts`).get();
+  const activeVerified = db
+    .prepare(`SELECT COUNT(*) AS c FROM rate_alerts WHERE active = 1 AND verified = 1`)
+    .get();
+  const pendingVerify = db
+    .prepare(`SELECT COUNT(*) AS c FROM rate_alerts WHERE verified = 0`)
+    .get();
+  const byTarget = db
+    .prepare(
+      `SELECT currency, side, direction, COUNT(*) AS count
+         FROM rate_alerts WHERE active = 1 AND verified = 1
+        GROUP BY currency, side, direction
+        ORDER BY count DESC`
+    )
+    .all();
+  const recent = db
+    .prepare(`SELECT * FROM rate_alerts ORDER BY datetime(created_at) DESC LIMIT 30`)
+    .all()
+    .map((r) => {
+      const m = mapRateAlertRow(r);
+      const [local, domain] = String(m.email).split("@");
+      const masked =
+        (local ? local.slice(0, 1) + "***" : "***") + (domain ? "@" + domain : "");
+      delete m.email;
+      delete m.manage_token;
+      return { ...m, email_masked: masked };
+    });
+  return {
+    total: Number(total?.c) || 0,
+    activeVerified: Number(activeVerified?.c) || 0,
+    pendingVerify: Number(pendingVerify?.c) || 0,
+    byTarget,
+    recent,
+    debounceHours: RATE_ALERT_DEBOUNCE_HOURS,
+  };
+}
+
 module.exports = {
   initDb,
+  createRateAlert,
+  getRateAlertByToken,
+  listRateAlertsByEmail,
+  verifyRateAlert,
+  setRateAlertActive,
+  deleteRateAlert,
+  deactivateAllRateAlertsByToken,
+  getActiveVerifiedRateAlerts,
+  recordRateAlertFired,
+  setRateAlertArmed,
+  getRateAlertStats,
+  RATE_ALERT_DEBOUNCE_HOURS,
   seedAdminsIfNeeded,
   seedCatalogInstitutionsIfNeeded,
   seedAdjustmentsIfNeeded,

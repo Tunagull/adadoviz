@@ -729,3 +729,8 @@ export const fetchAdminPartnershipApplications = (token) =>
 /** İşletme: kendi aboneliği + ödeme geçmişi + performansı. */
 export const fetchBusinessSubscription = (token) =>
   getJson("/api/business/subscription", token);
+
+/** Super Admin: kur alarmı değer sinyali + manuel kontrol (P3.2). */
+export const fetchAdminRateAlerts = (token) => getJson("/api/admin/rate-alerts", token);
+export const runRateAlertCheck = (token) =>
+  sendJson("/api/admin/rate-alerts/run-check", token, "POST");

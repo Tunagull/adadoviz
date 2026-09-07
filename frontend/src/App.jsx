@@ -54,6 +54,9 @@ const SignupPage = lazy(() =>
 const ResetPasswordPage = lazy(() =>
   import("./pages/ResetPassword").then((m) => ({ default: m.ResetPasswordPage }))
 );
+const RateAlertManagePage = lazy(() =>
+  import("./pages/RateAlertManagePage").then((m) => ({ default: m.RateAlertManagePage }))
+);
 
 /** Rotalar arası geçişte kısa bekleme durumu. */
 function RouteFallback() {
@@ -134,6 +137,7 @@ function AppShell() {
               <Route path="/admin" element={<InstitutionAdminPage />} />
               <Route path="/super-admin" element={<SuperAdminDashboard />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/alarm/:token" element={<RateAlertManagePage />} />
               <Route path="/dashboard" element={<Navigate to="/" replace />} />
               <Route path="/partnership" element={<Navigate to="/partnerlik" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />

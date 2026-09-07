@@ -70,6 +70,14 @@ const {
   getSignupRequestById,
   countPendingSignupRequests,
   updateSignupRequestStatus,
+  createRateAlert,
+  getRateAlertByToken,
+  listRateAlertsByEmail,
+  verifyRateAlert,
+  setRateAlertActive,
+  deleteRateAlert,
+  deactivateAllRateAlertsByToken,
+  getRateAlertStats,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -143,8 +151,9 @@ const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./in
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, sendSignupReceivedEmail, sendSignupApprovedEmail, sendSignupRejectedEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, sendSignupReceivedEmail, sendSignupApprovedEmail, sendSignupRejectedEmail, sendRateAlertVerifyEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
 const { runSubscriptionReminders } = require("./jobs/subscriptionReminders");
+const { runRateAlertCheck, checkSingleAlertNow } = require("./jobs/rateAlerts");
 const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
 const {
@@ -395,6 +404,12 @@ const signupLimiter = createRateLimiter({
   windowMs: 60 * 60 * 1000,
   max: 3,
   message: "Çok fazla başvuru gönderildi. Lütfen bir saat sonra tekrar deneyin.",
+});
+// P3.2: kur alarmı kaydı — public, çift-opt-in doğrulama e-postası tetikler.
+const rateAlertLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: "Çok fazla alarm isteği. Lütfen bir saat sonra tekrar deneyin.",
 });
 
 /**
@@ -3415,6 +3430,139 @@ app.post("/api/admin/signup-requests/:id/reject", requireSuperAdmin, async (req,
   }
 });
 
+// -------------------------------------------------------------------------
+// P3.2 — kur alarmları (C3). Public çift-opt-in + token'lı yönetim.
+// -------------------------------------------------------------------------
+
+function publicAlertView(a) {
+  if (!a) return null;
+  const { manage_token, email, ...rest } = a;
+  void manage_token;
+  void email;
+  return rest;
+}
+function maskAlertEmail(e) {
+  const [l, d] = String(e || "").split("@");
+  return (l ? l.slice(0, 1) + "***" : "***") + (d ? "@" + d : "");
+}
+
+/** Public: alarm kur (verified=0) → doğrulama e-postası. */
+app.post("/api/rate-alerts", rateAlertLimiter, async (req, res) => {
+  try {
+    if (String(req.body?.company_website || "").trim()) {
+      return res.status(201).json({ ok: true }); // honeypot
+    }
+    if (req.body?.kvkk !== true && req.body?.kvkk !== "true") {
+      return res
+        .status(400)
+        .json({ error: "Devam etmek için KVKK aydınlatma metnini onaylayın." });
+    }
+    const { alert, reused } = createRateAlert({
+      email: req.body?.email,
+      currency: req.body?.currency,
+      side: req.body?.side,
+      direction: req.body?.direction,
+      threshold: req.body?.threshold,
+    });
+
+    if (!alert.verified && isMailConfigured()) {
+      const base = getFrontendBaseUrl();
+      sendRateAlertVerifyEmail({
+        to: alert.email,
+        currency: alert.currency,
+        side: alert.side,
+        direction: alert.direction,
+        threshold: alert.threshold,
+        verifyUrl: `${base}/alarm/${alert.manage_token}?v=1`,
+        manageUrl: `${base}/alarm/${alert.manage_token}`,
+      }).catch((e) =>
+        console.warn("[RATE-ALERT] doğrulama e-postası gönderilemedi:", e.message)
+      );
+    }
+    return res.status(201).json({ ok: true, alreadyVerified: alert.verified, reused });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Alarm kurulamadı." });
+  }
+});
+
+/** Public: doğrulama linki (çift-opt-in). */
+app.post("/api/rate-alerts/verify/:token", async (req, res) => {
+  try {
+    const alert = verifyRateAlert(req.params.token);
+    // Doğrulama anında bir kez değerlendir — kur zaten eşiği geçmişse hemen haber ver.
+    checkSingleAlertNow(req.params.token, cachedRates.centralBankRates).catch(() => {});
+    return res.json({ ok: true, alert: publicAlertView(alert) });
+  } catch (err) {
+    return res.status(404).json({ error: err.message || "Alarm bulunamadı." });
+  }
+});
+
+/** Public: token'lı yönetim — token'ın e-postasına ait tüm alarmlar. */
+app.get("/api/rate-alerts/manage/:token", (req, res) => {
+  try {
+    const owner = getRateAlertByToken(req.params.token);
+    if (!owner) return res.status(404).json({ error: "Alarm bulunamadı." });
+    const alerts = listRateAlertsByEmail(owner.email).map(publicAlertView);
+    return res.json({ email: maskAlertEmail(owner.email), token: req.params.token, alerts });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Alarmlar alınamadı." });
+  }
+});
+
+/** Public: alarmı aç/kapat (token yetkisi). */
+app.patch("/api/rate-alerts/:id", (req, res) => {
+  try {
+    const token = String(req.query?.token || req.body?.token || "");
+    const updated = setRateAlertActive({
+      token,
+      id: req.params.id,
+      active: req.body?.active === true || req.body?.active === "true",
+    });
+    return res.json({ ok: true, alert: publicAlertView(updated) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Güncellenemedi." });
+  }
+});
+
+/** Public: alarmı sil (token yetkisi). */
+app.delete("/api/rate-alerts/:id", (req, res) => {
+  try {
+    const token = String(req.query?.token || req.body?.token || "");
+    deleteRateAlert({ token, id: req.params.id });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Silinemedi." });
+  }
+});
+
+/** Public: bu e-postanın tüm alarmlarını durdur. */
+app.post("/api/rate-alerts/unsubscribe-all", (req, res) => {
+  try {
+    const token = String(req.body?.token || req.query?.token || "");
+    return res.json(deactivateAllRateAlertsByToken(token));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "İşlem başarısız." });
+  }
+});
+
+/** Super Admin: kur alarmı değer sinyali. */
+app.get("/api/admin/rate-alerts", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json(getRateAlertStats());
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Alınamadı." });
+  }
+});
+
+/** Super Admin: manuel alarm kontrolü (test). */
+app.post("/api/admin/rate-alerts/run-check", requireSuperAdmin, async (_req, res) => {
+  try {
+    return res.json(await runRateAlertCheck(cachedRates.centralBankRates));
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Kontrol başarısız." });
+  }
+});
+
 app.post("/api/partnership-apply", partnershipLimiter, async (req, res) => {
   const { institution_name, contact_person, email, phone, message } = req.body;
 
@@ -3936,6 +4084,12 @@ async function refreshRatesCacheWithChangeDetection() {
     };
 
     console.log(`[SCRAPER] ✅ Cache güncellendi — totalBanks=${cachedRates.totalBanks}, MB=${cachedRates.centralBankUpdatedAt}, changedAt=${cachedRates.ratesChangedAt}`);
+
+    // P3.2: her başarılı güncellemeden sonra kur alarmlarını kontrol et.
+    // Fire-and-forget — alarm job'ı kur akışını asla bloklamaz/bozmaz.
+    runRateAlertCheck(newCentralRates).catch((err) =>
+      console.warn("[REFRESH] rateAlert kontrolü hatası:", err.message)
+    );
   } catch (error) {
     ratesHealth.lastErrorAt = new Date().toISOString();
     ratesHealth.lastError = error.message;

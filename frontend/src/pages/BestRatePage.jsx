@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { Award, ChevronRight } from "lucide-react";
+import { Award, BellRing, ChevronRight } from "lucide-react";
 import { BrandLogo } from "../components/BrandLogo";
 import { SiteNav } from "../components/SiteNav";
 import { HeaderActions } from "../components/HeaderActions";
 import { BuySellToggle } from "../components/BuySellToggle";
+import { RateAlertModal } from "../components/RateAlertModal";
 import { FloatingInput } from "../components/ui/floating-label";
 import { useLanguage } from "../context/LanguageContext";
 import { fetchRatesWithRetry, mediaUrl } from "../lib/api";
@@ -83,6 +84,8 @@ export function BestRatePage() {
   const [banks, setBanks] = useState([]);
   const [status, setStatus] = useState("loading"); // loading | waking | ready | error
   const [updatedAt, setUpdatedAt] = useState(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertKey, setAlertKey] = useState(0);
 
   const currency = CURRENCIES.includes(searchParams.get("birim"))
     ? searchParams.get("birim")
@@ -244,6 +247,18 @@ export function BestRatePage() {
               onChange={(e) => setParam({ tutar: e.target.value.replace(/[^\d.,]/g, "") })}
             />
           </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setAlertKey((k) => k + 1);
+              setAlertOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400 dark:hover:text-brand-300"
+          >
+            <BellRing size={15} aria-hidden="true" />
+            {t("rateAlertCta")}
+          </button>
         </section>
 
         {status === "error" ? (
@@ -356,6 +371,14 @@ export function BestRatePage() {
           </p>
         ) : null}
       </main>
+
+      <RateAlertModal
+        key={alertKey}
+        open={alertOpen}
+        onOpenChange={setAlertOpen}
+        defaultCurrency={currency}
+        defaultSide={operation}
+      />
     </div>
   );
 }
