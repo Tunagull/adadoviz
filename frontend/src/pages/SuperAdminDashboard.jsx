@@ -48,6 +48,10 @@ import {
   fetchAdminPayments,
   createAdminPayment,
   backfillAdminPayments,
+  fetchAdminDiscountCodes,
+  createAdminDiscountCode,
+  toggleAdminDiscountCode,
+  deleteAdminDiscountCode,
   fetchAdminPlans,
   fetchAdminExpiring,
   fetchAdminPartnershipApplications,
@@ -562,6 +566,16 @@ export function SuperAdminDashboard() {
   /* Faz 1: gelir görünürlüğü */
   const [payments, setPayments] = useState([]);
   const [revenue, setRevenue] = useState(null);
+  const [revAnalytics, setRevAnalytics] = useState(null);
+  const [discountCodes, setDiscountCodes] = useState([]);
+  const [discountForm, setDiscountForm] = useState({
+    code: "",
+    tur: "percent",
+    deger: "",
+    max_kullanim: "",
+    gecerlilik_bitis: "",
+  });
+  const [discountBusy, setDiscountBusy] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [expiring, setExpiring] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -576,6 +590,7 @@ export function SuperAdminDashboard() {
     tutar: "",
     kdv: "",
     yontem: "",
+    discount_code: "",
   });
   const [paySaving, setPaySaving] = useState(false);
   const [paySaved, setPaySaved] = useState(false);
@@ -750,17 +765,20 @@ export function SuperAdminDashboard() {
     setPayLoading(true);
     setPayError("");
     try {
-      const [pay, exp, pl, apps] = await Promise.all([
+      const [pay, exp, pl, apps, disc] = await Promise.all([
         fetchAdminPayments(token),
         fetchAdminExpiring(token, 30),
         fetchAdminPlans(token),
         fetchAdminPartnershipApplications(token),
+        fetchAdminDiscountCodes(token).catch(() => ({ codes: [] })),
       ]);
       setPayments(pay.payments || []);
       setRevenue(pay.summary || null);
+      setRevAnalytics(pay.analytics || null);
       setExpiring(exp.expiring || []);
       setPlans(pl.plans || []);
       setPartnershipApps(apps.applications || []);
+      setDiscountCodes(disc.codes || []);
     } catch (err) {
       setPayError(err.message || "Tahsilat verisi alınamadı.");
     } finally {
@@ -785,6 +803,147 @@ export function SuperAdminDashboard() {
       await loadRevenue();
     },
     [token, loadRevenue]
+  );
+
+  /** P3.3 — indirim kodu oluştur. */
+  const handleCreateDiscount = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (!token || !discountForm.code || !discountForm.deger) return;
+      setDiscountBusy(true);
+      setPayError("");
+      try {
+        await createAdminDiscountCode(token, {
+          code: discountForm.code,
+          tur: discountForm.tur,
+          deger: Number(discountForm.deger),
+          max_kullanim: discountForm.max_kullanim === "" ? 0 : Number(discountForm.max_kullanim),
+          gecerlilik_bitis: discountForm.gecerlilik_bitis || undefined,
+        });
+        setDiscountForm({ code: "", tur: "percent", deger: "", max_kullanim: "", gecerlilik_bitis: "" });
+        await loadRevenue();
+      } catch (err) {
+        setPayError(err.message || "İndirim kodu oluşturulamadı.");
+      } finally {
+        setDiscountBusy(false);
+      }
+    },
+    [token, discountForm, loadRevenue]
+  );
+
+  const handleToggleDiscount = useCallback(
+    async (code, aktif) => {
+      if (!token) return;
+      try {
+        await toggleAdminDiscountCode(token, code, aktif);
+        await loadRevenue();
+      } catch (err) {
+        setPayError(err.message || "İndirim kodu güncellenemedi.");
+      }
+    },
+    [token, loadRevenue]
+  );
+
+  const handleDeleteDiscount = useCallback(
+    async (code) => {
+      if (!token) return;
+      try {
+        await deleteAdminDiscountCode(token, code);
+        await loadRevenue();
+      } catch (err) {
+        setPayError(err.message || "İndirim kodu silinemedi.");
+      }
+    },
+    [token, loadRevenue]
+  );
+
+  /** P3.3 — muhasebe CSV (istemci tarafı; payments zaten yüklü). */
+  const handleExportPaymentsCsv = useCallback(() => {
+    const cols = [
+      "odeme_tarihi",
+      "institution_name",
+      "institution_id",
+      "plan_adi",
+      "plan_code",
+      "tutar",
+      "kdv",
+      "toplam",
+      "para_birimi",
+      "yontem",
+      "durum",
+      "donem_baslangic",
+      "donem_bitis",
+      "fatura_no",
+      "indirim_kodu",
+      "indirim_tutari",
+      "aciklama",
+    ];
+    const esc = (v) => {
+      const s = v == null ? "" : String(v);
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = payments.map((p) =>
+      cols
+        .map((c) => {
+          if (c === "toplam") return esc((Number(p.tutar) || 0) + (Number(p.kdv) || 0));
+          if (c === "odeme_tarihi") return esc(String(p.odeme_tarihi || "").slice(0, 10));
+          return esc(p[c]);
+        })
+        .join(";")
+    );
+    const csv = "﻿" + [cols.join(";"), ...rows].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `adadoviz-tahsilat-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [payments]);
+
+  /** P3.3 — tek tahsilat için yazdırılabilir makbuz (yeni sekmede). */
+  const openReceipt = useCallback(
+    (p) => {
+      const fmt = (n) => `${Number(n || 0).toLocaleString("tr-TR")} ₺`;
+      const gross = (Number(p.tutar) || 0) + (Number(p.indirim_tutari) || 0);
+      const rows = [
+        [t("revBusiness"), p.institution_name || p.institution_id],
+        [t("revPlan"), p.plan_adi || p.plan_code],
+        [t("revMethod"), p.yontem || "—"],
+        ["Dönem", `${p.donem_baslangic} → ${p.donem_bitis}`],
+        [t("revAmount"), fmt(gross)],
+      ];
+      if (Number(p.indirim_tutari) > 0) {
+        rows.push([`${t("revDiscountApplied")} (${p.indirim_kodu})`, `- ${fmt(p.indirim_tutari)}`]);
+      }
+      rows.push([t("revVat"), fmt(p.kdv)]);
+      rows.push([t("revNet"), fmt((Number(p.tutar) || 0) + (Number(p.kdv) || 0))]);
+      const body = rows
+        .map(
+          ([k, v]) =>
+            `<tr><td style="padding:8px 12px;color:#55555f">${k}</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums">${v}</td></tr>`
+        )
+        .join("");
+      const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>Makbuz #${p.id}</title>
+<style>body{font:14px/1.5 system-ui,-apple-system,sans-serif;color:#08080a;margin:0;padding:32px;background:#fff}
+.wrap{max-width:520px;margin:0 auto;border:1px solid #e5e5ea;border-radius:12px;overflow:hidden}
+.hd{background:#08080a;color:#fff;padding:20px 24px;font-weight:700;font-size:16px}
+table{width:100%;border-collapse:collapse}
+tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
+.meta{padding:12px 24px;color:#8a8a94;font-size:12px}
+.pr{margin:24px auto 0;display:block;padding:10px 16px;border:0;border-radius:8px;background:#55555f;color:#fff;font-size:14px;cursor:pointer}
+@media print{.pr{display:none}.wrap{border:0}}</style></head>
+<body><div class="wrap"><div class="hd">AdaDöviz — Tahsilat Makbuzu #${p.id}</div>
+<div class="meta">${String(p.odeme_tarihi || "").slice(0, 10)}${p.fatura_no ? ` · Fatura: ${p.fatura_no}` : ""}</div>
+<table><tbody>${body}</tbody></table></div>
+<button class="pr" onclick="window.print()">Yazdır / PDF kaydet</button></body></html>`;
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(html);
+        w.document.close();
+      }
+    },
+    [t]
   );
 
   // P3.1 — self-signup başvuru kuyruğu
@@ -2739,6 +2898,59 @@ export function SuperAdminDashboard() {
             ))}
           </div>
 
+          {/* P3.3 — türetilmiş metrikler (MRR / gecikmiş / churn / LTV) */}
+          <div className="surface-card p-4">
+            <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+              {t("revMetricsTitle")}
+            </h3>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {[
+                { label: t("revMrr"), value: revAnalytics?.mrr, money: true },
+                { label: t("revArr"), value: revAnalytics?.arr, money: true },
+                { label: t("revArpa"), value: revAnalytics?.arpa, money: true },
+                { label: t("revLtv"), value: revAnalytics?.ltv, money: true },
+                { label: t("revActivePaying"), value: revAnalytics?.activePaying },
+                {
+                  label: t("revOverdue"),
+                  value: revAnalytics?.overdueCount,
+                  hint:
+                    revAnalytics?.overdueAmount != null
+                      ? `${Number(revAnalytics.overdueAmount).toLocaleString("tr-TR")} ₺`
+                      : null,
+                  danger: (revAnalytics?.overdueCount || 0) > 0,
+                },
+                { label: t("revChurn"), value: revAnalytics?.churned90d },
+                {
+                  label: t("revChurnRate"),
+                  value: revAnalytics?.churnRate,
+                  suffix: "%",
+                },
+              ].map((card) => (
+                <div key={card.label} className="rounded-control bg-ink-50 p-3 dark:bg-ink-800/40">
+                  <p className="text-xs font-medium text-ink-600 dark:text-ink-400">{card.label}</p>
+                  <p
+                    className={`mt-1 font-mono text-lg font-bold tabular-nums ${
+                      card.danger
+                        ? "text-danger-700 dark:text-danger-400"
+                        : "text-ink-900 dark:text-white"
+                    }`}
+                  >
+                    {payLoading || revAnalytics == null
+                      ? "—"
+                      : card.money
+                        ? `${Number(card.value || 0).toLocaleString("tr-TR")} ₺`
+                        : `${Number(card.value || 0).toLocaleString("tr-TR")}${card.suffix || ""}`}
+                  </p>
+                  {card.hint ? (
+                    <p className="mt-0.5 font-mono text-xs text-ink-500 dark:text-ink-400">
+                      {card.hint}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/*
             R-01: `handleCreatePayment` tanımlıydı ama hiçbir yerden
             çağrılmıyordu — süper adminin ödeme kaydetme yolu yoktu.
@@ -2758,6 +2970,7 @@ export function SuperAdminDashboard() {
                   ...payForm,
                   tutar: payForm.tutar === "" ? undefined : Number(payForm.tutar),
                   kdv: payForm.kdv === "" ? undefined : Number(payForm.kdv),
+                  discount_code: payForm.discount_code || undefined,
                   odeme_tarihi: new Date().toISOString(),
                   donem_baslangic: today,
                 });
@@ -2767,6 +2980,7 @@ export function SuperAdminDashboard() {
                   tutar: "",
                   kdv: "",
                   yontem: "",
+                  discount_code: "",
                 });
                 setPaySaved(true);
               } catch (err) {
@@ -2847,6 +3061,26 @@ export function SuperAdminDashboard() {
                   value={payForm.yontem}
                   onChange={(e) => setPayForm((f) => ({ ...f, yontem: e.target.value }))}
                 />
+              </label>
+
+              <label className="block">
+                <span className="field-label">{t("revDiscountOptional")}</span>
+                <input
+                  className="field uppercase"
+                  type="text"
+                  value={payForm.discount_code}
+                  onChange={(e) =>
+                    setPayForm((f) => ({ ...f, discount_code: e.target.value.toUpperCase() }))
+                  }
+                  list="discount-code-list"
+                />
+                <datalist id="discount-code-list">
+                  {discountCodes
+                    .filter((c) => c.aktif)
+                    .map((c) => (
+                      <option key={c.code} value={c.code} />
+                    ))}
+                </datalist>
               </label>
             </div>
 
@@ -3003,6 +3237,162 @@ export function SuperAdminDashboard() {
                 <p className="text-sm text-ink-600 dark:text-ink-400">
                   {t("revApplicationsEmpty")}
                 </p>
+              )}
+            </div>
+
+            {/* P3.3 — indirim kodları */}
+            <div className="surface-card p-4">
+              <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                {t("revDiscountCodes")}
+              </h3>
+              <form className="mb-3 grid gap-2 sm:grid-cols-2" onSubmit={handleCreateDiscount}>
+                <input
+                  className="field uppercase"
+                  type="text"
+                  placeholder={t("revDiscountCode")}
+                  value={discountForm.code}
+                  onChange={(e) =>
+                    setDiscountForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))
+                  }
+                />
+                <select
+                  className="field"
+                  value={discountForm.tur}
+                  onChange={(e) => setDiscountForm((f) => ({ ...f, tur: e.target.value }))}
+                >
+                  <option value="percent">{t("revDiscountPercent")}</option>
+                  <option value="fixed">{t("revDiscountFixed")}</option>
+                </select>
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder={t("revDiscountValue")}
+                  value={discountForm.deger}
+                  onChange={(e) => setDiscountForm((f) => ({ ...f, deger: e.target.value }))}
+                />
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder={t("revDiscountMaxUse")}
+                  value={discountForm.max_kullanim}
+                  onChange={(e) =>
+                    setDiscountForm((f) => ({ ...f, max_kullanim: e.target.value }))
+                  }
+                />
+                <input
+                  className="field"
+                  type="date"
+                  aria-label={t("revDiscountExpiry")}
+                  value={discountForm.gecerlilik_bitis}
+                  onChange={(e) =>
+                    setDiscountForm((f) => ({ ...f, gecerlilik_bitis: e.target.value }))
+                  }
+                />
+                <button
+                  type="submit"
+                  className="btn-ghost btn-sm"
+                  disabled={discountBusy || !discountForm.code || !discountForm.deger}
+                >
+                  {t("revDiscountAdd")}
+                </button>
+              </form>
+              {discountCodes.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {discountCodes.map((c) => (
+                    <li key={c.code} className="flex items-center justify-between gap-2 py-2">
+                      <span className="min-w-0 truncate">
+                        <span className="font-mono font-semibold text-ink-900 dark:text-white">
+                          {c.code}
+                        </span>
+                        <span className="ml-2 text-xs text-ink-500 dark:text-ink-400">
+                          {c.tur === "fixed"
+                            ? `${Number(c.deger).toLocaleString("tr-TR")} ₺`
+                            : `%${c.deger}`}
+                          {" · "}
+                          {c.kullanim_sayisi}
+                          {c.max_kullanim > 0 ? `/${c.max_kullanim}` : ""} {t("revDiscountUsed")}
+                          {c.gecerlilik_bitis ? ` · ${c.gecerlilik_bitis}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDiscount(c.code, !c.aktif)}
+                          className={`rounded-control px-2 py-0.5 text-xs font-medium ${
+                            c.aktif
+                              ? "bg-success-500/15 text-success-700 dark:text-success-300"
+                              : "bg-ink-200 text-ink-600 dark:bg-ink-700 dark:text-ink-300"
+                          }`}
+                        >
+                          {c.aktif ? t("revDiscountActive") : t("revDiscountInactive")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDiscount(c.code)}
+                          className="text-xs text-danger-700 hover:underline dark:text-danger-400"
+                        >
+                          {t("revDiscountDelete")}
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revDiscountNone")}</p>
+              )}
+            </div>
+
+            {/* P3.3 — son tahsilatlar + makbuz + CSV */}
+            <div className="surface-card p-4 lg:col-span-2">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                  {t("revRecentPayments")}
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleExportPaymentsCsv}
+                  className="btn-ghost btn-sm"
+                  disabled={!payments.length}
+                >
+                  {t("revExportCsv")}
+                </button>
+              </div>
+              {payments.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {payments.slice(0, 12).map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+                      <span className="min-w-0 truncate text-ink-800 dark:text-ink-200">
+                        {p.institution_name || p.institution_id}
+                        <span className="ml-2 text-xs text-ink-500 dark:text-ink-400">
+                          {String(p.odeme_tarihi || "").slice(0, 10)} · {p.plan_adi || p.plan_code}
+                          {Number(p.indirim_tutari) > 0 ? ` · ${p.indirim_kodu}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-3">
+                        <span className="font-mono tabular-nums text-ink-900 dark:text-white">
+                          {(
+                            (Number(p.tutar) || 0) + (Number(p.kdv) || 0)
+                          ).toLocaleString("tr-TR")}{" "}
+                          ₺
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openReceipt(p)}
+                          className="text-xs text-brand-700 hover:underline dark:text-brand-300"
+                        >
+                          {t("revReceipt")}
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
               )}
             </div>
           </div>

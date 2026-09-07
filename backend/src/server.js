@@ -117,6 +117,12 @@ const {
   listPayments,
   getPaymentsForInstitution,
   getRevenueSummary,
+  getRevenueAnalytics,
+  listDiscountCodes,
+  createDiscountCode,
+  setDiscountCodeActive,
+  deleteDiscountCode,
+  evaluateDiscountCode,
   listExpiringSubscriptions,
   backfillPaymentsFromSubscriptions,
   getClicksByBusiness,
@@ -3076,9 +3082,84 @@ app.get("/api/admin/payments", requireSuperAdmin, (req, res) => {
         limit: req.query?.limit,
       }),
       summary: getRevenueSummary(),
+      analytics: getRevenueAnalytics(),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Tahsilat dökümü alınamadı." });
+  }
+});
+
+/** Super Admin: indirim kodları — liste. */
+app.get("/api/admin/discount-codes", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({ codes: listDiscountCodes() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "İndirim kodları alınamadı." });
+  }
+});
+
+/** Super Admin: indirim kodunu bir tutara karşı ön-değerlendir (form önizleme). */
+app.get("/api/admin/discount-codes/:code/preview", requireSuperAdmin, (req, res) => {
+  try {
+    const base = Number(req.query?.amount) || 0;
+    return res.json(evaluateDiscountCode(req.params.code, base));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Değerlendirilemedi." });
+  }
+});
+
+/** Super Admin: indirim kodu oluştur. */
+app.post("/api/admin/discount-codes", requireSuperAdmin, async (req, res) => {
+  try {
+    const code = createDiscountCode({
+      code: req.body?.code,
+      tur: req.body?.tur,
+      deger: req.body?.deger,
+      para_birimi: req.body?.para_birimi,
+      max_kullanim: req.body?.max_kullanim,
+      gecerlilik_bitis: req.body?.gecerlilik_bitis,
+      aciklama: req.body?.aciklama,
+    });
+    await recordAudit({
+      action: "discount_code_create",
+      actor: req.user?.username || "superadmin",
+      detail: `İndirim kodu: ${code.code} (${code.tur} ${code.deger})`,
+    });
+    return res.status(201).json({ code });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "İndirim kodu oluşturulamadı." });
+  }
+});
+
+/** Super Admin: indirim kodu aktif/pasif. */
+app.patch("/api/admin/discount-codes/:code", requireSuperAdmin, async (req, res) => {
+  try {
+    const code = setDiscountCodeActive(req.params.code, !!req.body?.aktif);
+    await recordAudit({
+      action: "discount_code_update",
+      actor: req.user?.username || "superadmin",
+      detail: `İndirim kodu ${code.code} → ${code.aktif ? "aktif" : "pasif"}`,
+    });
+    return res.json({ code });
+  } catch (err) {
+    const status = err.message === "Kod bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "İndirim kodu güncellenemedi." });
+  }
+});
+
+/** Super Admin: indirim kodu sil. */
+app.delete("/api/admin/discount-codes/:code", requireSuperAdmin, async (req, res) => {
+  try {
+    const result = deleteDiscountCode(req.params.code);
+    await recordAudit({
+      action: "discount_code_delete",
+      actor: req.user?.username || "superadmin",
+      detail: `İndirim kodu silindi: ${result.code}`,
+    });
+    return res.json(result);
+  } catch (err) {
+    const status = err.message === "Kod bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "İndirim kodu silinemedi." });
   }
 });
 
@@ -3098,6 +3179,7 @@ app.post("/api/admin/payments", requireSuperAdmin, async (req, res) => {
       fatura_no: req.body?.fatura_no,
       aciklama: req.body?.aciklama,
       olusturan: req.user?.username || "superadmin",
+      discount_code: req.body?.discount_code,
     });
     // B-H1: gelir defteri kalıcı — Supabase'e yansıt.
     const paySynced = await syncPaymentUpsert(payment);

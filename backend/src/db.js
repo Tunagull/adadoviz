@@ -761,6 +761,31 @@ function initDb({ skipBusinessSeed = false } = {}) {
     `CREATE INDEX IF NOT EXISTS rate_alerts_active_idx ON rate_alerts (active, verified)`
   );
 
+  // P3.3: indirim kodları (S1 — gelir paneli). Superadmin tahsilat kaydederken
+  // uygulayabilir. migrations/0007 ile eş şema. Supabase sync yok (rate_alerts
+  // gerekçesi — makbuz + audit kalıcıyı kayıt altına alıyor).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS discount_codes (
+      code            TEXT PRIMARY KEY,
+      tur             TEXT NOT NULL DEFAULT 'percent',
+      deger           REAL NOT NULL DEFAULT 0,
+      para_birimi     TEXT NOT NULL DEFAULT 'TRY',
+      max_kullanim    INTEGER NOT NULL DEFAULT 0,
+      kullanim_sayisi INTEGER NOT NULL DEFAULT 0,
+      gecerlilik_bitis TEXT,
+      aktif           INTEGER NOT NULL DEFAULT 1,
+      aciklama        TEXT,
+      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS discount_codes_aktif_idx ON discount_codes (aktif)`);
+  if (!columnExists("payments", "indirim_kodu")) {
+    db.exec(`ALTER TABLE payments ADD COLUMN indirim_kodu TEXT`);
+  }
+  if (!columnExists("payments", "indirim_tutari")) {
+    db.exec(`ALTER TABLE payments ADD COLUMN indirim_tutari REAL NOT NULL DEFAULT 0`);
+  }
+
   migrateBankAdminsToInstitutions();
 
   // ⚠️ GÜVENLİK/MANTIK DÜZELTMESİ (bkz. project_audit_report.md, 1.1):
@@ -4628,6 +4653,100 @@ function isoDay(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
 
+/* ------------------------------------------------------------------ */
+/* P3.3 — indirim kodları (S1)                                          */
+/* ------------------------------------------------------------------ */
+
+function normalizeDiscountCode(raw) {
+  return String(raw || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "");
+}
+
+function listDiscountCodes() {
+  return db.prepare(`SELECT * FROM discount_codes ORDER BY datetime(created_at) DESC`).all();
+}
+
+function getDiscountCode(code) {
+  return db.prepare(`SELECT * FROM discount_codes WHERE code = ?`).get(normalizeDiscountCode(code)) || null;
+}
+
+function createDiscountCode({ code, tur, deger, para_birimi, max_kullanim, gecerlilik_bitis, aciklama } = {}) {
+  const c = normalizeDiscountCode(code);
+  if (!c || c.length < 3) throw new Error("Kod en az 3 karakter olmalı.");
+  if (getDiscountCode(c)) throw new Error("Bu kod zaten var.");
+  const type = tur === "fixed" ? "fixed" : "percent";
+  const val = Math.max(0, Number(deger) || 0);
+  if (val <= 0) throw new Error("İndirim değeri 0'dan büyük olmalı.");
+  if (type === "percent" && val > 100) throw new Error("Yüzde indirim 100'ü aşamaz.");
+  const maxUse = Math.max(0, parseInt(max_kullanim, 10) || 0);
+  let bitis = null;
+  if (gecerlilik_bitis) {
+    const d = new Date(gecerlilik_bitis);
+    if (Number.isNaN(d.getTime())) throw new Error("Geçersiz son kullanma tarihi.");
+    bitis = isoDay(d);
+  }
+  db.prepare(
+    `INSERT INTO discount_codes (code, tur, deger, para_birimi, max_kullanim, gecerlilik_bitis, aciklama)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(c, type, val, String(para_birimi || "TRY").toUpperCase(), maxUse, bitis, aciklama ? String(aciklama).trim() : null);
+  return getDiscountCode(c);
+}
+
+function setDiscountCodeActive(code, aktif) {
+  const row = getDiscountCode(code);
+  if (!row) throw new Error("Kod bulunamadı.");
+  db.prepare(`UPDATE discount_codes SET aktif = ? WHERE code = ?`).run(aktif ? 1 : 0, row.code);
+  return getDiscountCode(row.code);
+}
+
+function deleteDiscountCode(code) {
+  const row = getDiscountCode(code);
+  if (!row) throw new Error("Kod bulunamadı.");
+  db.prepare(`DELETE FROM discount_codes WHERE code = ?`).run(row.code);
+  return { deleted: true, code: row.code };
+}
+
+/**
+ * Kodu bir baz tutara karşı değerlendirir. `throwOnInvalid` false ise
+ * `{ valid:false, reason }` döner (UI ön-kontrolü); true ise hata fırlatır.
+ */
+function evaluateDiscountCode(code, baseAmount, { throwOnInvalid = false } = {}) {
+  const fail = (reason) => {
+    if (throwOnInvalid) throw new Error(reason);
+    return { valid: false, reason };
+  };
+  const c = normalizeDiscountCode(code);
+  if (!c) return fail("İndirim kodu boş.");
+  const row = getDiscountCode(c);
+  if (!row) return fail("İndirim kodu bulunamadı.");
+  if (!row.aktif) return fail("İndirim kodu pasif.");
+  if (row.gecerlilik_bitis && isoDay(new Date()) > row.gecerlilik_bitis) {
+    return fail("İndirim kodunun süresi dolmuş.");
+  }
+  if (row.max_kullanim > 0 && row.kullanim_sayisi >= row.max_kullanim) {
+    return fail("İndirim kodu kullanım limitine ulaştı.");
+  }
+  const base = Math.max(0, Number(baseAmount) || 0);
+  let indirim = row.tur === "fixed" ? row.deger : (base * row.deger) / 100;
+  indirim = Math.min(base, Math.round(indirim * 100) / 100);
+  return {
+    valid: true,
+    row,
+    indirim,
+    netTutar: Math.round((base - indirim) * 100) / 100,
+  };
+}
+
+function redeemDiscountCode(code) {
+  const row = getDiscountCode(code);
+  if (!row) return;
+  db.prepare(
+    `UPDATE discount_codes SET kullanim_sayisi = kullanim_sayisi + 1 WHERE code = ?`
+  ).run(row.code);
+}
+
 /** Tahsilat kaydı. Tutar o günkü fiyatla dondurulur (zam geçmişi bozmasın). */
 function createPayment({
   institution_id,
@@ -4642,6 +4761,7 @@ function createPayment({
   fatura_no,
   aciklama,
   olusturan,
+  discount_code,
 }) {
   const inst = String(institution_id || "").trim();
   if (!inst) throw new Error("İşletme zorunludur.");
@@ -4656,16 +4776,27 @@ function createPayment({
     ? isoDay(donem_bitis)
     : isoDay(new Date(odeme.getTime() + (plan.sure_gun || 30) * 86400000));
 
-  const amount = tutar !== undefined && tutar !== null && tutar !== "" ? Number(tutar) : plan.fiyat;
-  if (!Number.isFinite(amount) || amount < 0) throw new Error("Geçersiz tutar.");
+  const gross = tutar !== undefined && tutar !== null && tutar !== "" ? Number(tutar) : plan.fiyat;
+  if (!Number.isFinite(gross) || gross < 0) throw new Error("Geçersiz tutar.");
   const vat = kdv !== undefined && kdv !== null && kdv !== "" ? Number(kdv) : 0;
+
+  let amount = gross;
+  let appliedCode = null;
+  let discountAmount = 0;
+  if (discount_code) {
+    const evald = evaluateDiscountCode(discount_code, gross, { throwOnInvalid: true });
+    amount = evald.netTutar;
+    discountAmount = evald.indirim;
+    appliedCode = evald.row.code;
+  }
 
   const info = db
     .prepare(
       `INSERT INTO payments
          (institution_id, plan_code, tutar, kdv, odeme_tarihi, donem_baslangic,
-          donem_bitis, yontem, durum, fatura_no, aciklama, olusturan)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          donem_bitis, yontem, durum, fatura_no, aciklama, olusturan,
+          indirim_kodu, indirim_tutari)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       inst,
@@ -4679,8 +4810,11 @@ function createPayment({
       String(durum || "odendi"),
       fatura_no ? String(fatura_no).trim() : null,
       aciklama ? String(aciklama).trim() : null,
-      olusturan ? String(olusturan).trim() : null
+      olusturan ? String(olusturan).trim() : null,
+      appliedCode,
+      discountAmount
     );
+  if (appliedCode) redeemDiscountCode(appliedCode);
   return db.prepare(`SELECT * FROM payments WHERE id = ?`).get(info.lastInsertRowid);
 }
 
@@ -4765,6 +4899,101 @@ function getRevenueSummary() {
          WHERE p.durum = 'odendi' GROUP BY p.plan_code ORDER BY toplam DESC`
       )
       .all(),
+  };
+}
+
+/**
+ * P3.3 — türetilmiş gelir metrikleri (S1): MRR, ARPA, gecikmiş, churn, LTV.
+ * Abonelik durumu institutions'tan, fiyat plans'tan gelir (tarihi tahsilat
+ * tutarları değil — "şu an ne kazanıyoruz" sorusu).
+ */
+function getRevenueAnalytics() {
+  const businesses = listBusinesses();
+  const planByCode = new Map(listPlans().map((p) => [p.code, p]));
+
+  const monthlyValue = (subscriptionType) => {
+    const plan = planByCode.get(planCodeFromSubscriptionType(subscriptionType));
+    if (!plan || !plan.fiyat || !plan.sure_gun) return 0;
+    return (plan.fiyat / plan.sure_gun) * 30;
+  };
+
+  let mrr = 0;
+  let activePaying = 0;
+  let overdueCount = 0;
+  let overdueAmount = 0;
+  const planBreakdown = {};
+
+  for (const b of businesses) {
+    const type = b.subscription_type || "Test";
+    const listed = b.is_active !== false && (b.days_remaining == null || b.days_remaining >= 0);
+    const mv = monthlyValue(type);
+
+    if (listed && mv > 0) {
+      mrr += mv;
+      activePaying += 1;
+      planBreakdown[type] = (planBreakdown[type] || 0) + 1;
+    }
+    // Gecikmiş: süresi dolmuş ama hâlâ hesabı açık (yenileme bekleyen).
+    if (b.days_remaining != null && b.days_remaining < 0 && mv > 0) {
+      overdueCount += 1;
+      const plan = planByCode.get(planCodeFromSubscriptionType(type));
+      overdueAmount += plan ? plan.fiyat : 0;
+    }
+  }
+
+  // Churn: son 90 günde pasifleşmiş (is_active=0) ve bitiş tarihi bu pencerede
+  // olan hesaplar. Kesin bir deaktivasyon damgası yok — bitiş tarihi vekil.
+  const cutoff = isoDay(new Date(Date.now() - 90 * 86400000));
+  const churned = businesses.filter(
+    (b) =>
+      b.is_active === false &&
+      b.subscription_end_date &&
+      isoDay(b.subscription_end_date) >= cutoff &&
+      monthlyValue(b.subscription_type) > 0
+  ).length;
+
+  const churnRate = activePaying + churned > 0 ? churned / (activePaying + churned) : 0;
+  const arpa = activePaying > 0 ? mrr / activePaying : 0;
+  // LTV: churn biliniyorsa ARPA / churnRate, değilse 12 aylık vekil.
+  const ltv = churnRate > 0 ? arpa / churnRate : arpa * 12;
+
+  const now = new Date();
+  const ayBas = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  const collectedThisMonth =
+    Number(
+      db
+        .prepare(
+          `SELECT SUM(tutar + kdv) AS t FROM payments
+           WHERE durum = 'odendi' AND date(odeme_tarihi) >= date(?)`
+        )
+        .get(ayBas)?.t
+    ) || 0;
+  const payingInstThisMonth =
+    Number(
+      db
+        .prepare(
+          `SELECT COUNT(DISTINCT institution_id) AS c FROM payments
+           WHERE durum = 'odendi' AND date(odeme_tarihi) >= date(?)`
+        )
+        .get(ayBas)?.c
+    ) || 0;
+
+  const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  return {
+    mrr: round(mrr),
+    arr: round(mrr * 12),
+    arpa: round(arpa),
+    ltv: round(ltv),
+    activePaying,
+    overdueCount,
+    overdueAmount: round(overdueAmount),
+    churned90d: churned,
+    churnRate: round(churnRate * 100),
+    collectedThisMonth: round(collectedThisMonth),
+    payingInstThisMonth,
+    planBreakdown: Object.entries(planBreakdown)
+      .map(([type, adet]) => ({ type, adet }))
+      .sort((a, b) => b.adet - a.adet),
   };
 }
 
@@ -5511,6 +5740,13 @@ module.exports = {
   getPaymentById,
   getPaymentsForInstitution,
   getRevenueSummary,
+  getRevenueAnalytics,
+  listDiscountCodes,
+  getDiscountCode,
+  createDiscountCode,
+  setDiscountCodeActive,
+  deleteDiscountCode,
+  evaluateDiscountCode,
   listExpiringSubscriptions,
   backfillPaymentsFromSubscriptions,
   getClicksByBusiness,

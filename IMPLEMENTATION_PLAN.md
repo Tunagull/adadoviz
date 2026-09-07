@@ -325,11 +325,34 @@ delete) doğrulandı; server modülü temiz yüklendi; canlı HTTP (KVKK 400 / v
 admin 401); `npm run build` yeşil (RateAlertManagePage 5.1 kB lazy chunk, BestRatePage 12.6 kB); lint
 44 (RateAlert dosyaları temiz).
 
-### ☐ P3.3 — Gelir paneli (S1)
-`/super-admin` "Gelir": MRR (aktif aboneliklerden), bu ay tahsil edilen, gecikmiş (bitmiş + ödemesiz),
-plan dağılımı, churn (son 90 gün pasifleşen), basit LTV. Makbuz PDF (`sendPaymentReceiptEmail` + indirilebilir).
-Dunning: bitişe 7/3/0/-3 gün otomatik hatırlatma (P1.5 job'ına bağla). İndirim kodu (`discount_codes`).
-Muhasebe CSV export.
+### ☑ P3.3 — Gelir paneli (S1)
+`migrations/0007_discount_codes.sql` + `db.js` initDb eş tablo (Supabase sync yok — rate_alerts gerekçesi;
+makbuz + audit kalıcıyı kayıt altına alıyor) + `payments` tablosuna `indirim_kodu`/`indirim_tutari`
+kolonları (columnExists ALTER deseni). `db.js`: `createDiscountCode` (anti-abuse: benzersiz kod, yüzde
+≤100, deger>0), `listDiscountCodes`, `getDiscountCode`, `setDiscountCodeActive`, `deleteDiscountCode`,
+`evaluateDiscountCode(code, base, {throwOnInvalid})` (aktif + süre + kullanım-limiti kontrolü → indirim/net),
+`redeemDiscountCode`. `createPayment` opsiyonel `discount_code` alır → değerlendirir, net tutarı yazar,
+`indirim_kodu`/`indirim_tutari` sütunlarını doldurur, başarıda `redeemDiscountCode`.
+`getRevenueAnalytics()` — türetilmiş metrikler: MRR (aktif+listeli işletmelerin plan aylık-eşdeğeri),
+ARR, ARPA, gecikmiş (süresi dolmuş, hâlâ hesabı açık — adet + tahmini tutar), churn (son 90 gün
+`is_active=0` + bitiş tarihi pencerede), churn oranı, LTV (churn biliniyorsa ARPA/churnRate, değilse
+ARPA×12), bu ay tahsil edilen. `server.js`: `/api/admin/payments` yanıtına `analytics` eklendi;
+`GET/POST/PATCH/DELETE /api/admin/discount-codes[/:code]` + `.../:code/preview?amount=` (requireSuperAdmin,
+`recordAudit` `discount_code_*`); `POST /api/admin/payments` `discount_code` gövde alanını geçiriyor.
+Frontend: `lib/auth.js` 5 helper; `SuperAdminDashboard` "Gelir" sekmesi — türetilmiş metrik kartları
+(MRR/ARR/ARPA/LTV/aktif-ücretli/gecikmiş/churn/churn-oranı), indirim kodu yöneticisi (oluştur formu +
+liste + aktif/pasif toggle + sil), tahsilat formuna `datalist`'li indirim kodu alanı, "Son tahsilatlar"
+kartı (`lg:col-span-2`) + satır başına yazdırılabilir makbuz (`window.open` + `window.print()`, mat siyah
+başlık, gross/indirim/KDV/net dökümü) + "Muhasebe CSV indir" (istemci tarafı, `;` ayraç + UTF-8 BOM).
+i18n `rev*` (~30 yeni key, TR+EN).
+**Doğrulama:** `node --check` db.js + server.js; node ile tam akış (createDiscountCode → evaluate →
+createPayment indirimli → redeem sayacı → getRevenueAnalytics) + canlı HTTP (login → payments.analytics →
+discount CRUD + preview) doğrulandı, test satırları temizlendi; `npm run build` yeşil (SuperAdminDashboard
+116→129 kB); lint 44 (yeni hata yok).
+**Dunning:** bitişe 7/3/1/0 gün + 0..-7 gün grace `subscription_expired` zaten P1.5
+`jobs/subscriptionReminders.js`'te — ayrı iş gerekmedi (planın "-3 gün"ü grace penceresinde).
+**Ertelendi:** gerçek PDF (kütüphane yok — yazdırılabilir HTML makbuz browser "PDF kaydet" ile aynı işi
+görüyor); indirim kodunun public self-servis ödeme akışına bağlanması P3.6'ya ait.
 
 ### ☐ P3.4 — Lead CRM + talep analitiği (S5 + S6)
 `signup_requests` + `partnership_applications` birleşik "Lead" görünümü: durum (yeni/iletişimde/kazanıldı/kayıp),

@@ -718,6 +718,21 @@ export const deleteAdminPayment = (token, id) =>
 export const backfillAdminPayments = (token) =>
   sendJson("/api/admin/payments/backfill", token, "POST");
 
+/** Super Admin: indirim kodları (P3.3). */
+export const fetchAdminDiscountCodes = (token) =>
+  getJson("/api/admin/discount-codes", token);
+export const createAdminDiscountCode = (token, payload) =>
+  sendJson("/api/admin/discount-codes", token, "POST", payload);
+export const toggleAdminDiscountCode = (token, code, aktif) =>
+  sendJson(`/api/admin/discount-codes/${encodeURIComponent(code)}`, token, "PATCH", { aktif });
+export const deleteAdminDiscountCode = (token, code) =>
+  sendJson(`/api/admin/discount-codes/${encodeURIComponent(code)}`, token, "DELETE");
+export const previewAdminDiscountCode = (token, code, amount) =>
+  getJson(
+    `/api/admin/discount-codes/${encodeURIComponent(code)}/preview?amount=${encodeURIComponent(amount || 0)}`,
+    token
+  );
+
 /** Super Admin: vade takvimi, işletme bazlı analitik, partnerlik başvuruları. */
 export const fetchAdminExpiring = (token, days = 30) =>
   getJson(`/api/admin/expiring?days=${days}`, token);
