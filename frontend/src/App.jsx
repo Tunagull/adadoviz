@@ -1,5 +1,12 @@
-import { Suspense, lazy } from "react";
-import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Suspense, lazy, useEffect } from "react";
+import {
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useNavigationType,
+} from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { LanguageProvider } from "./context/LanguageContext";
@@ -84,6 +91,25 @@ function isAdminRoute(pathname) {
   );
 }
 
+/**
+ * ⚠️ UX DÜZELTMESİ: SPA'da rota değişince tarayıcı kaydırma konumunu
+ * KORUYOR — kullanıcı footer'dayken başlıktaki bir sekmeye tıklayınca yeni
+ * sayfada da footer hizasında kalıyor, yukarı elle çıkması gerekiyordu.
+ * Artık her yeni gezinmede (PUSH/REPLACE) sayfa en üstten başlar; geri/ileri
+ * (POP) için tarayıcının kendi konum geri-yüklemesi korunur.
+ */
+function ScrollToTopOnNavigate() {
+  const { pathname } = useLocation();
+  const navigationType = useNavigationType();
+
+  useEffect(() => {
+    if (navigationType === "POP") return;
+    window.scrollTo(0, 0);
+  }, [pathname, navigationType]);
+
+  return null;
+}
+
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -91,6 +117,7 @@ function AppShell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
+      <ScrollToTopOnNavigate />
       {/* Klavye kullanıcıları için içeriğe atlama bağlantısı (A-01). */}
       <a
         href="#main-content"
