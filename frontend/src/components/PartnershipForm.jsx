@@ -216,13 +216,19 @@ export function PartnershipForm({ className = "", hideHeading = false }) {
       )}
 
       {submitted ? (
-        <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-4 py-3 text-sm text-success-700 dark:text-success-200">
+        <div
+          role="status"
+          className="rounded-lg border border-success-500/30 bg-success-500/10 px-4 py-3 text-sm text-success-700 dark:text-success-200"
+        >
           {t("applicationSuccess")}
         </div>
       ) : (
         <>
           {error ? (
-            <div className="mb-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-sm text-danger-700 dark:text-danger-200">
+            <div
+              role="alert"
+              className="mb-4 rounded-lg border border-danger-500/30 bg-danger-500/10 px-4 py-3 text-sm text-danger-700 dark:text-danger-200"
+            >
               {error}
             </div>
           ) : null}

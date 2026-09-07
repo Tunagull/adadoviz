@@ -1,5 +1,5 @@
 const { findInstitutionByName } = require("./institutions");
-const { enforceSellGteBuy, normalizeKind } = require("./marginSchema");
+const { enforceSellGteBuy, normalizeKind, normalizeSide } = require("./marginSchema");
 
 /**
  * ✅ ADIM 2: Floating-Point Precision Guarantee
@@ -39,50 +39,48 @@ function roundRateDisplay(value) {
 }
 
 /**
- * ✅ ADIM 2: Apply Margin with Precision Guarantee
- * 
- * Formula:
- *  - percent: KUR + (KUR * margin / 100)
- *  - fixed:   KUR + margin (TL)
- * 
- * Precision Guarantee:
- *  1. Input validation (finite numbers)
- *  2. Calculation
- *  3. EXPLICIT roundRate() on result
- *  4. Final validation
+ * Marjı referans kura uygular (kesinlik garantili).
+ *
+ * ⚠️ KÂR YÖNÜ (2026-09 düzeltmesi): Döviz bürosunun kârı, referans kur ile
+ * ilan ettiği kur arasındaki farktır ve iki taraf TERS yönde çalışır:
+ *
+ *   ALIŞ  (büro müşteriden döviz alır): büro referansın ALTINDA fiyat verir.
+ *          ilan_alış = referans_alış − marj     → kâr = referans − ilan_alış
+ *          (alış fiyatı düştükçe kâr artar)
+ *   SATIŞ (büro müşteriye döviz satar): büro referansın ÜSTÜNDE fiyat verir.
+ *          ilan_satış = referans_satış + marj   → kâr = ilan_satış − referans
+ *
+ * Eski kod her iki tarafta da `base + m` yapıyordu; alış tarafında bu, büronun
+ * dövizi referansın üstünde satın alması (her işlemde zarar) ve "kâr" olarak
+ * yanlış işaretle gösterilmesi demekti. P2.6 pazar-sağlığı sanity bandı
+ * (`buy_above_cb`, `buy_margin_wide = (referans − alış)/referans`) zaten doğru
+ * modeli varsayıyordu.
+ *
+ * Formül:
+ *   percent: base ± (base * marj / 100)
+ *   fixed:   base ± marj (TL)
+ * `side` verilmezse geriye dönük uyum için "sell" (toplama) varsayılır.
+ *
+ * Kesinlik: her hesap sonrası açık `roundRate()`; alış sonucu 0'ın altına düşemez.
  */
-function applyMarginToValue(kur, margin, marginType) {
-  // ✅ Step 1: Input Validation
+function applyMarginToValue(kur, margin, marginType, side = "sell") {
   const base = Number(kur);
   const m = Math.max(0, Number(margin) || 0);
-  
-  // ✅ Base rate must be finite
   if (!Number.isFinite(base)) return null;
-  
-  // ✅ Step 2: Calculate with precision guarantee
-  let result;
-  
-  if (normalizeKind(marginType) === "percent") {
-    // ✅ Percentage calculation: KUR + (KUR * margin / 100)
-    // Example: 39.15 + (39.15 * 0.5 / 100) = 39.15 + 0.19575 = 39.34575
-    const percentageIncrease = (base * m) / 100;
-    result = base + percentageIncrease;
-    // ✅ CRITICAL: Apply rounding IMMEDIATELY
-    result = roundRate(result, 4);
-  } else {
-    // ✅ Fixed calculation: KUR + margin (TL)
-    // Example: 39.15 + 0.50 = 39.65
-    result = base + m;
-    // ✅ CRITICAL: Apply rounding IMMEDIATELY
-    result = roundRate(result, 4);
-  }
-  
-  // ✅ Step 3: Final validation
+
+  const delta = normalizeKind(marginType) === "percent" ? (base * m) / 100 : m;
+  const isBuy = normalizeSide(side) === "buy";
+  let result = roundRate(isBuy ? base - delta : base + delta, 4);
+
+  // Alış kuru negatife düşemez (aşırı yüzde marjı koruması).
+  if (isBuy && Number.isFinite(result) && result < 0) result = 0;
+
   if (!Number.isFinite(result)) {
-    console.warn(`[PRECISION] Invalid result: ${base} + ${m} (${marginType}) = ${result}`);
+    console.warn(
+      `[PRECISION] Invalid result: ${base} ${isBuy ? "-" : "+"} ${delta} (${marginType}) = ${result}`
+    );
     return null;
   }
-  
   return result;
 }
 
@@ -103,8 +101,8 @@ function applyAdjustmentToPair(pair, adj) {
   // Granüler format (buy/sell ayrı ayrı): { buy: { margin_type, margin_value }, sell: { ... } }
   if (adj.buy && adj.sell && typeof adj.buy === "object") {
     return enforceSellGteBuy(
-      applyMarginToValue(pair?.buy, adj.buy.margin_value, adj.buy.margin_type),
-      applyMarginToValue(pair?.sell, adj.sell.margin_value, adj.sell.margin_type)
+      applyMarginToValue(pair?.buy, adj.buy.margin_value, adj.buy.margin_type, "buy"),
+      applyMarginToValue(pair?.sell, adj.sell.margin_value, adj.sell.margin_type, "sell")
     );
   }
 
@@ -113,15 +111,15 @@ function applyAdjustmentToPair(pair, adj) {
   const buyAdj = Math.max(0, Number(adj?.buy_adj) || 0);
   const sellAdj = Math.max(0, Number(adj?.sell_adj) || 0);
   return enforceSellGteBuy(
-    applyMarginToValue(pair?.buy, buyAdj, marginType),
-    applyMarginToValue(pair?.sell, sellAdj, marginType)
+    applyMarginToValue(pair?.buy, buyAdj, marginType, "buy"),
+    applyMarginToValue(pair?.sell, sellAdj, marginType, "sell")
   );
 }
 
 function applyGranularAdjustments(pair, buyMargin, sellMargin) {
   return enforceSellGteBuy(
-    applyMarginToValue(pair?.buy, buyMargin?.margin_value, buyMargin?.margin_type),
-    applyMarginToValue(pair?.sell, sellMargin?.margin_value, sellMargin?.margin_type)
+    applyMarginToValue(pair?.buy, buyMargin?.margin_value, buyMargin?.margin_type, "buy"),
+    applyMarginToValue(pair?.sell, sellMargin?.margin_value, sellMargin?.margin_type, "sell")
   );
 }
 

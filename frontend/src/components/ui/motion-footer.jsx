@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef } from "react";
-import { ArrowUp, BarChart3, Building2, LineChart, Mail, MessageCircle, Tag } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import {
+  ArrowUp,
+  BarChart3,
+  BookOpen,
+  Building2,
+  LineChart,
+  Mail,
+  MessageCircle,
+  Tag,
+} from "lucide-react";
+import { Link } from "react-router-dom";
 import { useLanguage } from "../../context/LanguageContext";
 import { contactLinks } from "../../lib/contact";
 import { InstagramIcon } from "./brand-icons";
@@ -218,7 +227,6 @@ function MarqueeRun({ items }) {
 
 export function CinematicFooter() {
   const { t } = useLanguage();
-  const navigate = useNavigate();
   const wrapperRef = useRef(null);
   const footerRef = useRef(null);
 
@@ -231,10 +239,6 @@ export function CinematicFooter() {
     t("footerMarquee4"),
     t("footerMarquee5"),
   ];
-
-  const goPartnership = () => {
-    navigate("/partnerlik");
-  };
 
   const pillLink =
     "inline-flex min-h-[2.75rem] items-center gap-2 rounded-full px-5 py-3 text-xs font-semibold " +
@@ -249,7 +253,9 @@ export function CinematicFooter() {
     */
     <div
       ref={wrapperRef}
-      className="relative h-[100dvh] w-full shrink-0"
+      /* M2 (uiux): perde bir tam ekran (100dvh) yer tutuyordu — footer
+         linklerine ulaşmak için bir ekran fazladan kaydırma. ~62vh yeterli. */
+      className="relative h-[62vh] w-full shrink-0"
       style={{ clipPath: "polygon(0 0, 100% 0, 100% 100%, 0 100%)" }}
     >
       <footer
@@ -260,7 +266,7 @@ export function CinematicFooter() {
           gerekiyor; iki yüzey birebir aynı renk olduğunda açılma hissi
           kayboluyor ve sayfa sadece uzuyormuş gibi duruyordu.
         */
-        className="cinematic-footer fixed bottom-0 left-0 flex h-[100dvh] w-full flex-col justify-between overflow-hidden bg-white text-ink-900 dark:bg-black dark:text-ink-100"
+        className="cinematic-footer fixed bottom-0 left-0 flex h-[62vh] max-h-[100dvh] min-h-[26rem] w-full flex-col justify-between overflow-hidden bg-white text-ink-900 dark:bg-black dark:text-ink-100"
       >
         <div
           aria-hidden="true"
@@ -294,9 +300,8 @@ export function CinematicFooter() {
           <div className="footer-reveal flex w-full flex-col items-center gap-5">
             <div className="flex w-full flex-wrap justify-center gap-4">
               <MagneticButton
-                as="button"
-                type="button"
-                onClick={() => navigate("/kiyasla")}
+                as={Link}
+                to="/kiyasla"
                 className="flex min-h-[3rem] cursor-pointer items-center gap-3 rounded-full px-8 py-4 text-sm font-bold text-ink-900 dark:text-white md:text-base"
               >
                 <BarChart3 className="size-5" aria-hidden="true" />
@@ -304,9 +309,8 @@ export function CinematicFooter() {
               </MagneticButton>
 
               <MagneticButton
-                as="button"
-                type="button"
-                onClick={goPartnership}
+                as={Link}
+                to="/partnerlik"
                 className="flex min-h-[3rem] cursor-pointer items-center gap-3 rounded-full px-8 py-4 text-sm font-bold text-ink-900 dark:text-white md:text-base"
               >
                 <Building2 className="size-5" aria-hidden="true" />
@@ -316,9 +320,8 @@ export function CinematicFooter() {
 
             <div className="mt-1 flex w-full flex-wrap justify-center gap-3 md:gap-4">
               <MagneticButton
-                as="button"
-                type="button"
-                onClick={() => navigate("/")}
+                as={Link}
+                to="/"
                 strength={0.25}
                 className={`cursor-pointer ${pillLink}`}
               >
@@ -333,9 +336,8 @@ export function CinematicFooter() {
                 eksik ikisi buraya eklendi.
               */}
               <MagneticButton
-                as="button"
-                type="button"
-                onClick={() => navigate("/paketler")}
+                as={Link}
+                to="/paketler"
                 strength={0.25}
                 className={`cursor-pointer ${pillLink}`}
               >
@@ -344,14 +346,23 @@ export function CinematicFooter() {
               </MagneticButton>
 
               <MagneticButton
-                as="button"
-                type="button"
-                onClick={() => navigate("/iletisim")}
+                as={Link}
+                to="/iletisim"
                 strength={0.25}
                 className={`cursor-pointer ${pillLink}`}
               >
                 <Mail className="size-4" aria-hidden="true" />
                 {t("navContact")}
+              </MagneticButton>
+
+              <MagneticButton
+                as={Link}
+                to="/rehber/kktc-doviz-bozdurma"
+                strength={0.25}
+                className={`cursor-pointer ${pillLink}`}
+              >
+                <BookOpen className="size-4" aria-hidden="true" />
+                {t("navGuide")}
               </MagneticButton>
 
               <MagneticButton
@@ -384,7 +395,7 @@ export function CinematicFooter() {
         </div>
 
         <div className="relative z-raised flex w-full flex-col items-center justify-between gap-5 px-6 pb-8 md:flex-row md:px-12">
-          <div className="order-2 text-[10px] font-semibold uppercase tracking-widest text-ink-500 dark:text-ink-400 md:order-1 md:text-xs">
+          <div className="order-2 text-[11px] font-semibold tracking-wide text-ink-500 dark:text-ink-400 md:order-1 md:text-xs">
             © {new Date().getFullYear()} AdaDöviz — {t("footerTagline")}
           </div>
 

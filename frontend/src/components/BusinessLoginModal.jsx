@@ -217,11 +217,11 @@ export function BusinessLoginModal({ isOpen, onClose }) {
               </div>
 
               {error ? (
-                <div className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
+                <div role="alert" className="rounded-lg border border-danger-500/30 bg-danger-500/10 px-3 py-2 text-xs text-danger-700 dark:text-danger-200">
                   {error}
                 </div>
               ) : successMessage ? (
-                <div className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 font-semibold dark:text-success-200">
+                <div role="status" className="rounded-lg border border-success-500/30 bg-success-500/10 px-3 py-2 text-xs text-success-700 font-semibold dark:text-success-200">
                   ✓ {successMessage}
                 </div>
               ) : null}
@@ -243,6 +243,20 @@ export function BusinessLoginModal({ isOpen, onClose }) {
                   {loading ? t("loggingIn") : t("loginButton")}
                 </button>
               </div>
+
+              <p className="pt-1 text-center text-xs text-ink-500 dark:text-ink-400">
+                {t("signupNoAccount")}{" "}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    navigate("/kayit");
+                  }}
+                  className="font-semibold text-brand-500 transition-colors hover:text-brand-400"
+                >
+                  {t("signupNoAccountCta")}
+                </button>
+              </p>
             </form>
           </>
         )}

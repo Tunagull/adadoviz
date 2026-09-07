@@ -42,6 +42,7 @@ export function SearchableSelect({
   const reduceMotion = useReducedMotion();
   const listId = useId();
   const rootRef = useRef(null);
+  const triggerRef = useRef(null);
   const menuRef = useRef(null);
   const listRef = useRef(null);
   const searchRef = useRef(null);
@@ -151,10 +152,16 @@ export function SearchableSelect({
     el?.scrollIntoView({ block: "nearest" });
   }, [highlight, open, filtered]);
 
+  /** A-C3: her kapanış yolunda odağı tetikleyici düğmeye döndür. */
+  const closeAndRefocus = () => {
+    setOpen(false);
+    requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
   const commit = (opt) => {
     if (!opt) return;
     onChange?.(opt.value);
-    setOpen(false);
+    closeAndRefocus();
   };
 
   const jumpByChar = (char) => {
@@ -198,7 +205,7 @@ export function SearchableSelect({
   const onListKeyDown = (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      setOpen(false);
+      closeAndRefocus();
       return;
     }
     if (e.key === "ArrowDown") {
@@ -268,7 +275,14 @@ export function SearchableSelect({
                         ref={searchRef}
                         size="sm"
                         label={t("searchPlaceholder")}
-                        type="search"
+                        type="text"
+                        role="combobox"
+                        aria-expanded={open}
+                        aria-controls={listId}
+                        aria-autocomplete="list"
+                        aria-activedescendant={
+                          filtered[highlight] ? `${listId}-opt-${highlight}` : undefined
+                        }
                         autoComplete="off"
                         value={query}
                         onChange={(e) => {
@@ -313,6 +327,7 @@ export function SearchableSelect({
                             <m.li
                               key={String(opt.value)}
                               {...staggerIn}
+                              id={`${listId}-opt-${idx}`}
                               data-idx={idx}
                               role="option"
                               aria-selected={active}
@@ -362,6 +377,7 @@ export function SearchableSelect({
 
   const trigger = (
     <button
+      ref={triggerRef}
       type="button"
       disabled={disabled}
       aria-haspopup="listbox"

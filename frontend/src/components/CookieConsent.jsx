@@ -40,9 +40,8 @@ export function CookieConsent() {
   return (
     <div
       className="pointer-events-none fixed inset-x-0 bottom-0 z-modal p-3 max-md:bottom-[4.75rem] sm:p-4"
-      role="dialog"
-      aria-live="polite"
-      aria-label={t("cookieConsentAccept")}
+      role="region"
+      aria-label={t("cookieConsentRegionLabel")}
     >
       <div className="pointer-events-auto mx-auto flex w-[95%] max-w-4xl flex-col gap-4 rounded-2xl border border-ink-200 bg-white/95 p-4 shadow-card backdrop-blur-md dark:border-white/10 dark:bg-ink-950/95 dark:shadow-card-dark sm:flex-row sm:items-center sm:justify-between sm:gap-5 sm:p-5">
         <div className="flex min-w-0 items-start gap-3">

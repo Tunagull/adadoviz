@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
 import {
@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Activity,
   AlertTriangle,
+  Bell,
   HeartPulse,
   Building2,
   Check,
@@ -18,12 +19,15 @@ import {
   Search,
   Shield,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { ActivityLogPanel } from "../components/ActivityLogPanel";
+import { MarketHealthPanel } from "../components/MarketHealthPanel";
+import { RateAlertPanel } from "../components/RateAlertPanel";
 import {
   createAdminBusiness,
   fetchAdminBusinesses,
@@ -44,9 +48,28 @@ import {
   fetchAdminPayments,
   createAdminPayment,
   backfillAdminPayments,
+  fetchAdminDiscountCodes,
+  createAdminDiscountCode,
+  toggleAdminDiscountCode,
+  deleteAdminDiscountCode,
+  fetchAdminLeads,
+  updateAdminLead,
+  fetchAdminDemand,
+  fetchAdminPaymentProofs,
+  fetchAdminPaymentProof,
+  approveAdminPaymentProof,
+  rejectAdminPaymentProof,
   fetchAdminPlans,
   fetchAdminExpiring,
   fetchAdminPartnershipApplications,
+  fetchAdminNotifications,
+  markAdminNotificationsRead,
+  fetchAdminSupportTickets,
+  updateAdminSupportTicket,
+  fetchAdminOpsOverview,
+  fetchAdminSignupRequests,
+  approveSignupRequest,
+  rejectSignupRequest,
 } from "../lib/auth";
 import { BusinessBranchesPanel } from "../components/DealerManagement";
 import { BusinessLogoField } from "../components/BusinessLogoField";
@@ -56,6 +79,12 @@ import { SearchableSelect } from "../components/SearchableSelect";
 
 
 /** Aylık 500 ₺ · Yıllık 5000 ₺ · Test ücretsiz · Manuel elle girilir */
+const STATUS_TONE_PROOF = {
+  pending: "text-warning-700 dark:text-warning-400",
+  approved: "text-success-700 dark:text-success-400",
+  rejected: "text-danger-700 dark:text-danger-400",
+};
+
 function defaultSubscriptionPrice(subscriptionType) {
   if (subscriptionType === "Aylık") return 500;
   if (subscriptionType === "Yıllık") return 5000;
@@ -234,6 +263,137 @@ function parseDateLoose(iso) {
   }
   const d = new Date(raw);
   return Number.isFinite(d.getTime()) ? d : null;
+}
+
+/** P1.5 — operatör bildirim çanı (InstitutionAdminPage çanının eşdeğeri). */
+function AdminNotificationBell({ token }) {
+  const { t, lang } = useLanguage();
+  const [notifications, setNotifications] = useState([]);
+  const [unread, setUnread] = useState(0);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const panelRef = useRef(null);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const data = await fetchAdminNotifications(token);
+      setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+      setUnread(Number(data.unread) || 0);
+    } catch (err) {
+      console.warn("[NOTIF] Operatör bildirimleri yüklenemedi:", err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 60000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => {
+      if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const toggle = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next) await load();
+  };
+
+  const markAll = async () => {
+    try {
+      const data = await markAdminNotificationsRead(token);
+      setUnread(Number(data.unread) || 0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    } catch (err) {
+      console.warn("[NOTIF] Okundu işaretlenemedi:", err.message);
+    }
+  };
+
+  const fmtDate = (iso) => {
+    const d = parseDateLoose(iso);
+    if (!d) return "—";
+    return d.toLocaleString(lang === "en" ? "en-GB" : "tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  return (
+    <div className="relative" ref={panelRef}>
+      <button
+        type="button"
+        onClick={toggle}
+        className="relative inline-flex size-10 items-center justify-center rounded-full border border-ink-200 bg-white text-ink-600 transition hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-300 dark:hover:border-brand-400 dark:hover:text-brand-300"
+        aria-label={t("notificationsTitle")}
+        title={t("notificationsTitle")}
+      >
+        <Bell className="size-4" />
+        {unread > 0 ? (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger-500 px-1 text-[10px] font-bold text-white">
+            {unread > 99 ? "99+" : unread}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <div className="absolute right-0 z-dropdown mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-ink-200 bg-white shadow-xl dark:border-ink-700 dark:bg-ink-900">
+          <div className="flex items-center justify-between gap-2 border-b border-ink-200 px-3 py-2.5 dark:border-ink-800">
+            <p className="text-sm font-semibold text-ink-900 dark:text-white">
+              {t("notificationsTitle")}
+            </p>
+            {unread > 0 ? (
+              <button
+                type="button"
+                onClick={markAll}
+                className="text-[11px] font-medium text-brand-700 hover:underline dark:text-brand-300"
+              >
+                {t("notificationsMarkAllRead")}
+              </button>
+            ) : null}
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {loading && notifications.length === 0 ? (
+              <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+            ) : notifications.length === 0 ? (
+              <p className="p-4 text-sm text-ink-500 dark:text-ink-400">
+                {t("notificationsEmpty")}
+              </p>
+            ) : (
+              <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+                {notifications.map((n) => (
+                  <li
+                    key={n.id}
+                    className={`px-3 py-3 ${
+                      n.is_read ? "" : "bg-brand-500/5 dark:bg-brand-500/10"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
+                      {n.title || t("notificationsTitle")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-ink-600 dark:text-ink-300">{n.message}</p>
+                    <p className="mt-1 text-[10px] text-ink-600 dark:text-ink-400">
+                      {fmtDate(n.created_at)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function SubscriptionFields({ form, setForm }) {
@@ -419,6 +579,16 @@ export function SuperAdminDashboard() {
   /* Faz 1: gelir görünürlüğü */
   const [payments, setPayments] = useState([]);
   const [revenue, setRevenue] = useState(null);
+  const [revAnalytics, setRevAnalytics] = useState(null);
+  const [discountCodes, setDiscountCodes] = useState([]);
+  const [discountForm, setDiscountForm] = useState({
+    code: "",
+    tur: "percent",
+    deger: "",
+    max_kullanim: "",
+    gecerlilik_bitis: "",
+  });
+  const [discountBusy, setDiscountBusy] = useState(false);
   const [auditLogs, setAuditLogs] = useState([]);
   const [expiring, setExpiring] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -433,6 +603,7 @@ export function SuperAdminDashboard() {
     tutar: "",
     kdv: "",
     yontem: "",
+    discount_code: "",
   });
   const [paySaving, setPaySaving] = useState(false);
   const [paySaved, setPaySaved] = useState(false);
@@ -451,12 +622,21 @@ export function SuperAdminDashboard() {
     currentRemainingDays: 0,
   });
   const [branchSubSaving, setBranchSubSaving] = useState(false);
+  // P1.7 — destek talepleri
+  const [supportTickets, setSupportTickets] = useState([]);
+  const [supportOpen, setSupportOpen] = useState(0);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportActingId, setSupportActingId] = useState(null);
+  const [supportReplyDraft, setSupportReplyDraft] = useState({});
 
   const TABS = useMemo(
     () => [
       { id: "list", label: t("tabList") },
       { id: "create", label: t("tabCreate") },
       { id: "requests", label: t("tabRequests") },
+      { id: "signups", label: t("tabSignups") },
+      { id: "leads", label: t("tabLeads") },
+      { id: "proofs", label: t("tabProofs") },
       /*
         ⚠️ HATA DÜZELTMESİ (R-01): `revenue`, `expiring`, `plans` ve
         `partnershipApps` her panel açılışında `loadRevenue` ile çekiliyor ama
@@ -466,6 +646,7 @@ export function SuperAdminDashboard() {
         gönderiyor, yani başvurular veritabanına düşüp görünmez oluyordu.
       */
       { id: "revenue", label: t("tabRevenue") },
+      { id: "support", label: t("supportAdminTab") },
       { id: "health", label: t("tabHealth") },
       { id: "logs", label: t("logsTitle") },
     ],
@@ -518,10 +699,15 @@ export function SuperAdminDashboard() {
     };
   }, [showLogModal, token]);
 
+  const [opsData, setOpsData] = useState(null);
+
   const loadSystemHealth = useCallback(async () => {
     if (!token) return;
     setHealthLoading(true);
     setHealthError("");
+    fetchAdminOpsOverview(token)
+      .then(setOpsData)
+      .catch(() => setOpsData(null));
     try {
       const data = await fetchAdminSystemHealth(token);
       setHealthData(data);
@@ -540,6 +726,44 @@ export function SuperAdminDashboard() {
     return undefined;
   }, [tab, token, loadSystemHealth]);
 
+  const loadSupportTickets = useCallback(async () => {
+    if (!token) return;
+    setSupportLoading(true);
+    try {
+      const { tickets, open } = await fetchAdminSupportTickets(token);
+      setSupportTickets(Array.isArray(tickets) ? tickets : []);
+      setSupportOpen(Number(open) || 0);
+    } catch (err) {
+      console.warn("[SUPPORT] Talepler yüklenemedi:", err.message);
+    } finally {
+      setSupportLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (tab !== "support" || !token) return undefined;
+    loadSupportTickets();
+    return undefined;
+  }, [tab, token, loadSupportTickets]);
+
+  const handleSupportUpdate = async (id, payload) => {
+    if (!token) return;
+    setSupportActingId(id);
+    try {
+      await updateAdminSupportTicket(token, id, payload);
+      setSupportReplyDraft((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      await loadSupportTickets();
+    } catch (err) {
+      setError(err.message || "Talep güncellenemedi.");
+    } finally {
+      setSupportActingId(null);
+    }
+  };
+
   const loadBranchRequestUnread = useCallback(async () => {
     if (!token) return;
     try {
@@ -556,17 +780,20 @@ export function SuperAdminDashboard() {
     setPayLoading(true);
     setPayError("");
     try {
-      const [pay, exp, pl, apps] = await Promise.all([
+      const [pay, exp, pl, apps, disc] = await Promise.all([
         fetchAdminPayments(token),
         fetchAdminExpiring(token, 30),
         fetchAdminPlans(token),
         fetchAdminPartnershipApplications(token),
+        fetchAdminDiscountCodes(token).catch(() => ({ codes: [] })),
       ]);
       setPayments(pay.payments || []);
       setRevenue(pay.summary || null);
+      setRevAnalytics(pay.analytics || null);
       setExpiring(exp.expiring || []);
       setPlans(pl.plans || []);
       setPartnershipApps(apps.applications || []);
+      setDiscountCodes(disc.codes || []);
     } catch (err) {
       setPayError(err.message || "Tahsilat verisi alınamadı.");
     } finally {
@@ -591,6 +818,358 @@ export function SuperAdminDashboard() {
       await loadRevenue();
     },
     [token, loadRevenue]
+  );
+
+  /** P3.3 — indirim kodu oluştur. */
+  const handleCreateDiscount = useCallback(
+    async (e) => {
+      e.preventDefault();
+      if (!token || !discountForm.code || !discountForm.deger) return;
+      setDiscountBusy(true);
+      setPayError("");
+      try {
+        await createAdminDiscountCode(token, {
+          code: discountForm.code,
+          tur: discountForm.tur,
+          deger: Number(discountForm.deger),
+          max_kullanim: discountForm.max_kullanim === "" ? 0 : Number(discountForm.max_kullanim),
+          gecerlilik_bitis: discountForm.gecerlilik_bitis || undefined,
+        });
+        setDiscountForm({ code: "", tur: "percent", deger: "", max_kullanim: "", gecerlilik_bitis: "" });
+        await loadRevenue();
+      } catch (err) {
+        setPayError(err.message || "İndirim kodu oluşturulamadı.");
+      } finally {
+        setDiscountBusy(false);
+      }
+    },
+    [token, discountForm, loadRevenue]
+  );
+
+  const handleToggleDiscount = useCallback(
+    async (code, aktif) => {
+      if (!token) return;
+      try {
+        await toggleAdminDiscountCode(token, code, aktif);
+        await loadRevenue();
+      } catch (err) {
+        setPayError(err.message || "İndirim kodu güncellenemedi.");
+      }
+    },
+    [token, loadRevenue]
+  );
+
+  const handleDeleteDiscount = useCallback(
+    async (code) => {
+      if (!token) return;
+      try {
+        await deleteAdminDiscountCode(token, code);
+        await loadRevenue();
+      } catch (err) {
+        setPayError(err.message || "İndirim kodu silinemedi.");
+      }
+    },
+    [token, loadRevenue]
+  );
+
+  /** P3.3 — muhasebe CSV (istemci tarafı; payments zaten yüklü). */
+  const handleExportPaymentsCsv = useCallback(() => {
+    const cols = [
+      "odeme_tarihi",
+      "institution_name",
+      "institution_id",
+      "plan_adi",
+      "plan_code",
+      "tutar",
+      "kdv",
+      "toplam",
+      "para_birimi",
+      "yontem",
+      "durum",
+      "donem_baslangic",
+      "donem_bitis",
+      "fatura_no",
+      "indirim_kodu",
+      "indirim_tutari",
+      "aciklama",
+    ];
+    const esc = (v) => {
+      const s = v == null ? "" : String(v);
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const rows = payments.map((p) =>
+      cols
+        .map((c) => {
+          if (c === "toplam") return esc((Number(p.tutar) || 0) + (Number(p.kdv) || 0));
+          if (c === "odeme_tarihi") return esc(String(p.odeme_tarihi || "").slice(0, 10));
+          return esc(p[c]);
+        })
+        .join(";")
+    );
+    const csv = "﻿" + [cols.join(";"), ...rows].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `adadoviz-tahsilat-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [payments]);
+
+  /** P3.3 — tek tahsilat için yazdırılabilir makbuz (yeni sekmede). */
+  const openReceipt = useCallback(
+    (p) => {
+      const fmt = (n) => `${Number(n || 0).toLocaleString("tr-TR")} ₺`;
+      const gross = (Number(p.tutar) || 0) + (Number(p.indirim_tutari) || 0);
+      const rows = [
+        [t("revBusiness"), p.institution_name || p.institution_id],
+        [t("revPlan"), p.plan_adi || p.plan_code],
+        [t("revMethod"), p.yontem || "—"],
+        ["Dönem", `${p.donem_baslangic} → ${p.donem_bitis}`],
+        [t("revAmount"), fmt(gross)],
+      ];
+      if (Number(p.indirim_tutari) > 0) {
+        rows.push([`${t("revDiscountApplied")} (${p.indirim_kodu})`, `- ${fmt(p.indirim_tutari)}`]);
+      }
+      rows.push([t("revVat"), fmt(p.kdv)]);
+      rows.push([t("revNet"), fmt((Number(p.tutar) || 0) + (Number(p.kdv) || 0))]);
+      const body = rows
+        .map(
+          ([k, v]) =>
+            `<tr><td style="padding:8px 12px;color:#55555f">${k}</td><td style="padding:8px 12px;text-align:right;font-variant-numeric:tabular-nums">${v}</td></tr>`
+        )
+        .join("");
+      const html = `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>Makbuz #${p.id}</title>
+<style>body{font:14px/1.5 system-ui,-apple-system,sans-serif;color:#08080a;margin:0;padding:32px;background:#fff}
+.wrap{max-width:520px;margin:0 auto;border:1px solid #e5e5ea;border-radius:12px;overflow:hidden}
+.hd{background:#08080a;color:#fff;padding:20px 24px;font-weight:700;font-size:16px}
+table{width:100%;border-collapse:collapse}
+tr:not(:last-child) td{border-bottom:1px solid #f0f0f2}
+.meta{padding:12px 24px;color:#8a8a94;font-size:12px}
+.pr{margin:24px auto 0;display:block;padding:10px 16px;border:0;border-radius:8px;background:#55555f;color:#fff;font-size:14px;cursor:pointer}
+@media print{.pr{display:none}.wrap{border:0}}</style></head>
+<body><div class="wrap"><div class="hd">AdaDöviz — Tahsilat Makbuzu #${p.id}</div>
+<div class="meta">${String(p.odeme_tarihi || "").slice(0, 10)}${p.fatura_no ? ` · Fatura: ${p.fatura_no}` : ""}</div>
+<table><tbody>${body}</tbody></table></div>
+<button class="pr" onclick="window.print()">Yazdır / PDF kaydet</button></body></html>`;
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(html);
+        w.document.close();
+      }
+    },
+    [t]
+  );
+
+  // P3.1 — self-signup başvuru kuyruğu
+  const [signupRequests, setSignupRequests] = useState([]);
+  const [signupPending, setSignupPending] = useState(0);
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupError, setSignupError] = useState("");
+  const [signupActingId, setSignupActingId] = useState(null);
+  const [signupForm, setSignupForm] = useState({});
+
+  const loadSignupRequests = useCallback(async () => {
+    if (!token) return;
+    setSignupLoading(true);
+    setSignupError("");
+    try {
+      const data = await fetchAdminSignupRequests(token);
+      setSignupRequests(data.requests || []);
+      setSignupPending(Number(data.pending) || 0);
+    } catch (err) {
+      setSignupError(err.message || t("statsLoadFailedMsg"));
+    } finally {
+      setSignupLoading(false);
+    }
+  }, [token, t]);
+
+  useEffect(() => {
+    if (tab !== "signups" || !token) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const data = await fetchAdminSignupRequests(token);
+        if (!alive) return;
+        setSignupRequests(data.requests || []);
+        setSignupPending(Number(data.pending) || 0);
+        setSignupError("");
+      } catch (err) {
+        if (alive) setSignupError(err.message || t("statsLoadFailedMsg"));
+      } finally {
+        if (alive) setSignupLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [tab, token, t]);
+
+  const handleSignupApprove = async (id) => {
+    if (!token) return;
+    setSignupActingId(id);
+    setError("");
+    try {
+      const cfg = signupForm[id] || {};
+      await approveSignupRequest(token, id, {
+        subscription_type: cfg.subscription_type || "Test",
+        branch_limit: cfg.branch_limit ? Number(cfg.branch_limit) : undefined,
+      });
+      setSuccess(t("signupAdminApproved"));
+      await loadSignupRequests();
+    } catch (err) {
+      setError(err.message || t("signupAdminActionFailed"));
+    } finally {
+      setSignupActingId(null);
+    }
+  };
+
+  const handleSignupReject = async (id) => {
+    if (!token) return;
+    const reason = window.prompt(t("signupAdminRejectPrompt")) ?? null;
+    if (reason === null) return;
+    setSignupActingId(id);
+    setError("");
+    try {
+      await rejectSignupRequest(token, id, reason);
+      setSuccess(t("signupAdminRejected"));
+      await loadSignupRequests();
+    } catch (err) {
+      setError(err.message || t("signupAdminActionFailed"));
+    } finally {
+      setSignupActingId(null);
+    }
+  };
+
+  // P3.4 — Lead CRM + talep analitiği
+  const [leads, setLeads] = useState([]);
+  const [leadStats, setLeadStats] = useState(null);
+  const [demand, setDemand] = useState(null);
+  const [leadFilter, setLeadFilter] = useState("");
+  const [leadLoading, setLeadLoading] = useState(false);
+  const [leadError, setLeadError] = useState("");
+  const [leadActing, setLeadActing] = useState("");
+  const [leadDrafts, setLeadDrafts] = useState({});
+
+  const loadLeads = useCallback(async () => {
+    if (!token) return;
+    setLeadLoading(true);
+    setLeadError("");
+    try {
+      const [ld, dm] = await Promise.all([
+        fetchAdminLeads(token, leadFilter || undefined),
+        fetchAdminDemand(token, 30),
+      ]);
+      setLeads(ld.leads || []);
+      setLeadStats(ld.stats || null);
+      setDemand(dm || null);
+    } catch (err) {
+      setLeadError(err.message || t("statsLoadFailedMsg"));
+    } finally {
+      setLeadLoading(false);
+    }
+  }, [token, leadFilter, t]);
+
+  useEffect(() => {
+    if (tab !== "leads" || !token) return;
+    loadLeads();
+  }, [tab, token, loadLeads]);
+
+  const handleUpdateLead = useCallback(
+    async (lead, patch) => {
+      if (!token) return;
+      setLeadActing(lead.lead_key);
+      setLeadError("");
+      try {
+        await updateAdminLead(token, lead.source, lead.source_id, patch);
+        await loadLeads();
+      } catch (err) {
+        setLeadError(err.message || t("signupAdminActionFailed"));
+      } finally {
+        setLeadActing("");
+      }
+    },
+    [token, loadLeads, t]
+  );
+
+  // P3.6 — ödeme dekontları
+  const [proofs, setProofs] = useState([]);
+  const [proofsPending, setProofsPending] = useState(0);
+  const [proofFilter, setProofFilter] = useState("pending");
+  const [proofLoading, setProofLoading] = useState(false);
+  const [proofError, setProofError] = useState("");
+  const [proofActing, setProofActing] = useState(null);
+  const [proofImage, setProofImage] = useState(null); // { id, proof_image, institution_name }
+
+  const loadProofs = useCallback(async () => {
+    if (!token) return;
+    setProofLoading(true);
+    setProofError("");
+    try {
+      const data = await fetchAdminPaymentProofs(token, proofFilter || undefined);
+      setProofs(data.proofs || []);
+      setProofsPending(Number(data.pending) || 0);
+    } catch (err) {
+      setProofError(err.message || t("statsLoadFailedMsg"));
+    } finally {
+      setProofLoading(false);
+    }
+  }, [token, proofFilter, t]);
+
+  useEffect(() => {
+    if (tab !== "proofs" || !token) return;
+    loadProofs();
+  }, [tab, token, loadProofs]);
+
+  const handleViewProof = useCallback(
+    async (id) => {
+      if (!token) return;
+      try {
+        const data = await fetchAdminPaymentProof(token, id);
+        setProofImage(data.proof || null);
+      } catch (err) {
+        setProofError(err.message || t("statsLoadFailedMsg"));
+      }
+    },
+    [token, t]
+  );
+
+  const handleApproveProof = useCallback(
+    async (id) => {
+      if (!token) return;
+      setProofActing(id);
+      setProofError("");
+      try {
+        await approveAdminPaymentProof(token, id);
+        setProofImage(null);
+        await loadProofs();
+      } catch (err) {
+        setProofError(err.message || t("signupAdminActionFailed"));
+      } finally {
+        setProofActing(null);
+      }
+    },
+    [token, loadProofs, t]
+  );
+
+  const handleRejectProof = useCallback(
+    async (id) => {
+      if (!token) return;
+      const reason = window.prompt(t("proofRejectPrompt")) ?? null;
+      if (reason === null) return;
+      setProofActing(id);
+      setProofError("");
+      try {
+        await rejectAdminPaymentProof(token, id, reason);
+        setProofImage(null);
+        await loadProofs();
+      } catch (err) {
+        setProofError(err.message || t("signupAdminActionFailed"));
+      } finally {
+        setProofActing(null);
+      }
+    },
+    [token, loadProofs, t]
   );
 
   const loadBranchRequests = useCallback(async () => {
@@ -1295,6 +1874,7 @@ export function SuperAdminDashboard() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <AdminNotificationBell token={token} />
           <HeaderActions />
           <SubscriptionLedgerButton
             active={ledgerView === "subscription"}
@@ -1347,6 +1927,11 @@ export function SuperAdminDashboard() {
             {item.id === "requests" && branchRequestUnread > 0 ? (
               <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-danger-500 px-1 py-0.5 text-[10px] font-bold leading-none text-white shadow">
                 {branchRequestUnread > 99 ? "99+" : branchRequestUnread}
+              </span>
+            ) : null}
+            {item.id === "support" && supportOpen > 0 ? (
+              <span className="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-warning-500 px-1 py-0.5 text-[10px] font-bold leading-none text-white shadow">
+                {supportOpen > 99 ? "99+" : supportOpen}
               </span>
             ) : null}
           </button>
@@ -2289,6 +2874,577 @@ export function SuperAdminDashboard() {
         </section>
       )}
 
+      {/* P3.1 — self-signup başvuru kuyruğu (onay → hesap oluşturur). */}
+      {tab === "signups" && (
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
+            <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
+              <UserPlus size={18} className="text-brand-600 dark:text-brand-400" />
+              <h2 className="font-semibold">{t("tabSignups")}</h2>
+              {signupPending > 0 ? (
+                <span className="rounded-full bg-danger-500 px-2 py-0.5 text-[10px] font-bold text-white">
+                  {signupPending}
+                </span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={loadSignupRequests}
+              className="text-xs text-ink-500 hover:text-ink-900 dark:text-ink-400 dark:hover:text-white"
+            >
+              {t("refresh")}
+            </button>
+          </div>
+
+          {signupLoading ? (
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+          ) : signupError ? (
+            <p className="p-6 text-sm text-danger-700 dark:text-danger-300">{signupError}</p>
+          ) : signupRequests.length === 0 ? (
+            <p className="p-6 text-sm text-ink-500 dark:text-ink-400">{t("signupAdminEmpty")}</p>
+          ) : (
+            <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+              {signupRequests.map((r) => {
+                const statusLabel =
+                  r.status === "approved"
+                    ? t("requestStatusApproved")
+                    : r.status === "rejected"
+                      ? t("requestStatusRejected")
+                      : t("requestStatusPending");
+                const statusClass =
+                  r.status === "approved"
+                    ? "text-success-700 dark:text-success-400"
+                    : r.status === "rejected"
+                      ? "text-danger-700 dark:text-danger-400"
+                      : "text-warning-600 dark:text-warning-400";
+                const cfg = signupForm[r.id] || {};
+                return (
+                  <li
+                    key={r.id}
+                    className={`px-4 py-4 ${r.status === "pending" ? "bg-brand-500/5 dark:bg-brand-500/10" : ""}`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1">
+                        <p className="font-semibold text-ink-900 dark:text-white">{r.institution_name}</p>
+                        <p className="text-xs text-ink-500 dark:text-ink-400">
+                          {r.contact_person} · {r.email} · {r.phone}
+                        </p>
+                        {r.city ? (
+                          <p className="text-xs text-ink-500 dark:text-ink-400">{r.city}</p>
+                        ) : null}
+                        {r.current_rate_info ? (
+                          <p className="text-xs text-ink-500 dark:text-ink-400 line-clamp-2">
+                            {r.current_rate_info}
+                          </p>
+                        ) : null}
+                        <p className="text-[11px] text-ink-600 dark:text-ink-400">
+                          {t("requestCreatedAt")}: {formatRequestDateTime(r.created_at)}
+                        </p>
+                        <p className={`text-xs font-semibold ${statusClass}`}>
+                          {statusLabel}
+                          {r.reject_reason ? ` — ${r.reject_reason}` : ""}
+                        </p>
+                      </div>
+                      {r.status === "pending" ? (
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={cfg.subscription_type || "Test"}
+                              onChange={(e) =>
+                                setSignupForm((prev) => ({
+                                  ...prev,
+                                  [r.id]: { ...prev[r.id], subscription_type: e.target.value },
+                                }))
+                              }
+                              className="rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-xs dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200"
+                            >
+                              {["Test", "Ücretsiz", "Aylık", "Yıllık"].map((p) => (
+                                <option key={p} value={p}>
+                                  {p}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder={t("signupAdminBranchLimit")}
+                              value={cfg.branch_limit || ""}
+                              onChange={(e) =>
+                                setSignupForm((prev) => ({
+                                  ...prev,
+                                  [r.id]: { ...prev[r.id], branch_limit: e.target.value },
+                                }))
+                              }
+                              className="w-20 rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-xs dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              disabled={signupActingId === r.id}
+                              onClick={() => handleSignupApprove(r.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-success-500/40 bg-success-500/10 px-3 py-1.5 text-xs font-semibold text-success-700 transition hover:bg-success-500/20 disabled:opacity-50 dark:text-success-300"
+                            >
+                              <Check size={14} />
+                              {t("signupAdminApprove")}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={signupActingId === r.id}
+                              onClick={() => handleSignupReject(r.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-semibold text-danger-700 transition hover:bg-danger-500/20 disabled:opacity-50 dark:text-danger-300"
+                            >
+                              <X size={14} />
+                              {t("signupAdminReject")}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* P3.4 — Lead CRM + talep analitiği */}
+      {tab === "leads" && (
+        <section className="space-y-4">
+          {leadError ? (
+            <p className="rounded-control border border-danger-600/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-700 dark:text-danger-300">
+              {leadError}
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {[
+              { label: t("leadTotal"), value: leadStats?.total },
+              { label: t("leadNew"), value: leadStats?.byStatus?.new },
+              { label: t("leadContacted"), value: leadStats?.byStatus?.contacted },
+              { label: t("leadWon"), value: leadStats?.byStatus?.won },
+              { label: t("leadLost"), value: leadStats?.byStatus?.lost },
+              {
+                label: t("leadRemindersDue"),
+                value: leadStats
+                  ? `${leadStats.remindersDue}${
+                      leadStats.remindersUpcoming ? ` (+${leadStats.remindersUpcoming})` : ""
+                    }`
+                  : null,
+                danger: (leadStats?.remindersDue || 0) > 0,
+              },
+            ].map((c) => (
+              <div key={c.label} className="surface-card p-3">
+                <p className="text-xs font-medium text-ink-600 dark:text-ink-400">{c.label}</p>
+                <p
+                  className={`mt-1 font-mono text-lg font-bold tabular-nums ${
+                    c.danger ? "text-danger-700 dark:text-danger-400" : "text-ink-900 dark:text-white"
+                  }`}
+                >
+                  {leadLoading || leadStats == null ? "—" : c.value ?? 0}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {["", "new", "contacted", "won", "lost"].map((s) => (
+              <button
+                key={s || "all"}
+                type="button"
+                onClick={() => setLeadFilter(s)}
+                className={`rounded-control px-3 py-1 text-xs font-medium transition ${
+                  leadFilter === s
+                    ? "bg-brand-500 text-white"
+                    : "bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-300"
+                }`}
+              >
+                {s ? t(`lead${s[0].toUpperCase()}${s.slice(1)}`) : t("leadAll")}
+              </button>
+            ))}
+          </div>
+
+          {leads.length ? (
+            <ul className="space-y-3">
+              {leads.map((lead) => {
+                const draft = leadDrafts[lead.lead_key] || {
+                  note: lead.note || "",
+                  reminder_date: lead.reminder_date || "",
+                  assignee: lead.assignee || "",
+                };
+                const setDraft = (patch) =>
+                  setLeadDrafts((d) => ({
+                    ...d,
+                    [lead.lead_key]: { ...draft, ...patch },
+                  }));
+                const dirty =
+                  (draft.note || "") !== (lead.note || "") ||
+                  (draft.reminder_date || "") !== (lead.reminder_date || "") ||
+                  (draft.assignee || "") !== (lead.assignee || "");
+                return (
+                  <li key={lead.lead_key} className="surface-card p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-ink-900 dark:text-white">
+                          {lead.institution_name || "—"}
+                        </span>
+                        <span
+                          className={`rounded-control px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                            lead.source === "signup"
+                              ? "bg-brand-500/15 text-brand-700 dark:text-brand-300"
+                              : "bg-ink-200 text-ink-600 dark:bg-ink-700 dark:text-ink-300"
+                          }`}
+                        >
+                          {lead.source === "signup" ? t("leadSrcSignup") : t("leadSrcPartner")}
+                        </span>
+                        {lead.source_status && lead.source_status !== "pending" ? (
+                          <span className="text-[10px] text-ink-500 dark:text-ink-400">
+                            {lead.source_status}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        {String(lead.created_at || "").slice(0, 10)}
+                      </span>
+                    </div>
+
+                    <p className="mt-1 truncate text-xs text-ink-600 dark:text-ink-400">
+                      {[lead.contact_person, lead.email, lead.phone, lead.city]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                    {lead.message ? (
+                      <p className="mt-1 line-clamp-2 text-xs text-ink-600 dark:text-ink-400">
+                        {lead.message}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      <select
+                        className="field"
+                        value={lead.status}
+                        disabled={leadActing === lead.lead_key}
+                        onChange={(e) => handleUpdateLead(lead, { status: e.target.value })}
+                      >
+                        <option value="new">{t("leadNew")}</option>
+                        <option value="contacted">{t("leadContacted")}</option>
+                        <option value="won">{t("leadWon")}</option>
+                        <option value="lost">{t("leadLost")}</option>
+                      </select>
+                      <input
+                        className="field"
+                        type="text"
+                        placeholder={t("leadAssignee")}
+                        value={draft.assignee}
+                        onChange={(e) => setDraft({ assignee: e.target.value })}
+                      />
+                      <input
+                        className="field"
+                        type="date"
+                        aria-label={t("leadReminder")}
+                        value={draft.reminder_date}
+                        onChange={(e) => setDraft({ reminder_date: e.target.value })}
+                      />
+                      <input
+                        className="field"
+                        type="text"
+                        placeholder={t("leadNote")}
+                        value={draft.note}
+                        onChange={(e) => setDraft({ note: e.target.value })}
+                      />
+                    </div>
+                    {dirty ? (
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm mt-2"
+                        disabled={leadActing === lead.lead_key}
+                        onClick={() =>
+                          handleUpdateLead(lead, {
+                            note: draft.note,
+                            reminder_date: draft.reminder_date || "",
+                            assignee: draft.assignee,
+                          })
+                        }
+                      >
+                        {t("leadSave")}
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-600 dark:text-ink-400">
+              {leadLoading ? "—" : t("leadEmpty")}
+            </p>
+          )}
+
+          {/* Talep analitiği */}
+          <h3 className="pt-2 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+            {t("demandTitle")}
+          </h3>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandFunnel")}
+              </h4>
+              {demand?.funnel?.length ? (
+                <ul className="space-y-2">
+                  {demand.funnel.map((step, i) => {
+                    const top = demand.funnel[0]?.value || 1;
+                    const prev = i > 0 ? demand.funnel[i - 1]?.value || 0 : null;
+                    const pct = Math.max(2, Math.round((step.value / top) * 100));
+                    return (
+                      <li key={step.key}>
+                        <div className="flex items-center justify-between text-xs text-ink-600 dark:text-ink-400">
+                          <span>{t(`funnel_${step.key}`)}</span>
+                          <span className="font-mono tabular-nums">
+                            {Number(step.value).toLocaleString("tr-TR")}
+                            {prev != null && prev > 0
+                              ? ` · ${Math.round((step.value / prev) * 100)}%`
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="mt-1 h-2 rounded-full bg-ink-100 dark:bg-ink-800">
+                          <div
+                            className="h-2 rounded-full bg-brand-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
+
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandMisses")}
+                {demand?.searchMisses?.total ? (
+                  <span className="ml-2 font-mono text-xs text-ink-500 dark:text-ink-400">
+                    {demand.searchMisses.total}
+                  </span>
+                ) : null}
+              </h4>
+              {demand?.searchMisses?.top?.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {demand.searchMisses.top.map((m) => (
+                    <li
+                      key={m.query_norm}
+                      className="flex items-center justify-between gap-3 py-1.5"
+                    >
+                      <span className="min-w-0 truncate text-ink-800 dark:text-ink-200">
+                        {m.ornek || m.query_norm}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        × {m.adet}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("demandMissesEmpty")}</p>
+              )}
+            </div>
+
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandByCity")}
+              </h4>
+              {demand?.demand?.byCity?.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {demand.demand.byCity.map((r) => (
+                    <li key={r.city} className="flex items-center justify-between gap-3 py-1.5">
+                      <span className="truncate text-ink-800 dark:text-ink-200">{r.city}</span>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        {r.adet}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
+
+            <div className="surface-card p-4">
+              <h4 className="mb-3 text-sm font-semibold text-ink-800 dark:text-ink-200">
+                {t("demandTopBusinesses")}
+              </h4>
+              {demand?.demand?.byCurrency?.length ? (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {demand.demand.byCurrency.map((r) => (
+                    <span
+                      key={r.currency}
+                      className="rounded-control bg-ink-100 px-2 py-0.5 font-mono text-xs text-ink-700 dark:bg-ink-800 dark:text-ink-300"
+                    >
+                      {r.currency} · {r.adet}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {demand?.demand?.topBusinesses?.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {demand.demand.topBusinesses.map((r) => (
+                    <li
+                      key={r.institution_id}
+                      className="flex items-center justify-between gap-3 py-1.5"
+                    >
+                      <span className="truncate text-ink-800 dark:text-ink-200">
+                        {r.institution_name}
+                      </span>
+                      <span className="shrink-0 font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                        {r.adet}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* P3.6 — ödeme dekontları onay kuyruğu */}
+      {tab === "proofs" && (
+        <section className="space-y-4">
+          {proofError ? (
+            <p className="rounded-control border border-danger-600/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-700 dark:text-danger-300">
+              {proofError}
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            {["pending", "approved", "rejected", ""].map((s) => (
+              <button
+                key={s || "all"}
+                type="button"
+                onClick={() => setProofFilter(s)}
+                className={`rounded-control px-3 py-1 text-xs font-medium transition ${
+                  proofFilter === s
+                    ? "bg-brand-500 text-white"
+                    : "bg-ink-100 text-ink-700 dark:bg-ink-800 dark:text-ink-300"
+                }`}
+              >
+                {s ? t(`renewStatus_${s}`) : t("leadAll")}
+                {s === "pending" && proofsPending > 0 ? ` (${proofsPending})` : ""}
+              </button>
+            ))}
+          </div>
+
+          {proofs.length ? (
+            <ul className="space-y-3">
+              {proofs.map((p) => (
+                <li key={p.id} className="surface-card p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-semibold text-ink-900 dark:text-white">
+                      {p.institution_name || p.institution_id}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums text-ink-500 dark:text-ink-400">
+                      {String(p.created_at || "").slice(0, 10)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-600 dark:text-ink-400">
+                    {p.plan_adi || p.plan_code}
+                    {p.amount != null
+                      ? ` · ${Number(p.amount).toLocaleString("tr-TR")} ₺`
+                      : ""}
+                    {p.method ? ` · ${p.method}` : ""}
+                    {" · "}
+                    <span className={STATUS_TONE_PROOF[p.status] || ""}>
+                      {t(`renewStatus_${p.status}`)}
+                    </span>
+                  </p>
+                  {p.note ? (
+                    <p className="mt-1 line-clamp-2 text-xs text-ink-600 dark:text-ink-400">
+                      {p.note}
+                    </p>
+                  ) : null}
+                  {p.reject_reason ? (
+                    <p className="mt-1 text-xs text-danger-700 dark:text-danger-400">
+                      {p.reject_reason}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleViewProof(p.id)}
+                      className="btn-ghost btn-sm"
+                    >
+                      {t("proofView")}
+                    </button>
+                    {p.status === "pending" ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={proofActing === p.id}
+                          onClick={() => handleApproveProof(p.id)}
+                          className="rounded-lg border border-success-500/40 bg-success-500/10 px-3 py-1.5 text-xs font-semibold text-success-700 hover:bg-success-500/20 disabled:opacity-50 dark:text-success-300"
+                        >
+                          {t("proofApprove")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={proofActing === p.id}
+                          onClick={() => handleRejectProof(p.id)}
+                          className="rounded-lg border border-danger-500/40 bg-danger-500/10 px-3 py-1.5 text-xs font-semibold text-danger-700 hover:bg-danger-500/20 disabled:opacity-50 dark:text-danger-300"
+                        >
+                          {t("proofReject")}
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-600 dark:text-ink-400">
+              {proofLoading ? "—" : t("proofEmpty")}
+            </p>
+          )}
+
+          {proofImage ? (
+            <div
+              className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 p-4"
+              onClick={() => setProofImage(null)}
+              role="presentation"
+            >
+              <div
+                className="max-h-[90vh] max-w-2xl overflow-auto rounded-xl bg-white p-3 dark:bg-ink-900"
+                onClick={(e) => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-label={t("proofImageTitle")}
+              >
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-ink-900 dark:text-white">
+                    {proofImage.institution_name || proofImage.institution_id}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setProofImage(null)}
+                    className="text-sm text-ink-500 hover:text-ink-900 dark:hover:text-white"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <img
+                  src={proofImage.proof_image}
+                  alt={t("proofImageTitle")}
+                  className="max-h-[75vh] w-full rounded-lg object-contain"
+                />
+              </div>
+            </div>
+          ) : null}
+        </section>
+      )}
+
       {/*
         R-01: kopmuş dört özelliğin geri bağlandığı sekme. Buradaki tüm veri
         zaten `loadRevenue` tarafından çekiliyordu; tek eksik onu ekrana
@@ -2324,6 +3480,59 @@ export function SuperAdminDashboard() {
             ))}
           </div>
 
+          {/* P3.3 — türetilmiş metrikler (MRR / gecikmiş / churn / LTV) */}
+          <div className="surface-card p-4">
+            <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+              {t("revMetricsTitle")}
+            </h3>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {[
+                { label: t("revMrr"), value: revAnalytics?.mrr, money: true },
+                { label: t("revArr"), value: revAnalytics?.arr, money: true },
+                { label: t("revArpa"), value: revAnalytics?.arpa, money: true },
+                { label: t("revLtv"), value: revAnalytics?.ltv, money: true },
+                { label: t("revActivePaying"), value: revAnalytics?.activePaying },
+                {
+                  label: t("revOverdue"),
+                  value: revAnalytics?.overdueCount,
+                  hint:
+                    revAnalytics?.overdueAmount != null
+                      ? `${Number(revAnalytics.overdueAmount).toLocaleString("tr-TR")} ₺`
+                      : null,
+                  danger: (revAnalytics?.overdueCount || 0) > 0,
+                },
+                { label: t("revChurn"), value: revAnalytics?.churned90d },
+                {
+                  label: t("revChurnRate"),
+                  value: revAnalytics?.churnRate,
+                  suffix: "%",
+                },
+              ].map((card) => (
+                <div key={card.label} className="rounded-control bg-ink-50 p-3 dark:bg-ink-800/40">
+                  <p className="text-xs font-medium text-ink-600 dark:text-ink-400">{card.label}</p>
+                  <p
+                    className={`mt-1 font-mono text-lg font-bold tabular-nums ${
+                      card.danger
+                        ? "text-danger-700 dark:text-danger-400"
+                        : "text-ink-900 dark:text-white"
+                    }`}
+                  >
+                    {payLoading || revAnalytics == null
+                      ? "—"
+                      : card.money
+                        ? `${Number(card.value || 0).toLocaleString("tr-TR")} ₺`
+                        : `${Number(card.value || 0).toLocaleString("tr-TR")}${card.suffix || ""}`}
+                  </p>
+                  {card.hint ? (
+                    <p className="mt-0.5 font-mono text-xs text-ink-500 dark:text-ink-400">
+                      {card.hint}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/*
             R-01: `handleCreatePayment` tanımlıydı ama hiçbir yerden
             çağrılmıyordu — süper adminin ödeme kaydetme yolu yoktu.
@@ -2343,6 +3552,7 @@ export function SuperAdminDashboard() {
                   ...payForm,
                   tutar: payForm.tutar === "" ? undefined : Number(payForm.tutar),
                   kdv: payForm.kdv === "" ? undefined : Number(payForm.kdv),
+                  discount_code: payForm.discount_code || undefined,
                   odeme_tarihi: new Date().toISOString(),
                   donem_baslangic: today,
                 });
@@ -2352,6 +3562,7 @@ export function SuperAdminDashboard() {
                   tutar: "",
                   kdv: "",
                   yontem: "",
+                  discount_code: "",
                 });
                 setPaySaved(true);
               } catch (err) {
@@ -2432,6 +3643,26 @@ export function SuperAdminDashboard() {
                   value={payForm.yontem}
                   onChange={(e) => setPayForm((f) => ({ ...f, yontem: e.target.value }))}
                 />
+              </label>
+
+              <label className="block">
+                <span className="field-label">{t("revDiscountOptional")}</span>
+                <input
+                  className="field uppercase"
+                  type="text"
+                  value={payForm.discount_code}
+                  onChange={(e) =>
+                    setPayForm((f) => ({ ...f, discount_code: e.target.value.toUpperCase() }))
+                  }
+                  list="discount-code-list"
+                />
+                <datalist id="discount-code-list">
+                  {discountCodes
+                    .filter((c) => c.aktif)
+                    .map((c) => (
+                      <option key={c.code} value={c.code} />
+                    ))}
+                </datalist>
               </label>
             </div>
 
@@ -2590,7 +3821,251 @@ export function SuperAdminDashboard() {
                 </p>
               )}
             </div>
+
+            {/* P3.3 — indirim kodları */}
+            <div className="surface-card p-4">
+              <h3 className="mb-3 text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                {t("revDiscountCodes")}
+              </h3>
+              <form className="mb-3 grid gap-2 sm:grid-cols-2" onSubmit={handleCreateDiscount}>
+                <input
+                  className="field uppercase"
+                  type="text"
+                  placeholder={t("revDiscountCode")}
+                  value={discountForm.code}
+                  onChange={(e) =>
+                    setDiscountForm((f) => ({ ...f, code: e.target.value.toUpperCase() }))
+                  }
+                />
+                <select
+                  className="field"
+                  value={discountForm.tur}
+                  onChange={(e) => setDiscountForm((f) => ({ ...f, tur: e.target.value }))}
+                >
+                  <option value="percent">{t("revDiscountPercent")}</option>
+                  <option value="fixed">{t("revDiscountFixed")}</option>
+                </select>
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder={t("revDiscountValue")}
+                  value={discountForm.deger}
+                  onChange={(e) => setDiscountForm((f) => ({ ...f, deger: e.target.value }))}
+                />
+                <input
+                  className="field"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder={t("revDiscountMaxUse")}
+                  value={discountForm.max_kullanim}
+                  onChange={(e) =>
+                    setDiscountForm((f) => ({ ...f, max_kullanim: e.target.value }))
+                  }
+                />
+                <input
+                  className="field"
+                  type="date"
+                  aria-label={t("revDiscountExpiry")}
+                  value={discountForm.gecerlilik_bitis}
+                  onChange={(e) =>
+                    setDiscountForm((f) => ({ ...f, gecerlilik_bitis: e.target.value }))
+                  }
+                />
+                <button
+                  type="submit"
+                  className="btn-ghost btn-sm"
+                  disabled={discountBusy || !discountForm.code || !discountForm.deger}
+                >
+                  {t("revDiscountAdd")}
+                </button>
+              </form>
+              {discountCodes.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {discountCodes.map((c) => (
+                    <li key={c.code} className="flex items-center justify-between gap-2 py-2">
+                      <span className="min-w-0 truncate">
+                        <span className="font-mono font-semibold text-ink-900 dark:text-white">
+                          {c.code}
+                        </span>
+                        <span className="ml-2 text-xs text-ink-500 dark:text-ink-400">
+                          {c.tur === "fixed"
+                            ? `${Number(c.deger).toLocaleString("tr-TR")} ₺`
+                            : `%${c.deger}`}
+                          {" · "}
+                          {c.kullanim_sayisi}
+                          {c.max_kullanim > 0 ? `/${c.max_kullanim}` : ""} {t("revDiscountUsed")}
+                          {c.gecerlilik_bitis ? ` · ${c.gecerlilik_bitis}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDiscount(c.code, !c.aktif)}
+                          className={`rounded-control px-2 py-0.5 text-xs font-medium ${
+                            c.aktif
+                              ? "bg-success-500/15 text-success-700 dark:text-success-300"
+                              : "bg-ink-200 text-ink-600 dark:bg-ink-700 dark:text-ink-300"
+                          }`}
+                        >
+                          {c.aktif ? t("revDiscountActive") : t("revDiscountInactive")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDiscount(c.code)}
+                          className="text-xs text-danger-700 hover:underline dark:text-danger-400"
+                        >
+                          {t("revDiscountDelete")}
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revDiscountNone")}</p>
+              )}
+            </div>
+
+            {/* P3.3 — son tahsilatlar + makbuz + CSV */}
+            <div className="surface-card p-4 lg:col-span-2">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
+                  {t("revRecentPayments")}
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleExportPaymentsCsv}
+                  className="btn-ghost btn-sm"
+                  disabled={!payments.length}
+                >
+                  {t("revExportCsv")}
+                </button>
+              </div>
+              {payments.length ? (
+                <ul className="divide-y divide-ink-200 text-sm dark:divide-ink-700/60">
+                  {payments.slice(0, 12).map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-3 py-2">
+                      <span className="min-w-0 truncate text-ink-800 dark:text-ink-200">
+                        {p.institution_name || p.institution_id}
+                        <span className="ml-2 text-xs text-ink-500 dark:text-ink-400">
+                          {String(p.odeme_tarihi || "").slice(0, 10)} · {p.plan_adi || p.plan_code}
+                          {Number(p.indirim_tutari) > 0 ? ` · ${p.indirim_kodu}` : ""}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-3">
+                        <span className="font-mono tabular-nums text-ink-900 dark:text-white">
+                          {(
+                            (Number(p.tutar) || 0) + (Number(p.kdv) || 0)
+                          ).toLocaleString("tr-TR")}{" "}
+                          ₺
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openReceipt(p)}
+                          className="text-xs text-brand-700 hover:underline dark:text-brand-300"
+                        >
+                          {t("revReceipt")}
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-ink-600 dark:text-ink-400">{t("revNoData")}</p>
+              )}
+            </div>
           </div>
+        </section>
+      )}
+
+      {tab === "support" && (
+        <section className="rounded-card border border-ink-200 bg-white overflow-hidden dark:border-ink-800 dark:bg-ink-900/80">
+          <div className="flex items-center justify-between gap-3 border-b border-ink-200 px-4 py-3 dark:border-ink-800">
+            <div className="flex items-center gap-2 text-ink-800 dark:text-ink-200">
+              <h2 className="font-semibold">{t("supportAdminTab")}</h2>
+              {supportOpen > 0 ? (
+                <span className="inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-warning-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
+                  {supportOpen}
+                </span>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={loadSupportTickets}
+              className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
+            >
+              {t("refresh")}
+            </button>
+          </div>
+
+          {supportLoading && supportTickets.length === 0 ? (
+            <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>
+          ) : supportTickets.length === 0 ? (
+            <p className="p-4 text-sm text-ink-500 dark:text-ink-400">{t("supportAdminEmpty")}</p>
+          ) : (
+            <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+              {supportTickets.map((tk) => {
+                const draft =
+                  supportReplyDraft[tk.id] !== undefined
+                    ? supportReplyDraft[tk.id]
+                    : tk.admin_reply || "";
+                const acting = supportActingId === tk.id;
+                return (
+                  <li key={tk.id} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-ink-900 dark:text-ink-100">
+                          {tk.subject}
+                        </p>
+                        <p className="text-[11px] text-ink-500 dark:text-ink-400">
+                          {t("supportAdminFrom")}: {tk.business_name || tk.reporter_username} ·{" "}
+                          {parseDateLoose(tk.created_at)?.toLocaleString("tr-TR") || "—"}
+                        </p>
+                      </div>
+                      <select
+                        value={tk.status}
+                        disabled={acting}
+                        onChange={(e) => handleSupportUpdate(tk.id, { status: e.target.value })}
+                        className="rounded-lg border border-ink-200 bg-white px-2 py-1 text-xs text-ink-700 dark:border-ink-700 dark:bg-ink-900 dark:text-ink-200"
+                      >
+                        <option value="open">{t("supportStatusOpen")}</option>
+                        <option value="answered">{t("supportStatusAnswered")}</option>
+                        <option value="closed">{t("supportStatusClosed")}</option>
+                      </select>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-xs text-ink-600 dark:text-ink-300">
+                      {tk.message}
+                    </p>
+                    <div className="mt-2">
+                      <FloatingTextarea
+                        label={t("supportAdminReplyLabel")}
+                        value={draft}
+                        rows={2}
+                        maxLength={5000}
+                        placeholder={t("supportAdminReplyPlaceholder")}
+                        onChange={(e) =>
+                          setSupportReplyDraft((prev) => ({ ...prev, [tk.id]: e.target.value }))
+                        }
+                      />
+                      <div className="mt-1.5 flex justify-end">
+                        <button
+                          type="button"
+                          disabled={acting || !draft.trim() || draft.trim() === (tk.admin_reply || "")}
+                          onClick={() => handleSupportUpdate(tk.id, { admin_reply: draft.trim() })}
+                          className="btn btn-sm btn-primary"
+                        >
+                          {acting ? t("supportSubmitting") : t("supportAdminSave")}
+                        </button>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </section>
       )}
 
@@ -2605,6 +4080,68 @@ export function SuperAdminDashboard() {
               {t("refresh")}
             </button>
           </div>
+
+          {opsData ? (
+            (() => {
+              const labelKeys = {
+                rates: "opsRates",
+                dualWrite: "opsDualWrite",
+                drift: "opsDrift",
+                supabase: "opsSupabase",
+                hydrate: "opsHydrate",
+                auditChain: "opsAuditChain",
+                migrations: "opsMigrations",
+                expiring: "opsExpiring",
+              };
+              const dot = {
+                ok: "bg-success-500",
+                warn: "bg-warning-500",
+                down: "bg-danger-500",
+                unknown: "bg-ink-400",
+              };
+              const bannerCls =
+                opsData.overall === "down"
+                  ? "border-danger-500/30 bg-danger-500/10 text-danger-700 dark:text-danger-200"
+                  : opsData.overall === "warn"
+                    ? "border-warning-500/30 bg-warning-500/10 text-warning-700 dark:text-warning-200"
+                    : "border-success-500/30 bg-success-500/10 text-success-700 dark:text-success-200";
+              const bannerText =
+                opsData.overall === "down"
+                  ? t("opsOverallDown")
+                  : opsData.overall === "warn"
+                    ? t("opsOverallWarn")
+                    : t("opsOverallOk");
+              return (
+                <div className="space-y-3">
+                  <div className={`rounded-card border px-3 py-2 text-sm font-semibold ${bannerCls}`}>
+                    {t("opsTitle")}: {bannerText}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {(opsData.checks || []).map((c) => (
+                      <div
+                        key={c.key}
+                        className="rounded-card border border-ink-200 bg-white p-3 dark:border-ink-800 dark:bg-ink-900/80"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`size-2 shrink-0 rounded-full ${dot[c.status] || dot.unknown}`} />
+                          <span className="text-xs font-semibold text-ink-800 dark:text-ink-100">
+                            {t(labelKeys[c.key] || c.key)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-ink-500 dark:text-ink-400">{c.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()
+          ) : null}
+
+          {/* P2.6 — pazar yeri sağlığı (S2): bayat marj, kur sanity, kapsama boşluğu. */}
+          <MarketHealthPanel token={token} />
+
+          {/* P3.2 — kur alarmı değer sinyali (C3). */}
+          <RateAlertPanel token={token} />
 
           {healthLoading ? (
             <p className="text-sm text-ink-500 dark:text-ink-400">{t("loadingShort")}</p>

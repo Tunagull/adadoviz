@@ -1,0 +1,31 @@
+# AdaDöviz
+
+> KKTC (Kuzey Kıbrıs) döviz bürolarının güncel alış/satış kurlarını tek ekranda
+> karşılaştıran bağımsız kur platformu. Canlı kurlar, en iyi kur aracı, büro
+> haritası ve kur alarmı. Independent exchange-rate platform comparing live
+> buy/sell rates across North Cyprus currency bureaus.
+
+## Araçlar / Tools
+
+- [Canlı kurlar / Live rates](https://adadoviz.tunahangul.com/): Tüm bürolar, USD/EUR/GBP alış-satış, anlık.
+- [Bugünkü en iyi kur / Best rate today](https://adadoviz.tunahangul.com/en-iyi-kur): Girilen tutara göre en çok TL bırakan büro sıralaması.
+- [Döviz bürosu haritası / Bureau map](https://adadoviz.tunahangul.com/harita): Şube konumları, açık/kapalı, yol tarifi.
+- [Büro karşılaştırma / Compare bureaus](https://adadoviz.tunahangul.com/kiyasla): İki büroyu yan yana.
+
+## Rehber içerikleri / Guides
+
+- [KKTC'de döviz bozdurma rehberi](https://adadoviz.tunahangul.com/rehber/kktc-doviz-bozdurma): Alış-satış kuru, komisyon, güvenilir büro seçimi.
+- [KKTC Dolar/TL kuru (USD/TRY)](https://adadoviz.tunahangul.com/kur/usd-try): Dolar kuru nasıl okunur, kuru ne etkiler.
+- [Girne'de döviz bürosu](https://adadoviz.tunahangul.com/sehir/girne): Girne'de kur karşılaştırma ve büro bulma.
+
+## İşletmeler / For businesses
+
+- [Paketler / Pricing](https://adadoviz.tunahangul.com/paketler): Döviz bürosu listeleme abonelikleri.
+- [Büro kaydı / List your bureau](https://adadoviz.tunahangul.com/kayit): Süper admin onaylı başvuru.
+- [İletişim / Contact](https://adadoviz.tunahangul.com/iletisim)
+
+## Notlar / Notes
+
+- Kurlar KKTC döviz bürolarından toplanır ve düzenli güncellenir; işlem öncesi büroda teyit önerilir.
+- Rates are aggregated from North Cyprus bureaus and refreshed regularly; confirm at the counter before transacting.
+- Yönetim yolları (/admin, /super-admin) arama motorlarına ve modellere kapalıdır.

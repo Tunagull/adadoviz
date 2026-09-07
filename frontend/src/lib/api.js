@@ -69,6 +69,47 @@ export function cachedRatesUrl() {
   return envBase ? `${envBase}/api/kurlar` : "/api/kurlar";
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Kur listesini soğuk-başlangıç toleranslı çeker.
+ *
+ * Render ücretsiz katmanı ~15 dk boştan sonra uyanırken `/api/kurlar` 503
+ * döner (30–60 sn). Bu döngü 503 / ağ hatasında üstel bekleyişle yeniden
+ * dener (toplam ~55 sn) ve edge-önbellekli proxy'yi (`cachedRatesUrl`)
+ * kullanır. Hem dashboard hem ComparePage aynı davranışı paylaşsın diye
+ * buraya çıkarıldı (F-H3).
+ *
+ * @param {object} [opts]
+ * @param {() => boolean} [opts.isCancelled] - true dönerse döngü sessizce durur
+ * @param {(info: {attempt: number, delayMs: number}) => void} [opts.onRetry]
+ * @returns {Promise<any>} parse edilmiş JSON gövdesi
+ */
+export async function fetchRatesWithRetry(opts = {}) {
+  const { isCancelled, onRetry } = opts;
+  const RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 12000, 12000, 12000];
+  let data = null;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    if (isCancelled?.()) return null;
+    try {
+      const res = await fetch(cachedRatesUrl());
+      if (res.ok) {
+        data = await res.json();
+        break;
+      }
+      if (res.status !== 503 || attempt === RETRY_DELAYS_MS.length) {
+        throw new Error(`Kurlar API error: ${res.status}`);
+      }
+    } catch (err) {
+      if (attempt === RETRY_DELAYS_MS.length) throw err;
+    }
+    onRetry?.({ attempt: attempt + 1, delayMs: RETRY_DELAYS_MS[attempt] });
+    await sleep(RETRY_DELAYS_MS[attempt]);
+  }
+  if (!data) throw new Error("Kurlar alınamadı (zaman aşımı).");
+  return data;
+}
+
 if (import.meta.env.DEV) {
   // Tek seferlik teşhis: hangi API'ye gidildiğini konsolda göster
   devLog(`[API] base = ${API_BASE}`);

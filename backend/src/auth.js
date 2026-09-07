@@ -23,6 +23,16 @@ if (!JWT_SECRET) {
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "12h";
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+/**
+ * S-H4: Pasif işletmenin YAZABİLECEĞİ tek yol — abonelik uzatma / şube talebi
+ * (ürün kararı: pasif hesap da yenileme talebi gönderebilmeli).
+ */
+const INACTIVE_WRITE_ALLOW = [
+  /^\/api\/business\/branch-requests(\/|$)/,
+  // P3.6: süresi dolmuş işletme yenileme dekontu yükleyebilmeli.
+  /^\/api\/business\/payment-proofs(\/|$)/,
+];
+
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
@@ -62,6 +72,19 @@ function requireAuth(req, res, next) {
       return res.status(401).json({ error: "Oturum geçersiz veya süresi dolmuş." });
     }
     req.user = mapUser(admin, decoded);
+    // S-H4: pasif işletme hesabının stale token'ı ile hiçbir yazma (POST/PUT/
+    // PATCH/DELETE) yapılamaz — profil/şifre/talep uçları dahil. GET okuma serbest.
+    if (
+      req.user.role !== "superadmin" &&
+      req.user.is_active === false &&
+      WRITE_METHODS.has(String(req.method || "").toUpperCase()) &&
+      !INACTIVE_WRITE_ALLOW.some((re) => re.test(req.path || ""))
+    ) {
+      return res.status(401).json({
+        error: "Hesabınız pasif durumda. Bu işlem yapılamaz.",
+        code: "BUSINESS_INACTIVE",
+      });
+    }
     return next();
   } catch (_error) {
     return res.status(401).json({ error: "Oturum geçersiz veya süresi dolmuş." });

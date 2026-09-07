@@ -1,9 +1,29 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
 const compression = require("compression");
 const bcrypt = require("bcryptjs");
 const axios = require("axios");
+
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+
+/**
+ * S-M5 / S-H2: Üretimde istemciye içsel ayrıntı (error.message / error.stack /
+ * DB constraint metni) SIZDIRILMAZ. Ayrıntı sunucu log'unda kalır; istemci
+ * jenerik bir mesaj alır. Bilinen doğrulama hataları güvenli stringlere maplenir.
+ */
+function clientErrorMessage(error, genericMsg = "Beklenmeyen bir hata oluştu.") {
+  const raw = String(error?.message || error || "");
+  // Bilinen, kullanıcının görmesi güvenli doğrulama hataları:
+  const safePatterns = [
+    /zorunlu/i, /geçersiz/i, /bulunamadı/i, /en az \d+ karakter/i,
+    /negatif olamaz/i, /çok büyük/i, /kabul edilmez/i, /uyuşmuyor/i,
+    /zaten (kayıtlı|mevcut|işleme)/i, /ters kotasyon/i, /limit/i, /pasif/i,
+  ];
+  if (safePatterns.some((re) => re.test(raw))) return raw;
+  return IS_PRODUCTION ? genericMsg : raw || genericMsg;
+}
 const { buildBanksFromCentralRates, emptyPayloadForServerError, BANK_DEFINITIONS } = require("./scraper");
 const {
   initDb,
@@ -33,6 +53,44 @@ const {
   listBusinessNotifications,
   countUnreadBusinessNotifications,
   markBusinessNotificationsRead,
+  listAdminNotifications,
+  countUnreadAdminNotifications,
+  markAdminNotificationsRead,
+  createAdminNotification,
+  createSupportTicket,
+  listSupportTickets,
+  getSupportTicketById,
+  countOpenSupportTickets,
+  updateSupportTicket,
+  recordAnalyticsEvent,
+  getBusinessAnalytics,
+  getMarketHealth,
+  createSignupRequest,
+  listSignupRequests,
+  getSignupRequestById,
+  countPendingSignupRequests,
+  updateSignupRequestStatus,
+  listLeads,
+  upsertLeadMeta,
+  getLeadCrmStats,
+  recordSearchMiss,
+  getSearchMissStats,
+  getDemandAnalytics,
+  getLeadFunnel,
+  createPaymentProof,
+  listPaymentProofs,
+  getPaymentProofById,
+  countPendingPaymentProofs,
+  updatePaymentProofStatus,
+  extendSubscriptionForPlan,
+  createRateAlert,
+  getRateAlertByToken,
+  listRateAlertsByEmail,
+  verifyRateAlert,
+  setRateAlertActive,
+  deleteRateAlert,
+  deactivateAllRateAlertsByToken,
+  getRateAlertStats,
   getInstitutionsMetaById,
   getInstitutionCreatedAtMs,
   getMarginHistoryForInstitution,
@@ -46,7 +104,14 @@ const {
   applySupabaseAdjustmentRow,
   applySupabaseBranchRow,
   applySupabaseBranchRequestRow,
+  applySupabaseMarginHistoryRow,
+  applySupabaseHistoricalRatesRows,
+  applySupabasePlanRow,
+  applySupabasePaymentRow,
   listAllBranchRequestsForSync,
+  listAllPaymentsForSync,
+  getPaymentById,
+  hashResetToken,
   purgeOrphanBranches,
   replaceBusinessBranchesFromSupabase,
   getAdjustmentsForInstitution,
@@ -65,6 +130,12 @@ const {
   listPayments,
   getPaymentsForInstitution,
   getRevenueSummary,
+  getRevenueAnalytics,
+  listDiscountCodes,
+  createDiscountCode,
+  setDiscountCodeActive,
+  deleteDiscountCode,
+  evaluateDiscountCode,
   listExpiringSubscriptions,
   backfillPaymentsFromSubscriptions,
   getClicksByBusiness,
@@ -88,6 +159,7 @@ const {
   updateSeoSettings,
   touchLastLogin,
   insertAuditLog,
+  verifyAuditChain,
   listAuditLogs,
   listAuditLogsFiltered,
   listAuditActions,
@@ -98,12 +170,16 @@ const { findInstitutionByName, findInstitutionById, CURRENCIES } = require("./in
 const { applyAdjustmentsToBanksPayload, applyMarginToValue, enforceSellGteBuy } = require("./rateMath");
 const { normalizeKind } = require("./marginSchema");
 const { getRates: getCentralBankRates } = require("./services/ratesService");
-const { sendPartnershipEmail, sendPasswordResetEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { sendPartnershipEmail, sendPasswordResetEmail, sendWelcomeEmail, sendPaymentReceiptEmail, sendBranchRequestResultEmail, sendSupportTicketEmail, sendSupportReplyEmail, sendSignupReceivedEmail, sendSignupApprovedEmail, sendSignupRejectedEmail, sendRateAlertVerifyEmail, sendGenericNotificationEmail, buildPartnershipDefaultMessage, isMailConfigured, getFrontendBaseUrl, logMailConfigOnBoot } = require("./email");
+const { runSubscriptionReminders } = require("./jobs/subscriptionReminders");
+const { runRateAlertCheck, checkSingleAlertNow } = require("./jobs/rateAlerts");
 const { buildBusinessSlug } = require("./slug");
 const crypto = require("crypto");
 const {
   insertHistoricalRate,
+  bulkInsertSupabaseHistoricalRates,
   getMarketHistoricalRates,
+  getLatestSupabaseRatesSnapshot,
   getBusinessRateHistory: getSupabaseBusinessRateHistory,
   insertMarginHistory,
   fetchMarginHistory,
@@ -117,6 +193,9 @@ const {
   syncPartnershipApplication,
   syncBranchRequestUpsert,
   syncPasswordReset,
+  syncPaymentUpsert,
+  syncPaymentDelete,
+  syncPlanUpsert,
   syncVisitorSession,
   syncSiteStats,
   checkSupabaseHasInstitutions,
@@ -125,6 +204,7 @@ const {
   getDualWriteErrors,
   syncAuditLog,
   compareInstitutionDrift,
+  getMigrationStatus,
 } = require("./config/supabaseSync");
 
 const app = express();
@@ -143,15 +223,26 @@ let ratesHealth = {
   validRange: null,
 };
 
-async function recordAudit(entry) {
+async function recordAudit(entry, { strict = false } = {}) {
+  let row = null;
   try {
-    const row = insertAuditLog(entry);
-    if (row) await syncAuditLog(row);
-    return row;
+    row = insertAuditLog(entry);
   } catch (err) {
-    console.warn("[AUDIT]", err.message);
+    console.error("[AUDIT] Yerel audit yazımı başarısız:", err.message);
+    // S-M4: yüksek değerli işlemlerde (ödeme, şifre, silme) audit yazımı
+    // başarısızsa çağıran taraf hata döndürsün.
+    if (strict) throw new Error("İşlem kaydedilemedi (audit).");
     return null;
   }
+  if (row) {
+    try {
+      await syncAuditLog(row);
+    } catch (err) {
+      // Supabase audit sync başarısızlığı ana işlemi düşürmez (SQLite kaydı var).
+      console.warn("[AUDIT] Supabase audit sync başarısız:", err.message);
+    }
+  }
+  return row;
 }
 
 let cachedRates = {
@@ -196,11 +287,16 @@ const corsAllowList = new Set([
   ...(frontendUrl ? [frontendUrl] : []),
 ]);
 
+/**
+ * S-M2: `*.vercel.app` wildcard KALDIRILDI — herhangi bir saldırganın
+ * deploy edebileceği bir domain "güvenilir origin" sayılıyordu. Artık yalnızca
+ * açık allowlist (DEFAULT + CORS_ORIGINS + FRONTEND_URL). Preview domain'ler
+ * CORS_ORIGINS env'ine AÇIKÇA eklenmeli.
+ */
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (process.env.CORS_ALLOW_ALL === "1") return true;
-  if (corsAllowList.has(origin)) return true;
-  return /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin);
+  return corsAllowList.has(origin);
 }
 
 function createRateLimiter({ windowMs, max, message }) {
@@ -228,6 +324,57 @@ function createRateLimiter({ windowMs, max, message }) {
     return next();
   };
 }
+
+/**
+ * S-M1: Per-hesap (username) giriş kilidi. IP-bazlı limiter dağıtık credential
+ * stuffing'i durdurmuyordu. Bu in-memory'dir; ⚠️ çok-instance'lı deploy'da her
+ * instance kendi sayacını tutar (Render free tek instance olduğu için bugün
+ * yeterli). Kalıcı çözüm: sayaç durumunu Supabase tablosuna taşımak.
+ */
+const LOGIN_LOCKOUT = {
+  maxFails: 8,
+  windowMs: 15 * 60 * 1000,
+  lockMs: 15 * 60 * 1000,
+  map: new Map(),
+};
+function loginLockoutState(username) {
+  const key = String(username || "").toLowerCase();
+  const rec = LOGIN_LOCKOUT.map.get(key);
+  if (!rec) return { locked: false };
+  if (rec.until && rec.until > Date.now()) {
+    return { locked: true, retryAfterSec: Math.ceil((rec.until - Date.now()) / 1000) };
+  }
+  return { locked: false };
+}
+function registerLoginFailure(username) {
+  const key = String(username || "").toLowerCase();
+  const now = Date.now();
+  const rec = LOGIN_LOCKOUT.map.get(key) || { fails: 0, first: now, until: 0 };
+  if (now - rec.first > LOGIN_LOCKOUT.windowMs) {
+    rec.fails = 0;
+    rec.first = now;
+  }
+  rec.fails += 1;
+  if (rec.fails >= LOGIN_LOCKOUT.maxFails) {
+    rec.until = now + LOGIN_LOCKOUT.lockMs;
+    console.warn(`[AUTH] Hesap kilitlendi (çok fazla başarısız giriş): ${key}`);
+  }
+  LOGIN_LOCKOUT.map.set(key, rec);
+}
+function clearLoginFailures(username) {
+  LOGIN_LOCKOUT.map.delete(String(username || "").toLowerCase());
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, rec] of LOGIN_LOCKOUT.map) {
+    if ((!rec.until || rec.until < now) && now - rec.first > LOGIN_LOCKOUT.windowMs) {
+      LOGIN_LOCKOUT.map.delete(k);
+    }
+  }
+}, 10 * 60 * 1000).unref?.();
+
+/** S-L2: kullanıcı bulunamadığında da sabit maliyetli bcrypt karşılaştırması. */
+const DUMMY_BCRYPT_HASH = bcrypt.hashSync("__never_matches__", 10);
 
 /** P-05: şifre alt sınırı. İşletme hesapları ücretli listelemeleri yönetiyor. */
 const MIN_PASSWORD_LENGTH = 8;
@@ -265,6 +412,30 @@ const visitorLimiter = createRateLimiter({
   max: 10,
   message: "Çok fazla istek. Lütfen daha sonra tekrar deneyin.",
 });
+// P1.7: destek talebi — kimlik doğrulamalı ama yine de spam/kaza koruması.
+const supportLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: "Çok fazla destek talebi gönderildi. Lütfen bir saat sonra tekrar deneyin.",
+});
+// P3.6: dekont yükleme — kimlik doğrulamalı; büyük base64 gövde + e-posta tetikler.
+const paymentProofLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 6,
+  message: "Çok fazla dekont gönderildi. Lütfen bir saat sonra tekrar deneyin.",
+});
+// P3.1: self-signup başvurusu — public, hesap oluşturmaz ama e-posta + bildirim tetikler.
+const signupLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  message: "Çok fazla başvuru gönderildi. Lütfen bir saat sonra tekrar deneyin.",
+});
+// P3.2: kur alarmı kaydı — public, çift-opt-in doğrulama e-postası tetikler.
+const rateAlertLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: "Çok fazla alarm isteği. Lütfen bir saat sonra tekrar deneyin.",
+});
 
 /**
  * Yanıt sıkıştırma — CORS'tan ÖNCE, ki her yanıt kapsansın.
@@ -281,6 +452,32 @@ app.use(
   compression({
     filter: (req, res) =>
       req.path === "/api/rates-stream" ? false : compression.filter(req, res),
+  })
+);
+
+/**
+ * S-H2: Güvenlik başlıkları (helmet). Bu bir JSON API'si — CSP `default-src 'none'`
+ * (JSON gövde için yeterli), COEP kapalı (logo gibi kaynaklar başka origin'e
+ * gömülebilsin), HSTS üretimde açık. `crossOriginResourcePolicy` cross-site'a
+ * izin verir (frontend farklı origin'den /api/logos çeker).
+ */
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        "default-src": ["'none'"],
+        "frame-ancestors": ["'none'"],
+        "base-uri": ["'none'"],
+        "form-action": ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+    hsts: IS_PRODUCTION
+      ? { maxAge: 15552000, includeSubDomains: true }
+      : false,
+    referrerPolicy: { policy: "no-referrer" },
   })
 );
 
@@ -509,8 +706,8 @@ app.get("/api/kurlar", async (_req, res) => {
           const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
           const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
           rates[currency] = enforceSellGteBuy(
-            applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type),
-            applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type)
+            applyMarginToValue(kur?.buy, buyAdj.margin_value, buyAdj.margin_type, "buy"),
+            applyMarginToValue(kur?.sell, sellAdj.margin_value, sellAdj.margin_type, "sell")
           );
         }
         const nameKey = String(biz.institution_name || "")
@@ -565,7 +762,6 @@ app.get("/api/kurlar", async (_req, res) => {
     res.status(500).json({
       success: false,
       error: "Kurlar alınamadı.",
-      details: error.message,
     });
   }
 });
@@ -586,14 +782,21 @@ app.get("/api/logos/:institutionId", (req, res) => {
       /^data:([^;,]+)(?:;charset=[^;,]+)?;base64,([\s\S]+)$/i
     );
     if (dataMatch) {
+      const declared = String(dataMatch[1] || "").toLowerCase();
+      // S-H3: SVG asla servis edilmez (stored XSS).
+      const allowed = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
+      if (!allowed.has(declared)) {
+        return res.status(415).json({ error: "Desteklenmeyen logo türü." });
+      }
       const buf = Buffer.from(dataMatch[2], "base64");
-      res.setHeader("Content-Type", dataMatch[1] || "image/jpeg");
+      // S-H3: MIME-sniffing kapalı + bu yanıt hiçbir alt kaynak yükleyemez.
+      res.setHeader("Content-Type", declared === "image/jpg" ? "image/jpeg" : declared);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
       res.setHeader("Cache-Control", "public, max-age=86400");
       return res.send(buf);
     }
-    if (/^https?:\/\//i.test(logoUrl)) {
-      return res.redirect(302, logoUrl);
-    }
+    // S-L6: legacy http(s) logo_url redirect KALDIRILDI (açık yönlendirme vektörü).
     return res.status(404).json({ error: "Logo bulunamadı." });
   } catch (err) {
     console.error("[LOGO] Error:", err.message);
@@ -703,15 +906,41 @@ app.post("/api/auth/login", loginLimiter, (req, res) => {
       });
     }
 
+    // S-M1: hesap kilitli mi?
+    const lock = loginLockoutState(username);
+    if (lock.locked) {
+      res.setHeader("Retry-After", String(lock.retryAfterSec || 900));
+      return res.status(429).json({
+        error: "Çok fazla başarısız giriş denemesi. Lütfen bir süre sonra tekrar deneyin.",
+      });
+    }
+
     console.log(`[AUTH] Login attempt: ${username}`);
     const admin = findAdminByUsername(username);
-    console.log(`[AUTH] User found: ${!!admin}`);
-    if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
+    // S-L2: kullanıcı yoksa da bcrypt.compareSync çalıştır — timing ile
+    // kullanıcı-varlığı sızmasın (sabit maliyet).
+    const passwordOk = bcrypt.compareSync(
+      password,
+      admin?.password_hash || DUMMY_BCRYPT_HASH
+    );
+    if (!admin || !passwordOk) {
+      registerLoginFailure(username);
       return res.status(401).json({ error: "Geçersiz Giriş ID veya şifre." });
     }
 
     const role = admin.role || "business";
     const isActive = !(admin.is_active === 0 || admin.is_active === false);
+
+    // S-H4: pasif işletme hesabı token ALAMAZ (profil/şifre uçları da kapansın).
+    if (!isActive && role !== "superadmin") {
+      registerLoginFailure(username);
+      return res.status(403).json({
+        error: "Hesabınız pasif durumda. Lütfen yönetici ile iletişime geçin.",
+        code: "BUSINESS_INACTIVE",
+      });
+    }
+
+    clearLoginFailures(username);
 
     const token = signToken({
       username: admin.username,
@@ -791,11 +1020,9 @@ app.post("/api/forgot-password", forgotLimiter, async (req, res) => {
     }
 
     if (!isMailConfigured()) {
-      console.error("[AUTH] forgot-password: GMAIL_USER / GMAIL_PASS tanımlı değil.");
-      return res.status(503).json({
-        error:
-          "E-posta servisi yapılandırılmamış. Render → Environment’ta GMAIL_USER, GMAIL_PASS (Gmail App Password) ve FRONTEND_URL tanımlayın.",
-      });
+      // S-L3: sunucu durumunu sızdırma — jenerik OK dön, ayrıntıyı sadece logla.
+      console.error("[AUTH] forgot-password: GMAIL_USER / GMAIL_PASS tanımlı değil (e-posta gönderilmedi).");
+      return res.json({ success: true, message: FORGOT_PASSWORD_OK_MSG });
     }
 
     const token = crypto.randomBytes(32).toString("hex");
@@ -807,11 +1034,12 @@ app.post("/api/forgot-password", forgotLimiter, async (req, res) => {
       token,
       expiresAt,
     });
+    // S-H1: Supabase'e YALNIZCA sha256(token) yansıtılır, ham token asla.
     await syncPasswordReset({
       institution_id: institution.id,
       institution_slug: institution.institution_id,
       email: destination,
-      token,
+      token: hashResetToken(token),
       expires_at: expiresAt,
       used: false,
     });
@@ -885,7 +1113,7 @@ app.post("/api/reset-password", async (req, res) => {
       institution_id: full?.institution_id || null,
       institution_name: full?.institution_name || null,
       detail: "Şifre sıfırlama bağlantısı ile güncellendi",
-    });
+    }, { strict: true });
 
     return res.json({
       success: true,
@@ -893,7 +1121,7 @@ app.post("/api/reset-password", async (req, res) => {
     });
   } catch (err) {
     console.error("[AUTH] reset-password:", err.message);
-    return res.status(500).json({ error: err.message || "Şifre güncellenemedi." });
+    return res.status(500).json({ error: clientErrorMessage(err, "Şifre güncellenemedi.") });
   }
 });
 
@@ -958,7 +1186,7 @@ app.put("/api/business/change-password", requireAuth, async (req, res) => {
       institution_id: admin.institution_id,
       institution_name: admin.institution_name,
       detail: "İşletme panelinden şifre değiştirildi",
-    });
+    }, { strict: true });
 
     return res.json({ success: true, message: "Şifre başarıyla değiştirildi." });
   } catch (err) {
@@ -1235,6 +1463,182 @@ app.post("/api/business/notifications/mark-read", requireAuth, (req, res) => {
   }
 });
 
+/** Super Admin: operatör bildirimleri (P1.5) */
+app.get("/api/admin/notifications", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({
+      notifications: listAdminNotifications({ limit: 50 }),
+      unread: countUnreadAdminNotifications(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Bildirimler alınamadı." });
+  }
+});
+
+app.post("/api/admin/notifications/mark-read", requireSuperAdmin, (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : undefined;
+    return res.json(markAdminNotificationsRead(ids));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Okundu işaretlenemedi." });
+  }
+});
+
+/** Manuel tetik — test/operasyon için. */
+app.post("/api/admin/notifications/run-reminders", requireSuperAdmin, async (_req, res) => {
+  try {
+    const result = await runSubscriptionReminders();
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Hatırlatmalar çalıştırılamadı." });
+  }
+});
+
+// -------------------------------------------------------------------------
+// P1.7 — panel-içi destek / sorun bildirimi (B11)
+// -------------------------------------------------------------------------
+
+/** İşletme (veya superadmin) yeni destek talebi açar. */
+app.post("/api/support-tickets", requireAuth, supportLimiter, async (req, res) => {
+  try {
+    const isSuper = req.user?.role === "superadmin";
+    let full = null;
+    if (!isSuper) {
+      full = getInstitutionFullBySlug(req.user.institution_id);
+      if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    }
+
+    const ticket = createSupportTicket({
+      institution_id: isSuper ? null : full.institution_id,
+      business_id: isSuper ? null : full.id,
+      business_name: isSuper ? "Operatör" : full.institution_name,
+      reporter_username: req.user?.username || "",
+      reporter_role: isSuper ? "superadmin" : "business",
+      subject: req.body?.subject,
+      message: req.body?.message,
+    });
+
+    try {
+      createAdminNotification({
+        type: "support_ticket",
+        title: "Yeni destek talebi",
+        message: `${ticket.business_name} — ${ticket.subject}`,
+        data: { ticket_id: ticket.id },
+      });
+    } catch (nerr) {
+      console.warn("[SUPPORT] admin notify:", nerr.message);
+    }
+
+    if (isMailConfigured()) {
+      sendSupportTicketEmail({
+        subject: ticket.subject,
+        message: ticket.message,
+        reporterUsername: ticket.reporter_username,
+        reporterRole: ticket.reporter_role,
+        businessName: ticket.business_name,
+      }).catch((e) => console.warn("[EMAIL] destek talebi gönderilemedi:", e.message));
+    }
+
+    await recordAudit({
+      action: "support_ticket_create",
+      actor: req.user?.username || "business",
+      institution_id: ticket.institution_id || null,
+      institution_name: ticket.business_name || null,
+      detail: `Destek talebi açıldı (#${ticket.id}): ${ticket.subject}`,
+    });
+
+    return res.status(201).json({ ticket });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Destek talebi oluşturulamadı." });
+  }
+});
+
+/** İşletme kendi destek taleplerini listeler. */
+app.get("/api/support-tickets", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.json({ tickets: listSupportTickets({ limit: 100 }) });
+    }
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    return res.json({
+      tickets: listSupportTickets({ institution_id: full.institution_id, limit: 100 }),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Talepler alınamadı." });
+  }
+});
+
+/** Super Admin: tüm destek talepleri + açık sayısı. */
+app.get("/api/admin/support-tickets", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      tickets: listSupportTickets({ status: req.query?.status || undefined, limit: 200 }),
+      open: countOpenSupportTickets(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Talepler alınamadı." });
+  }
+});
+
+/** Super Admin: durum güncelle / yanıt yaz. */
+app.patch("/api/admin/support-tickets/:id", requireSuperAdmin, async (req, res) => {
+  try {
+    const before = getSupportTicketById(req.params.id);
+    if (!before) return res.status(404).json({ error: "Destek talebi bulunamadı." });
+
+    const ticket = updateSupportTicket(req.params.id, {
+      status: req.body?.status,
+      admin_reply: req.body?.admin_reply,
+    });
+
+    // Yanıt eklendiyse işletmeye bildir (in-app + e-posta).
+    const replyAdded =
+      ticket.admin_reply && ticket.admin_reply !== before.admin_reply && ticket.business_id;
+    if (replyAdded) {
+      try {
+        createBusinessNotification({
+          business_id: ticket.business_id,
+          type: "support_reply",
+          title: "Destek talebinize yanıt verildi",
+          message: `"${ticket.subject}" konulu talebiniz yanıtlandı.`,
+        });
+      } catch (nerr) {
+        console.warn("[SUPPORT] business notify:", nerr.message);
+      }
+      if (isMailConfigured()) {
+        try {
+          const biz = getInstitutionFullById(ticket.business_id);
+          if (biz?.email) {
+            sendSupportReplyEmail({
+              to: biz.email,
+              institutionName: biz.institution_name,
+              subject: ticket.subject,
+              reply: ticket.admin_reply,
+              panelUrl: `${getFrontendBaseUrl()}/admin`,
+            }).catch((e) => console.warn("[EMAIL] destek yanıtı gönderilemedi:", e.message));
+          }
+        } catch (mailErr) {
+          console.warn("[EMAIL] destek yanıtı hazırlanamadı:", mailErr.message);
+        }
+      }
+    }
+
+    await recordAudit({
+      action: "support_ticket_update",
+      actor: req.user?.username || "superadmin",
+      institution_id: ticket.institution_id || null,
+      institution_name: ticket.business_name || null,
+      detail: `Destek talebi #${ticket.id} → ${ticket.status}${replyAdded ? " (yanıtlandı)" : ""}`,
+    });
+
+    return res.json({ ticket });
+  } catch (err) {
+    const status = err.message === "Destek talebi bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Talep güncellenemedi." });
+  }
+});
+
 /** Super Admin: şube talepleri */
 app.get("/api/admin/branch-requests", requireSuperAdmin, (req, res) => {
   try {
@@ -1301,6 +1705,16 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
 
     if (nextStatus === "approved") {
       if (existing.request_type === "reactivate" && existing.branch_id) {
+        // S-L7: talep sahibinin gönderdiği branch_id GERÇEKTEN o işletmeye ait mi?
+        const ownBranch = listBranchesByBusiness(existing.business_id).find(
+          (b) => Number(b.id) === Number(existing.branch_id)
+        );
+        if (!ownBranch) {
+          return res.status(400).json({
+            error: "Talepteki şube bu işletmeye ait değil.",
+            code: "BRANCH_OWNERSHIP_MISMATCH",
+          });
+        }
         renewedBranch = updateBranch(existing.branch_id, {
           is_active: true,
           subscription_type: "Aylık",
@@ -1361,6 +1775,28 @@ app.put("/api/admin/branch-requests/:id", requireSuperAdmin, async (req, res) =>
         });
       } catch (notifyErr) {
         console.warn("[NOTIFICATIONS] branch request notify:", notifyErr.message);
+      }
+
+      // P1.6 — işletmeye sonucu e-postayla bildir (hata yutulur).
+      if (isMailConfigured()) {
+        try {
+          const biz = getInstitutionFullById(existing.business_id);
+          if (biz?.email) {
+            sendBranchRequestResultEmail({
+              to: biz.email,
+              institutionName: biz.institution_name,
+              branchName: existing.branch_name,
+              approved: nextStatus === "approved",
+              isRenewal: isRenew,
+              adminNote: request.admin_note,
+              panelUrl: `${getFrontendBaseUrl()}/admin`,
+            }).catch((e) =>
+              console.warn("[EMAIL] şube talebi sonucu gönderilemedi:", e.message)
+            );
+          }
+        } catch (mailErr) {
+          console.warn("[EMAIL] şube talebi e-postası hazırlanamadı:", mailErr.message);
+        }
       }
     }
 
@@ -1433,9 +1869,18 @@ app.post("/api/admin/businesses", requireSuperAdmin, async (req, res) => {
       institution_name: business.institution_name || null,
       detail: `Yeni işletme oluşturuldu (paket=${business.subscription_type || "Test"}, şube limiti=${business.branch_limit ?? 1})`,
     });
+    // P1.6 — hoş geldin e-postası (hata yutulur; hesap oluşturmayı bloklamaz).
+    if (business.email && isMailConfigured()) {
+      sendWelcomeEmail({
+        to: business.email,
+        institutionName: business.institution_name,
+        username: business.username,
+        loginUrl: `${getFrontendBaseUrl()}/admin`,
+      }).catch((e) => console.warn("[EMAIL] hoş geldin gönderilemedi:", e.message));
+    }
     return res.status(201).json({ business });
   } catch (err) {
-    return res.status(400).json({ error: err.message || "İşletme oluşturulamadı." });
+    return res.status(400).json({ error: clientErrorMessage(err, "İşletme oluşturulamadı.") });
   }
 });
 
@@ -1476,7 +1921,7 @@ app.put("/api/admin/businesses/:id", requireSuperAdmin, async (req, res) => {
     return res.json({ business });
   } catch (err) {
     const status = err.message === "İşletme bulunamadı." ? 404 : 400;
-    return res.status(status).json({ error: err.message || "İşletme güncellenemedi." });
+    return res.status(status).json({ error: clientErrorMessage(err, "İşletme güncellenemedi.") });
   }
 });
 
@@ -1542,7 +1987,7 @@ app.delete("/api/admin/businesses/:id", requireSuperAdmin, async (req, res) => {
       institution_id: full?.institution_id || null,
       institution_name: full?.institution_name || null,
       detail: `İşletme silindi (id=${id})`,
-    });
+    }, { strict: true });
     const result = deleteBusiness(id);
     if (full?.institution_id) {
       const synced = await syncInstitutionDelete(full.institution_id);
@@ -1845,17 +2290,36 @@ async function resolveApproxLocation(ip) {
   return "Bilinmiyor";
 }
 
+/**
+ * S-L4: İstemciden gelen session_id / location güvenilmez. session_id sıkı
+ * biçime zorlanır (yalnızca base64url benzeri, <=64), location düz metne ve 80
+ * karaktere indirilir; boşsa sunucu Geo-IP'den üretir. (Tam çözüm — sunucu
+ * imzalı session_id — frontend ile koordineli bir sonraki adım.)
+ */
+function sanitizeSessionId(raw) {
+  const s = String(raw || "").trim();
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(s)) return null;
+  return s;
+}
+function sanitizeLocationLabel(raw) {
+  // İzin verilen: harf (unicode), rakam, boşluk, / , . - ( )
+  return String(raw || "")
+    .replace(/[^\p{L}\p{N}\s/.,()-]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
 /** Anonim oturum başlat (çerez kabulü) */
 app.post("/api/analytics/start", analyticsLimiter, async (req, res) => {
   try {
-    const session_id = String(req.body?.session_id || "").trim();
+    const session_id = sanitizeSessionId(req.body?.session_id);
     if (!session_id) {
-      return res.status(400).json({ error: "session_id zorunludur." });
+      return res.status(400).json({ error: "Geçersiz session_id." });
     }
     const ip = getClientIp(req);
-    const location =
-      (req.body?.location && String(req.body.location).trim()) ||
-      (await resolveApproxLocation(ip));
+    const clientLoc = sanitizeLocationLabel(req.body?.location);
+    const location = clientLoc || (await resolveApproxLocation(ip));
     const session = startVisitorSession({ session_id, location });
     syncVisitorSession(session);
     return res.status(201).json({ ok: true, session });
@@ -1873,8 +2337,10 @@ app.put("/api/analytics/update", analyticsLimiter, (req, res) => {
     }
     const session = updateVisitorSession(session_id, {
       clicked_businesses: req.body?.clicked_businesses,
+      clicked_business_ids: req.body?.clicked_business_ids,
       viewed_currencies: req.body?.viewed_currencies,
       business: req.body?.business,
+      business_id: req.body?.business_id,
       currency: req.body?.currency,
     });
     syncVisitorSession(session);
@@ -1882,6 +2348,60 @@ app.put("/api/analytics/update", analyticsLimiter, (req, res) => {
   } catch (err) {
     const status = err.message === "Oturum bulunamadı." ? 404 : 400;
     return res.status(status).json({ error: err.message || "Güncelleme başarısız." });
+  }
+});
+
+/**
+ * P2.5 — tekil analitik olay (B3). Genel uç nokta; istemci çerez onayına göre
+ * gönderir. Bilinmeyen event / geçersiz kurum sessizce yok sayılır (200).
+ */
+app.post("/api/analytics/event", analyticsLimiter, (req, res) => {
+  try {
+    // institution_id numerik PK ya da slug olabilir — slug ise çöz.
+    let instId = req.body?.institution_id;
+    if (instId != null && instId !== "" && !/^\d+$/.test(String(instId))) {
+      instId = getInstitutionFullBySlug(String(instId))?.id ?? null;
+    }
+    recordAnalyticsEvent({
+      institution_id: instId,
+      event: req.body?.event,
+      session_id: req.body?.session_id,
+      currency: req.body?.currency,
+      city: req.body?.city,
+    });
+    return res.json({ ok: true });
+  } catch {
+    // Analitik hiçbir zaman kullanıcı akışını bozmasın.
+    return res.json({ ok: true });
+  }
+});
+
+/**
+ * P3.4 — anasayfa büro araması sonuç bulamadığında çağrılır (S6).
+ * Kimlik yok, akışı asla bozmaz (her zaman 200).
+ */
+app.post("/api/search-miss", analyticsLimiter, (req, res) => {
+  try {
+    recordSearchMiss({
+      query: req.body?.query,
+      city: req.body?.city,
+      session_id: req.body?.session_id,
+    });
+  } catch {
+    /* yut */
+  }
+  return res.json({ ok: true });
+});
+
+/** P2.5 — işletmenin kendi analitik özeti (7/30 gün). */
+app.get("/api/business/analytics", requireAuth, (req, res) => {
+  try {
+    const full = getInstitutionFullBySlug(req.user.institution_id);
+    if (!full) return res.status(404).json({ error: "İşletme bulunamadı." });
+    const days = Number(req.query?.days) === 30 ? 30 : 7;
+    return res.json(getBusinessAnalytics(full.id, { days }));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Analitik alınamadı." });
   }
 });
 
@@ -1913,9 +2433,227 @@ app.get("/api/admin/system-health", requireSuperAdmin, async (_req, res) => {
       drift,
       sqlite: { institutions: sqliteRows.length },
       audit: listAuditLogs(80),
+      auditChain: (() => {
+        try {
+          return verifyAuditChain();
+        } catch (e) {
+          return { ok: null, error: e.message };
+        }
+      })(),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Sağlık raporu alınamadı." });
+  }
+});
+
+/**
+ * P1.9 (S14) — operatör durum sayfası toplayıcısı. "Sabah 30 saniyede sorun var mı"
+ * kontrolü: her sinyal için trafik-ışığı (`ok`/`warn`/`down`/`unknown`) + genel özet.
+ */
+/**
+ * P2.6 — pazar yeri sağlığı (S2): bayat marj, kapsama boşluğu, kur sanity-band.
+ * Salt okuma; manuel kur düzeltme mevcut işletme düzenleme akışından yapılır.
+ */
+app.get("/api/admin/market-health", requireSuperAdmin, (req, res) => {
+  try {
+    const staleDays = Number(req.query?.staleDays) || 7;
+    const health = getMarketHealth({ staleDays });
+
+    // Kur sanity: canlı MB kuru + adjustments burada.
+    const anomalies = [];
+    const cb = cachedRates.centralBankRates || {};
+    if (Object.keys(cb).length) {
+      const adjustmentsMap = getAllAdjustmentsMap();
+      const nameBySlug = new Map(health.businesses.map((b) => [b.institution_id, b.name]));
+      for (const [institutionId, adj] of adjustmentsMap.entries()) {
+        for (const currency of ["EUR", "USD", "GBP"]) {
+          const kur = cb[currency];
+          if (!kur || kur.buy == null || kur.sell == null) continue;
+          const buyAdj = adj[`${currency}_buy`] || { margin_type: "fixed", margin_value: 0 };
+          const sellAdj = adj[`${currency}_sell`] || { margin_type: "fixed", margin_value: 0 };
+          const buy = applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type, "buy");
+          const sell = applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type, "sell");
+          if (!Number.isFinite(buy) || !Number.isFinite(sell)) continue;
+
+          let issue = null;
+          if (buy >= sell) issue = "inverted"; // alış ≥ satış: ters spread
+          else if (buy > kur.buy * 1.01) issue = "buy_above_cb"; // MB üstünde alış
+          else if (sell < kur.sell * 0.99) issue = "sell_below_cb"; // MB altında satış
+          else if ((kur.buy - buy) / kur.buy > 0.1) issue = "buy_margin_wide"; // >%10 alış marjı
+          else if ((sell - kur.sell) / kur.sell > 0.1) issue = "sell_margin_wide"; // >%10 satış marjı
+
+          if (issue) {
+            anomalies.push({
+              institution_id: institutionId,
+              name: nameBySlug.get(institutionId) || institutionId,
+              currency,
+              issue,
+              buy: Number(buy.toFixed(4)),
+              sell: Number(sell.toFixed(4)),
+              cbBuy: Number(Number(kur.buy).toFixed(4)),
+              cbSell: Number(Number(kur.sell).toFixed(4)),
+            });
+          }
+        }
+      }
+    }
+
+    return res.json({ ...health, anomalies, anomalyCount: anomalies.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Pazar sağlığı alınamadı." });
+  }
+});
+
+app.get("/api/admin/ops-overview", requireSuperAdmin, async (_req, res) => {
+  try {
+    const now = Date.now();
+    const ageMs = (iso) => (iso ? now - new Date(iso).getTime() : null);
+    const checks = [];
+
+    // 1) Scraper / MB kurları
+    {
+      const okAge = ageMs(ratesHealth.lastOkAt);
+      const errNewer =
+        ratesHealth.lastErrorAt &&
+        (!ratesHealth.lastOkAt ||
+          new Date(ratesHealth.lastErrorAt) > new Date(ratesHealth.lastOkAt));
+      let status = "ok";
+      if (!ratesHealth.lastOkAt || errNewer) status = "down";
+      else if (okAge != null && okAge > 6 * 60 * 60 * 1000) status = "warn";
+      checks.push({
+        key: "rates",
+        status,
+        at: ratesHealth.lastOkAt,
+        detail: ratesHealth.lastError
+          ? String(ratesHealth.lastError)
+          : ratesHealth.lastOkAt
+            ? `son başarı ${Math.round((okAge || 0) / 60000)} dk önce`
+            : "hiç başarılı çekim yok",
+      });
+    }
+
+    // 2) Dual-write hata kuyruğu
+    {
+      const dw = getDualWriteErrors(20);
+      checks.push({
+        key: "dualWrite",
+        status: dw.length === 0 ? "ok" : "down",
+        detail: dw.length === 0 ? "kuyruk boş" : `${dw.length} bekleyen hata`,
+      });
+    }
+
+    // 3) Supabase drift
+    try {
+      const drift = await compareInstitutionDrift(listAllInstitutionsForSync());
+      const n = Array.isArray(drift?.drifts) ? drift.drifts.length : 0;
+      checks.push({
+        key: "drift",
+        status: drift?.ok === false ? "unknown" : n === 0 ? "ok" : "warn",
+        detail: drift?.ok === false ? drift.error || "karşılaştırılamadı" : n === 0 ? "eşleşiyor" : `${n} kayıt farklı`,
+      });
+    } catch (e) {
+      checks.push({ key: "drift", status: "unknown", detail: e.message });
+    }
+
+    // 4) Supabase erişimi + 5) son hydrate (boot state)
+    checks.push({
+      key: "supabase",
+      status: bootState.supabase === "ok" ? "ok" : bootState.supabase === "pending" ? "warn" : "down",
+      detail: `durum: ${bootState.supabase}`,
+    });
+    checks.push({
+      key: "hydrate",
+      status: bootState.hydrate === "ok" ? "ok" : bootState.hydrate === "pending" ? "warn" : "down",
+      at: bootState.finishedAt,
+      detail: `durum: ${bootState.hydrate}`,
+    });
+
+    // 6) Audit zinciri
+    try {
+      const chain = verifyAuditChain();
+      checks.push({
+        key: "auditChain",
+        status: chain.ok === true ? "ok" : chain.ok === false ? "down" : "unknown",
+        detail: chain.ok === true ? `${chain.checked} satır doğrulandı` : chain.reason || "doğrulanamadı",
+      });
+    } catch (e) {
+      checks.push({ key: "auditChain", status: "unknown", detail: e.message });
+    }
+
+    // 7) Migration durumu
+    try {
+      const mig = await getMigrationStatus();
+      checks.push({
+        key: "migrations",
+        status: mig.status,
+        detail:
+          mig.status === "ok"
+            ? `${mig.applied}/${mig.total} uygulandı`
+            : mig.status === "warn"
+              ? `${mig.pending.length} bekliyor: ${mig.pending.join(", ")}`
+              : mig.error || "durum bilinmiyor",
+      });
+    } catch (e) {
+      checks.push({ key: "migrations", status: "unknown", detail: e.message });
+    }
+
+    // 8) Yaklaşan abonelik bitişleri (bilgi amaçlı — problem değil)
+    {
+      const expiring = listExpiringSubscriptions(7);
+      checks.push({
+        key: "expiring",
+        status: "ok",
+        detail: `${expiring.length} abonelik 7 gün içinde bitiyor`,
+      });
+    }
+
+    const rank = { down: 3, unknown: 2, warn: 1, ok: 0 };
+    const worst = checks.reduce(
+      (acc, c) => (rank[c.status] > rank[acc] ? c.status : acc),
+      "ok"
+    );
+    const overall = worst === "down" ? "down" : worst === "warn" || worst === "unknown" ? "warn" : "ok";
+
+    return res.json({ overall, checks, generatedAt: new Date().toISOString() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Durum özeti alınamadı." });
+  }
+});
+
+/** S-M4: audit zinciri bütünlük doğrulaması. */
+app.get("/api/admin/audit-verify", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json(verifyAuditChain());
+  } catch (err) {
+    return res.status(500).json({ error: "Zincir doğrulanamadı." });
+  }
+});
+
+/**
+ * B-M1: Süper admin elle yeniden hydrate tetikler (Supabase → SQLite).
+ * Supabase boot'ta erişilemedi ve pano boş kaldıysa kullanılır.
+ */
+let rehydrateInFlight = null;
+app.post("/api/admin/rehydrate", requireSuperAdmin, async (req, res) => {
+  try {
+    if (rehydrateInFlight) {
+      return res.status(202).json({ ok: false, message: "Yeniden hydrate zaten sürüyor." });
+    }
+    rehydrateInFlight = runHydrateOnce().finally(() => {
+      rehydrateInFlight = null;
+    });
+    const result = await rehydrateInFlight;
+    bootState.hydrate = result.ok ? "ok" : "failed";
+    if (result.ok) seedPreviousRatesFromDisk();
+    await recordAudit({
+      action: "admin_rehydrate",
+      actor: req.user?.username || "superadmin",
+      detail: `Yeniden hydrate (ok=${result.ok}, institutions=${result.institutions}, payments=${result.payments}, marginHistory=${result.marginHistory})`,
+    });
+    return res.json({ ok: result.ok, result });
+  } catch (err) {
+    console.error("[REHYDRATE]", err.message);
+    return res.status(500).json({ ok: false, error: "Yeniden hydrate başarısız." });
   }
 });
 
@@ -2103,7 +2841,7 @@ app.delete("/api/admin/branches/:id", requireSuperAdmin, async (req, res) => {
       institution_id: before?.institution_id || null,
       institution_name: null,
       detail: `Şube silindi: "${before?.name || "?"}" (id=${id})`,
-    });
+    }, { strict: true });
     return res.json(result);
   } catch (err) {
     const status = err.message === "Şube bulunamadı." ? 404 : 400;
@@ -2158,8 +2896,8 @@ function buildCurrencyPayload(institutionId, institutionName) {
     const buyAdj = adjustments[buyKey] || { margin_type: "fixed", margin_value: 0 };
     const sellAdj = adjustments[sellKey] || { margin_type: "fixed", margin_value: 0 };
     const ordered = enforceSellGteBuy(
-      applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type),
-      applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type)
+      applyMarginToValue(kur.buy, buyAdj.margin_value, buyAdj.margin_type, "buy"),
+      applyMarginToValue(kur.sell, sellAdj.margin_value, sellAdj.margin_type, "sell")
     );
 
     result.push({
@@ -2200,7 +2938,6 @@ app.get("/api/admin/rates", requireAuth, (req, res) => {
     res.status(500).json({
       success: false,
       error: "Admin kurları alınamadı.",
-      details: error.message,
     });
   }
 });
@@ -2237,8 +2974,8 @@ app.put("/api/admin/rates", requireAuth, requireWritableBusiness, async (req, re
       // İş kuralı (project_audit_report.md §1.2): finalSell >= finalBuy
       const kur = cachedRates.centralBankRates?.[currency];
       if (kur) {
-        const finalBuy = applyMarginToValue(kur.buy, buyMarginValue, buyMarginType);
-        const finalSell = applyMarginToValue(kur.sell, sellMarginValue, sellMarginType);
+        const finalBuy = applyMarginToValue(kur.buy, buyMarginValue, buyMarginType, "buy");
+        const finalSell = applyMarginToValue(kur.sell, sellMarginValue, sellMarginType, "sell");
         if (
           finalBuy != null &&
           finalSell != null &&
@@ -2356,6 +3093,8 @@ app.put("/api/admin/plans/:code", requireSuperAdmin, async (req, res) => {
       kdv_orani: req.body?.kdv_orani,
       aktif: req.body?.aktif,
     });
+    // B-H1: plan fiyat/süre değişikliği kalıcı — Supabase'e yansıt.
+    await syncPlanUpsert(plan);
     await recordAudit({
       action: "plan_update",
       actor: req.user?.username || "superadmin",
@@ -2379,9 +3118,84 @@ app.get("/api/admin/payments", requireSuperAdmin, (req, res) => {
         limit: req.query?.limit,
       }),
       summary: getRevenueSummary(),
+      analytics: getRevenueAnalytics(),
     });
   } catch (err) {
     return res.status(500).json({ error: err.message || "Tahsilat dökümü alınamadı." });
+  }
+});
+
+/** Super Admin: indirim kodları — liste. */
+app.get("/api/admin/discount-codes", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json({ codes: listDiscountCodes() });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "İndirim kodları alınamadı." });
+  }
+});
+
+/** Super Admin: indirim kodunu bir tutara karşı ön-değerlendir (form önizleme). */
+app.get("/api/admin/discount-codes/:code/preview", requireSuperAdmin, (req, res) => {
+  try {
+    const base = Number(req.query?.amount) || 0;
+    return res.json(evaluateDiscountCode(req.params.code, base));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Değerlendirilemedi." });
+  }
+});
+
+/** Super Admin: indirim kodu oluştur. */
+app.post("/api/admin/discount-codes", requireSuperAdmin, async (req, res) => {
+  try {
+    const code = createDiscountCode({
+      code: req.body?.code,
+      tur: req.body?.tur,
+      deger: req.body?.deger,
+      para_birimi: req.body?.para_birimi,
+      max_kullanim: req.body?.max_kullanim,
+      gecerlilik_bitis: req.body?.gecerlilik_bitis,
+      aciklama: req.body?.aciklama,
+    });
+    await recordAudit({
+      action: "discount_code_create",
+      actor: req.user?.username || "superadmin",
+      detail: `İndirim kodu: ${code.code} (${code.tur} ${code.deger})`,
+    });
+    return res.status(201).json({ code });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "İndirim kodu oluşturulamadı." });
+  }
+});
+
+/** Super Admin: indirim kodu aktif/pasif. */
+app.patch("/api/admin/discount-codes/:code", requireSuperAdmin, async (req, res) => {
+  try {
+    const code = setDiscountCodeActive(req.params.code, !!req.body?.aktif);
+    await recordAudit({
+      action: "discount_code_update",
+      actor: req.user?.username || "superadmin",
+      detail: `İndirim kodu ${code.code} → ${code.aktif ? "aktif" : "pasif"}`,
+    });
+    return res.json({ code });
+  } catch (err) {
+    const status = err.message === "Kod bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "İndirim kodu güncellenemedi." });
+  }
+});
+
+/** Super Admin: indirim kodu sil. */
+app.delete("/api/admin/discount-codes/:code", requireSuperAdmin, async (req, res) => {
+  try {
+    const result = deleteDiscountCode(req.params.code);
+    await recordAudit({
+      action: "discount_code_delete",
+      actor: req.user?.username || "superadmin",
+      detail: `İndirim kodu silindi: ${result.code}`,
+    });
+    return res.json(result);
+  } catch (err) {
+    const status = err.message === "Kod bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "İndirim kodu silinemedi." });
   }
 });
 
@@ -2401,28 +3215,60 @@ app.post("/api/admin/payments", requireSuperAdmin, async (req, res) => {
       fatura_no: req.body?.fatura_no,
       aciklama: req.body?.aciklama,
       olusturan: req.user?.username || "superadmin",
+      discount_code: req.body?.discount_code,
     });
+    // B-H1: gelir defteri kalıcı — Supabase'e yansıt.
+    const paySynced = await syncPaymentUpsert(payment);
+    if (!paySynced) {
+      console.error(`[ADMIN] Tahsilat SQLite'a yazıldı ama Supabase sync başarısız: id=${payment.id}`);
+    }
     await recordAudit({
       action: "payment_create",
       actor: req.user?.username || "superadmin",
       institution_id: payment.institution_id,
       detail: `Tahsilat kaydedildi: ${payment.tutar} ₺ (${payment.plan_code}), dönem ${payment.donem_baslangic} → ${payment.donem_bitis}`,
-    });
+    }, { strict: true });
+
+    // P1.6 — makbuz e-postası (yalnızca ödenmiş kayıtta; hata yutulur).
+    if (payment.durum === "odendi" && isMailConfigured()) {
+      try {
+        const biz = getInstitutionFullBySlug(payment.institution_id);
+        if (biz?.email) {
+          const plan = listPlans().find((p) => p.code === payment.plan_code);
+          sendPaymentReceiptEmail({
+            to: biz.email,
+            institutionName: biz.institution_name,
+            planName: plan?.ad,
+            planCode: payment.plan_code,
+            amount: payment.tutar,
+            vat: payment.kdv,
+            periodStart: payment.donem_baslangic,
+            periodEnd: payment.donem_bitis,
+            invoiceNo: payment.fatura_no,
+            method: payment.yontem,
+            paidAt: payment.odeme_tarihi,
+          }).catch((e) => console.warn("[EMAIL] makbuz gönderilemedi:", e.message));
+        }
+      } catch (mailErr) {
+        console.warn("[EMAIL] makbuz e-postası hazırlanamadı:", mailErr.message);
+      }
+    }
     return res.status(201).json({ payment });
   } catch (err) {
-    return res.status(400).json({ error: err.message || "Tahsilat kaydedilemedi." });
+    return res.status(400).json({ error: clientErrorMessage(err, "Tahsilat kaydedilemedi.") });
   }
 });
 
 app.delete("/api/admin/payments/:id", requireSuperAdmin, async (req, res) => {
   try {
     const result = deletePayment(req.params.id);
+    if (result.payment) await syncPaymentDelete(result.payment);
     await recordAudit({
       action: "payment_delete",
       actor: req.user?.username || "superadmin",
       institution_id: result.payment?.institution_id || null,
       detail: `Tahsilat silindi (id=${req.params.id}, ${result.payment?.tutar} ₺)`,
-    });
+    }, { strict: true });
     return res.json(result);
   } catch (err) {
     const status = err.message === "Ödeme bulunamadı." ? 404 : 400;
@@ -2503,6 +3349,623 @@ app.get("/api/business/subscription", requireAuth, (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------------ */
+/* P3.6 — self-servis ödeme / dekont (B5)                              */
+/* ------------------------------------------------------------------ */
+
+/** Havale bilgileri — env ile geçersiz kılınabilir, aksi halde yer tutucu. */
+function getBankTransferInfo() {
+  return {
+    account_name: process.env.BANK_ACCOUNT_NAME || "AdaDöviz",
+    bank_name: process.env.BANK_NAME || "",
+    iban: process.env.BANK_IBAN || "",
+    branch: process.env.BANK_BRANCH || "",
+    note:
+      process.env.BANK_TRANSFER_NOTE ||
+      "Açıklamaya işletme adınızı ve seçtiğiniz paketi yazın. Havale sonrası dekontu yükleyin.",
+  };
+}
+
+/** İşletme: havale bilgileri + aktif paketler. */
+app.get("/api/business/bank-details", requireAuth, (req, res) => {
+  if (req.user?.role === "superadmin") {
+    return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+  }
+  return res.json({
+    bank: getBankTransferInfo(),
+    plans: listPlans({ onlyActive: true }),
+  });
+});
+
+/** İşletme: kendi dekontlarını listele. */
+app.get("/api/business/payment-proofs", requireAuth, (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    return res.json({
+      proofs: listPaymentProofs({ institution_id: req.user.institution_id, limit: 30 }),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Dekontlar alınamadı." });
+  }
+});
+
+/** İşletme: yenile / yükselt için havale dekontu yükle. */
+app.post("/api/business/payment-proofs", requireAuth, paymentProofLimiter, async (req, res) => {
+  try {
+    if (req.user?.role === "superadmin") {
+      return res.status(403).json({ error: "Yalnızca işletme hesapları." });
+    }
+    // Not: süresi dolmuş (pasif) işletme de dekont yükleyebilir —
+    // auth.js INACTIVE_WRITE_ALLOW bu yolu yazmaya açar.
+    const proof = createPaymentProof({
+      institution_id: req.user.institution_id,
+      plan_code: req.body?.plan_code,
+      amount: req.body?.amount,
+      method: req.body?.method || "havale",
+      note: req.body?.note,
+      proof_image: req.body?.proof_image,
+    });
+
+    createAdminNotification({
+      type: "payment_proof",
+      title: "Yeni ödeme dekontu",
+      message: `${req.user.institution_name} "${proof.plan_code}" paketi için dekont yükledi. İncelemenizi bekliyor.`,
+      data: { proof_id: proof.id, institution_id: req.user.institution_id },
+    });
+
+    if (isMailConfigured()) {
+      sendGenericNotificationEmail({
+        to: process.env.PARTNERSHIP_TO_EMAIL || process.env.GMAIL_USER,
+        title: "Yeni ödeme dekontu bekliyor",
+        message: `${req.user.institution_name} (${req.user.institution_id}) "${proof.plan_code}" paketi için dekont yükledi. Süper admin panelinden inceleyin.`,
+        ctaText: "Panele git",
+        ctaUrl: `${getFrontendBaseUrl()}/super-admin`,
+      }).catch((e) => console.warn("[EMAIL] dekont bildirimi:", e.message));
+    }
+
+    await recordAudit({
+      action: "payment_proof_submit",
+      actor: req.user?.username || req.user.institution_id,
+      institution_id: req.user.institution_id,
+      detail: `Dekont yüklendi: ${proof.plan_code} (id=${proof.id})`,
+    });
+
+    return res.status(201).json({ proof });
+  } catch (err) {
+    return res.status(400).json({ error: clientErrorMessage(err, "Dekont gönderilemedi.") });
+  }
+});
+
+/** Super Admin: bekleyen/tüm dekontlar (görsel hariç — liste hafif). */
+app.get("/api/admin/payment-proofs", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      proofs: listPaymentProofs({ status: req.query?.status, limit: req.query?.limit }),
+      pending: countPendingPaymentProofs(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Dekontlar alınamadı." });
+  }
+});
+
+/** Super Admin: tek dekont + görsel. */
+app.get("/api/admin/payment-proofs/:id", requireSuperAdmin, (req, res) => {
+  try {
+    const proof = getPaymentProofById(req.params.id, { includeImage: true });
+    if (!proof) return res.status(404).json({ error: "Dekont bulunamadı." });
+    return res.json({ proof });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Dekont alınamadı." });
+  }
+});
+
+/** Super Admin: dekontu ONAYLA → createPayment + abonelik uzat + makbuz. */
+app.post("/api/admin/payment-proofs/:id/approve", requireSuperAdmin, async (req, res) => {
+  try {
+    const proof = getPaymentProofById(req.params.id);
+    if (!proof) return res.status(404).json({ error: "Dekont bulunamadı." });
+    if (proof.status !== "pending") {
+      return res.status(409).json({ error: "Bu dekont zaten işlenmiş." });
+    }
+
+    const payment = createPayment({
+      institution_id: proof.institution_id,
+      plan_code: proof.plan_code,
+      tutar: proof.amount ?? undefined,
+      yontem: proof.method || "havale",
+      aciklama: `Self-servis dekont onayı (proof #${proof.id})`,
+      olusturan: req.user?.username || "superadmin",
+    });
+    await syncPaymentUpsert(payment).catch((e) =>
+      console.error("[PROOF] payment sync başarısız:", e.message)
+    );
+
+    const ext = extendSubscriptionForPlan(proof.institution_id, proof.plan_code);
+    const full = getInstitutionFullBySlug(proof.institution_id);
+    if (full) {
+      await syncInstitutionUpsert(full).catch((e) =>
+        console.warn("[PROOF] institution sync:", e.message)
+      );
+    }
+
+    updatePaymentProofStatus(proof.id, {
+      status: "approved",
+      reviewed_by: req.user?.username || "superadmin",
+      payment_id: payment.id,
+    });
+
+    if (full?.id) {
+      createBusinessNotification({
+        business_id: full.id,
+        type: "payment_approved",
+        title: "Ödemeniz onaylandı",
+        message: `"${proof.plan_code}" paketi ödemeniz onaylandı. Aboneliğiniz ${ext.added_days} gün uzatıldı.`,
+      });
+    }
+
+    if (full?.email && isMailConfigured()) {
+      const plan = listPlans().find((p) => p.code === proof.plan_code);
+      sendPaymentReceiptEmail({
+        to: full.email,
+        institutionName: full.institution_name,
+        planName: plan?.ad,
+        planCode: proof.plan_code,
+        amount: payment.tutar,
+        vat: payment.kdv,
+        periodStart: payment.donem_baslangic,
+        periodEnd: payment.donem_bitis,
+        invoiceNo: payment.fatura_no,
+        method: payment.yontem,
+        paidAt: payment.odeme_tarihi,
+      }).catch((e) => console.warn("[EMAIL] makbuz:", e.message));
+    }
+
+    await recordAudit(
+      {
+        action: "payment_proof_approve",
+        actor: req.user?.username || "superadmin",
+        institution_id: proof.institution_id,
+        detail: `Dekont #${proof.id} onaylandı → tahsilat ${payment.tutar} ₺, abonelik +${ext.added_days} gün (bitiş ${ext.subscription_end_date})`,
+      },
+      { strict: true }
+    );
+
+    return res.json({ proof: getPaymentProofById(proof.id), payment, subscription: ext });
+  } catch (err) {
+    return res.status(400).json({ error: clientErrorMessage(err, "Dekont onaylanamadı.") });
+  }
+});
+
+/** Super Admin: dekontu REDDET. */
+app.post("/api/admin/payment-proofs/:id/reject", requireSuperAdmin, async (req, res) => {
+  try {
+    const proof = getPaymentProofById(req.params.id);
+    if (!proof) return res.status(404).json({ error: "Dekont bulunamadı." });
+    if (proof.status !== "pending") {
+      return res.status(409).json({ error: "Bu dekont zaten işlenmiş." });
+    }
+    const reason = String(req.body?.reason || "").trim();
+    updatePaymentProofStatus(proof.id, {
+      status: "rejected",
+      reviewed_by: req.user?.username || "superadmin",
+      reject_reason: reason,
+    });
+
+    const full = getInstitutionFullBySlug(proof.institution_id);
+    if (full?.id) {
+      createBusinessNotification({
+        business_id: full.id,
+        type: "payment_rejected",
+        title: "Ödeme dekontu reddedildi",
+        message: reason
+          ? `Dekontunuz reddedildi: ${reason}`
+          : "Dekontunuz reddedildi. Lütfen destek ile iletişime geçin.",
+      });
+    }
+
+    await recordAudit(
+      {
+        action: "payment_proof_reject",
+        actor: req.user?.username || "superadmin",
+        institution_id: proof.institution_id,
+        detail: `Dekont #${proof.id} reddedildi${reason ? `: ${reason}` : ""}`,
+      },
+      { strict: true }
+    );
+
+    return res.json({ proof: getPaymentProofById(proof.id) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Dekont reddedilemedi." });
+  }
+});
+
+/**
+ * P3.1 — self-signup başvurusu (B1). HESAP OLUŞTURMAZ; yalnızca kuyruk kaydı.
+ * Anti-abuse: honeypot alanı (`company_website`) dolu ise sessizce başarı dön;
+ * KVKK onayı zorunlu; tekrar/çakışma kontrolü db katmanında.
+ */
+app.post("/api/signup", signupLimiter, async (req, res) => {
+  try {
+    // Honeypot: gerçek kullanıcı bu gizli alanı görmez, botlar doldurur.
+    if (String(req.body?.company_website || "").trim()) {
+      return res.status(201).json({ ok: true });
+    }
+    if (req.body?.kvkk !== true && req.body?.kvkk !== "true") {
+      return res.status(400).json({ error: "Devam etmek için KVKK aydınlatma metnini onaylayın." });
+    }
+
+    const request = createSignupRequest({
+      institution_name: req.body?.institution_name,
+      contact_person: req.body?.contact_person,
+      email: req.body?.email,
+      phone: req.body?.phone,
+      city: req.body?.city,
+      current_rate_info: req.body?.current_rate_info,
+    });
+
+    try {
+      createAdminNotification({
+        type: "signup_request",
+        title: "Yeni kayıt başvurusu",
+        message: `${request.institution_name} — ${request.contact_person} (${request.email})`,
+        data: { signup_request_id: request.id },
+      });
+    } catch (nerr) {
+      console.warn("[SIGNUP] bildirim oluşturulamadı:", nerr.message);
+    }
+
+    if (isMailConfigured()) {
+      sendSignupReceivedEmail({
+        to: request.email,
+        institutionName: request.institution_name,
+        contactPerson: request.contact_person,
+      }).catch((e) => console.warn("[SIGNUP] alındı e-postası gönderilemedi:", e.message));
+    }
+
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Başvuru gönderilemedi." });
+  }
+});
+
+/** Super Admin: kayıt başvuruları kuyruğu. */
+app.get("/api/admin/signup-requests", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      requests: listSignupRequests({ status: req.query?.status, limit: req.query?.limit }),
+      pending: countPendingSignupRequests(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Başvurular alınamadı." });
+  }
+});
+
+/**
+ * P3.4 — Lead CRM (S5): signup_requests + partnership_applications birleşik.
+ */
+app.get("/api/admin/leads", requireSuperAdmin, (req, res) => {
+  try {
+    return res.json({
+      leads: listLeads({ status: req.query?.status, limit: req.query?.limit }),
+      stats: getLeadCrmStats(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Lead listesi alınamadı." });
+  }
+});
+
+app.patch("/api/admin/leads/:source/:id", requireSuperAdmin, async (req, res) => {
+  try {
+    const meta = upsertLeadMeta({
+      source: req.params.source,
+      source_id: req.params.id,
+      status: req.body?.status,
+      note: req.body?.note,
+      reminder_date: req.body?.reminder_date,
+      assignee: req.body?.assignee,
+      updated_by: req.user?.username || "superadmin",
+    });
+    await recordAudit({
+      action: "lead_update",
+      actor: req.user?.username || "superadmin",
+      detail: `Lead ${req.params.source}#${req.params.id} → ${meta.status}${
+        meta.reminder_date ? ` (hatırlatma ${meta.reminder_date})` : ""
+      }`,
+    });
+    return res.json({ meta });
+  } catch (err) {
+    const status = err.message === "Lead bulunamadı." ? 404 : 400;
+    return res.status(status).json({ error: err.message || "Lead güncellenemedi." });
+  }
+});
+
+/** P3.4 — talep analitiği (S6): eşleşmeyen aramalar + talep kırılımı + huni. */
+app.get("/api/admin/demand", requireSuperAdmin, (req, res) => {
+  try {
+    const days = Number(req.query?.days) || 30;
+    return res.json({
+      searchMisses: getSearchMissStats({ days }),
+      demand: getDemandAnalytics({ days }),
+      funnel: getLeadFunnel(),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Talep analitiği alınamadı." });
+  }
+});
+
+/**
+ * Super Admin: başvuruyu ONAYLA → createBusiness + parola-belirleme linki
+ * (reset token akışı yeniden kullanılır). Audit strict.
+ */
+app.post("/api/admin/signup-requests/:id/approve", requireSuperAdmin, async (req, res) => {
+  try {
+    const request = getSignupRequestById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Başvuru bulunamadı." });
+    if (request.status !== "pending") {
+      return res.status(409).json({ error: "Bu başvuru zaten sonuçlandırılmış." });
+    }
+
+    const emailLocal = String(request.email).split("@")[0] || "";
+    const username =
+      String(req.body?.username || "").trim() ||
+      `${emailLocal}`.replace(/[^a-zA-Z0-9_.-]/g, "").slice(0, 40) ||
+      `biz${request.id}`;
+
+    // Rastgele geçici parola — kullanıcı e-postadaki linkle kendi parolasını belirler.
+    const tempPassword = crypto.randomBytes(24).toString("hex");
+
+    const business = createBusiness({
+      username,
+      password: tempPassword,
+      institution_name: request.institution_name,
+      contact_person: request.contact_person,
+      email: request.email,
+      subscription_type: req.body?.subscription_type || "Test",
+      remaining_days: req.body?.remaining_days,
+      branch_limit: req.body?.branch_limit,
+      is_active: true,
+    });
+
+    const full = getInstitutionFullById(business.id);
+    if (full) {
+      const synced = await syncInstitutionUpsert(full);
+      if (!synced) {
+        console.error(
+          `[SIGNUP] İşletme SQLite'a yazıldı ama Supabase sync başarısız: ${full.institution_id}`
+        );
+      }
+    }
+
+    // Parola belirleme linki (forgot-password ile aynı token akışı).
+    let setPasswordUrl = null;
+    try {
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+      createPasswordResetToken({
+        institutionId: business.id,
+        email: request.email,
+        token,
+        expiresAt,
+      });
+      await syncPasswordReset({
+        institution_id: business.id,
+        institution_slug: business.institution_id,
+        email: request.email,
+        token: hashResetToken(token),
+        expires_at: expiresAt,
+        used: false,
+      });
+      setPasswordUrl = `${getFrontendBaseUrl()}/reset-password?token=${token}`;
+    } catch (terr) {
+      console.warn("[SIGNUP] parola belirleme linki üretilemedi:", terr.message);
+    }
+
+    updateSignupRequestStatus(request.id, {
+      status: "approved",
+      reviewed_by: req.user?.username || "superadmin",
+      created_business_id: business.id,
+    });
+
+    await recordAudit(
+      {
+        action: "signup_approved",
+        actor: req.user?.username || "superadmin",
+        institution_id: business.institution_id || null,
+        institution_name: business.institution_name || null,
+        detail: `Kayıt başvurusu onaylandı (#${request.id}, paket=${business.subscription_type || "Test"}, şube limiti=${business.branch_limit ?? 1})`,
+      },
+      { strict: true }
+    );
+
+    if (isMailConfigured()) {
+      sendSignupApprovedEmail({
+        to: request.email,
+        institutionName: business.institution_name,
+        setPasswordUrl,
+      }).catch((e) => console.warn("[SIGNUP] onay e-postası gönderilemedi:", e.message));
+    }
+
+    return res.status(201).json({ business, setPasswordUrl });
+  } catch (err) {
+    return res.status(400).json({ error: clientErrorMessage(err, "Başvuru onaylanamadı.") });
+  }
+});
+
+/** Super Admin: başvuruyu REDDET (sebep + e-posta). Audit strict. */
+app.post("/api/admin/signup-requests/:id/reject", requireSuperAdmin, async (req, res) => {
+  try {
+    const request = getSignupRequestById(req.params.id);
+    if (!request) return res.status(404).json({ error: "Başvuru bulunamadı." });
+    if (request.status !== "pending") {
+      return res.status(409).json({ error: "Bu başvuru zaten sonuçlandırılmış." });
+    }
+    const reason = String(req.body?.reason || "").trim();
+
+    updateSignupRequestStatus(request.id, {
+      status: "rejected",
+      reject_reason: reason,
+      reviewed_by: req.user?.username || "superadmin",
+    });
+
+    await recordAudit(
+      {
+        action: "signup_rejected",
+        actor: req.user?.username || "superadmin",
+        institution_name: request.institution_name || null,
+        detail: `Kayıt başvurusu reddedildi (#${request.id})${reason ? ` — ${reason}` : ""}`,
+      },
+      { strict: true }
+    );
+
+    if (isMailConfigured()) {
+      sendSignupRejectedEmail({
+        to: request.email,
+        institutionName: request.institution_name,
+        reason,
+      }).catch((e) => console.warn("[SIGNUP] ret e-postası gönderilemedi:", e.message));
+    }
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Başvuru reddedilemedi." });
+  }
+});
+
+// -------------------------------------------------------------------------
+// P3.2 — kur alarmları (C3). Public çift-opt-in + token'lı yönetim.
+// -------------------------------------------------------------------------
+
+function publicAlertView(a) {
+  if (!a) return null;
+  const { manage_token, email, ...rest } = a;
+  void manage_token;
+  void email;
+  return rest;
+}
+function maskAlertEmail(e) {
+  const [l, d] = String(e || "").split("@");
+  return (l ? l.slice(0, 1) + "***" : "***") + (d ? "@" + d : "");
+}
+
+/** Public: alarm kur (verified=0) → doğrulama e-postası. */
+app.post("/api/rate-alerts", rateAlertLimiter, async (req, res) => {
+  try {
+    if (String(req.body?.company_website || "").trim()) {
+      return res.status(201).json({ ok: true }); // honeypot
+    }
+    if (req.body?.kvkk !== true && req.body?.kvkk !== "true") {
+      return res
+        .status(400)
+        .json({ error: "Devam etmek için KVKK aydınlatma metnini onaylayın." });
+    }
+    const { alert, reused } = createRateAlert({
+      email: req.body?.email,
+      currency: req.body?.currency,
+      side: req.body?.side,
+      direction: req.body?.direction,
+      threshold: req.body?.threshold,
+    });
+
+    if (!alert.verified && isMailConfigured()) {
+      const base = getFrontendBaseUrl();
+      sendRateAlertVerifyEmail({
+        to: alert.email,
+        currency: alert.currency,
+        side: alert.side,
+        direction: alert.direction,
+        threshold: alert.threshold,
+        verifyUrl: `${base}/alarm/${alert.manage_token}?v=1`,
+        manageUrl: `${base}/alarm/${alert.manage_token}`,
+      }).catch((e) =>
+        console.warn("[RATE-ALERT] doğrulama e-postası gönderilemedi:", e.message)
+      );
+    }
+    return res.status(201).json({ ok: true, alreadyVerified: alert.verified, reused });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Alarm kurulamadı." });
+  }
+});
+
+/** Public: doğrulama linki (çift-opt-in). */
+app.post("/api/rate-alerts/verify/:token", async (req, res) => {
+  try {
+    const alert = verifyRateAlert(req.params.token);
+    // Doğrulama anında bir kez değerlendir — kur zaten eşiği geçmişse hemen haber ver.
+    checkSingleAlertNow(req.params.token, cachedRates.centralBankRates).catch(() => {});
+    return res.json({ ok: true, alert: publicAlertView(alert) });
+  } catch (err) {
+    return res.status(404).json({ error: err.message || "Alarm bulunamadı." });
+  }
+});
+
+/** Public: token'lı yönetim — token'ın e-postasına ait tüm alarmlar. */
+app.get("/api/rate-alerts/manage/:token", (req, res) => {
+  try {
+    const owner = getRateAlertByToken(req.params.token);
+    if (!owner) return res.status(404).json({ error: "Alarm bulunamadı." });
+    const alerts = listRateAlertsByEmail(owner.email).map(publicAlertView);
+    return res.json({ email: maskAlertEmail(owner.email), token: req.params.token, alerts });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Alarmlar alınamadı." });
+  }
+});
+
+/** Public: alarmı aç/kapat (token yetkisi). */
+app.patch("/api/rate-alerts/:id", (req, res) => {
+  try {
+    const token = String(req.query?.token || req.body?.token || "");
+    const updated = setRateAlertActive({
+      token,
+      id: req.params.id,
+      active: req.body?.active === true || req.body?.active === "true",
+    });
+    return res.json({ ok: true, alert: publicAlertView(updated) });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Güncellenemedi." });
+  }
+});
+
+/** Public: alarmı sil (token yetkisi). */
+app.delete("/api/rate-alerts/:id", (req, res) => {
+  try {
+    const token = String(req.query?.token || req.body?.token || "");
+    deleteRateAlert({ token, id: req.params.id });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "Silinemedi." });
+  }
+});
+
+/** Public: bu e-postanın tüm alarmlarını durdur. */
+app.post("/api/rate-alerts/unsubscribe-all", (req, res) => {
+  try {
+    const token = String(req.body?.token || req.query?.token || "");
+    return res.json(deactivateAllRateAlertsByToken(token));
+  } catch (err) {
+    return res.status(400).json({ error: err.message || "İşlem başarısız." });
+  }
+});
+
+/** Super Admin: kur alarmı değer sinyali. */
+app.get("/api/admin/rate-alerts", requireSuperAdmin, (_req, res) => {
+  try {
+    return res.json(getRateAlertStats());
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Alınamadı." });
+  }
+});
+
+/** Super Admin: manuel alarm kontrolü (test). */
+app.post("/api/admin/rate-alerts/run-check", requireSuperAdmin, async (_req, res) => {
+  try {
+    return res.json(await runRateAlertCheck(cachedRates.centralBankRates));
+  } catch (err) {
+    return res.status(500).json({ error: err.message || "Kontrol başarısız." });
+  }
+});
+
 app.post("/api/partnership-apply", partnershipLimiter, async (req, res) => {
   const { institution_name, contact_person, email, phone, message } = req.body;
 
@@ -2578,10 +4041,18 @@ app.get("/api/historical-rates", async (req, res) => {
       return res.status(400).json({ error: "Geçersiz para birimi. 'USD', 'EUR', 'GBP' olabilir." });
     }
 
+    // B-M3: normal render periyodun `fetchHours` derinliğiyle sınırlıdır; derin
+    // arşiv yalnızca açık ?from=&to= ile gelir (sol ok navigasyonu).
+    const fromParam = req.query.from ? String(req.query.from) : null;
+    const toParam = req.query.to ? String(req.query.to) : null;
+    const rangeOpts = {};
+    if (fromParam && !Number.isNaN(Date.parse(fromParam))) rangeOpts.from = fromParam;
+    if (toParam && !Number.isNaN(Date.parse(toParam))) rangeOpts.to = toParam;
+
     // Kalıcı kaynak: Supabase. Boş/hatalıysa SQLite yedek (lokal + geçici outage).
     let result;
     try {
-      result = await getMarketHistoricalRates(period, currency);
+      result = await getMarketHistoricalRates(period, currency, rangeOpts);
     } catch (supabaseErr) {
       console.warn("[HISTORICAL] Supabase hata, SQLite yedek:", supabaseErr.message);
       result = null;
@@ -2777,7 +4248,21 @@ app.post("/api/admin/migrate-legacy-data", requireSuperAdmin, async (req, res) =
         });
         const rows = Array.isArray(response.data?.rates) ? response.data.rates : [];
         const result = bulkInsertHistoricalRates(currency, rows);
-        summary.historicalRates[currency] = { fetched: rows.length, ...result };
+        // B-H2: SQLite ephemeral — arşivi Supabase'e de yaz (kalıcı).
+        let supa = { attempted: 0, inserted: 0 };
+        try {
+          supa = await bulkInsertSupabaseHistoricalRates(
+            rows.map((r) => ({
+              currency,
+              buy_rate: r.buy_rate,
+              sell_rate: r.sell_rate,
+              recorded_at: r.recorded_at,
+            }))
+          );
+        } catch (supaErr) {
+          summary.errors.push(`${currency} (supabase): ${supaErr.message}`);
+        }
+        summary.historicalRates[currency] = { fetched: rows.length, ...result, supabase: supa };
       } catch (err) {
         summary.errors.push(`${currency}: ${err.message}`);
       }
@@ -2789,6 +4274,7 @@ app.post("/api/admin/migrate-legacy-data", requireSuperAdmin, async (req, res) =
       for (const [institutionId, adjustments] of Object.entries(margins)) {
         try {
           upsertAdjustments(institutionId, adjustments);
+          await syncRateAdjustmentsMap(institutionId, adjustments);
           summary.margins += 1;
         } catch (err) {
           summary.errors.push(`margins/${institutionId}: ${err.message}`);
@@ -2801,7 +4287,7 @@ app.post("/api/admin/migrate-legacy-data", requireSuperAdmin, async (req, res) =
     return res.json({ success: true, summary });
   } catch (error) {
     console.error("[MIGRATE-LEGACY-DATA] Hata:", error.message);
-    return res.status(500).json({ error: "Veri aktarımı başarısız.", details: error.message });
+    return res.status(500).json({ error: "Veri aktarımı başarısız." });
   }
 });
 
@@ -2831,31 +4317,65 @@ function touchRatesChangedAt(reason = "update") {
   return at;
 }
 
-function broadcastRateChange(newRates) {
-  // Değişim var mı kontrol et
-  const hasChanged = previousRates ? 
-    JSON.stringify(newRates) !== JSON.stringify(previousRates) 
-    : true; // İlk kez ise değişim var
-
-  if (!hasChanged) {
-    console.log("[SSE] Kur değişikliği yok, broadcast yapılmıyor.");
-    return;
+/**
+ * B-H3: Değişim tespiti artık TÜM nesneyi JSON.stringify ile karşılaştırmıyor
+ * (efektif alanları / obje şekli farkı her boot'ta "değişti" sanıyordu). Yalnızca
+ * alış/satış değerleri 4 ondalıkta karşılaştırılır ve `previousRates` bu sade
+ * biçimde (kalıcı depo ile aynı şekil) tutulur.
+ */
+function normalizeRatePairs(rates) {
+  const out = {};
+  for (const cur of ["USD", "EUR", "GBP"]) {
+    const r = rates?.[cur];
+    if (!r) continue;
+    out[cur] = { buy: Number(r.buy), sell: Number(r.sell) };
   }
+  return out;
+}
+function ratesMateriallyChanged(newRates, prevPairs) {
+  if (!prevPairs || Object.keys(prevPairs).length === 0) return true;
+  const fx = (n) => Number(n).toFixed(4);
+  for (const cur of ["USD", "EUR", "GBP"]) {
+    const a = newRates?.[cur];
+    const b = prevPairs?.[cur];
+    if (!a || !b) return true;
+    if (fx(a.buy) !== fx(b.buy) || fx(a.sell) !== fx(b.sell)) return true;
+  }
+  return false;
+}
 
-  console.log("[SSE] ✅ Kur değişikliği YAKALAND! Tüm istemcilere yayınlanıyor...");
+/**
+ * S-M3 / B-M5: Mantık bandı kontrolü — yeni bültenin USD orta kuru son kabul
+ * edilen değerden %`RATE_SANITY_BAND` üzerinde saparsa bülten REDDEDİLİR
+ * (MITM sahte kur enjeksiyonuna karşı). İlk bültende (prev yok) geçer.
+ */
+const RATE_SANITY_BAND = Number(process.env.RATE_SANITY_BAND || 0.15);
+function passesSanityBand(newRates, prevPairs) {
+  const prevUsd = prevPairs?.USD;
+  const newUsd = newRates?.USD;
+  if (!prevUsd || !newUsd) return { ok: true };
+  const prevMid = (Number(prevUsd.buy) + Number(prevUsd.sell)) / 2;
+  const newMid = (Number(newUsd.buy) + Number(newUsd.sell)) / 2;
+  if (!(prevMid > 0) || !(newMid > 0)) return { ok: true };
+  const drift = Math.abs(newMid - prevMid) / prevMid;
+  if (drift > RATE_SANITY_BAND) {
+    return {
+      ok: false,
+      reason: `USD orta kuru %${(drift * 100).toFixed(1)} saptı (eşik %${(RATE_SANITY_BAND * 100).toFixed(0)}): ${prevMid.toFixed(4)} → ${newMid.toFixed(4)}`,
+    };
+  }
+  return { ok: true };
+}
 
-  // Değişikliği tespitle önceki kurları güncelle
-  previousRates = JSON.parse(JSON.stringify(newRates));
+function broadcastRateChange(newRates) {
+  console.log("[SSE] ✅ Kur değişikliği yayınlanıyor...");
   const at = touchRatesChangedAt("central_bank");
-
-  // Tüm bağlı istemcilere gönder
   const message = {
     type: "rate_update",
     rates: newRates,
     timestamp: at,
     ratesChangedAt: at,
   };
-
   sseClients.forEach((client) => {
     try {
       client.res.write(`data: ${JSON.stringify(message)}\n\n`);
@@ -2888,6 +4408,19 @@ async function refreshRatesCacheWithChangeDetection() {
       console.warn(`[REFRESH] ⚠️  KKTC Merkez Bankası kaynağı geçici olarak erişilemedi (${central.error || "bilinmeyen"}). Bu döngüde kayıt/broadcast YAPILMIYOR.`);
       return;
     }
+    // S-M3 / B-M5: Mantık bandı — sapkın bülten (muhtemel MITM) reddedilir,
+    // kayıt/broadcast/cache güncellemesi YAPILMAZ, son geçerli cache korunur.
+    const sanity = passesSanityBand(newCentralRates, previousRates);
+    if (!sanity.ok) {
+      ratesHealth.lastErrorAt = new Date().toISOString();
+      ratesHealth.lastError = `mantık bandı reddi: ${sanity.reason}`;
+      ratesHealth.source = "sanity_rejected";
+      console.error(
+        `[REFRESH] ⛔ Bülten mantık bandı DIŞINDA — reddedildi. ${sanity.reason}`
+      );
+      return;
+    }
+
     ratesHealth.lastOkAt = new Date().toISOString();
     ratesHealth.lastError = null;
     ratesHealth.source = central.source;
@@ -2895,15 +4428,18 @@ async function refreshRatesCacheWithChangeDetection() {
     ratesHealth.bulletinNo = central.bulletinNo || null;
     ratesHealth.validRange = central.validRange || null;
 
-    // ✅ Değişim tespiti
-    const ratesChanged =
-      !!newCentralRates &&
-      JSON.stringify(newCentralRates) !== JSON.stringify(cachedRates.centralBankRates);
+    // B-H3: değişim tespiti sade alış/satış deltası üzerinden; previousRates
+    // boot'ta Supabase'ten tohumlandığı için soğuk başlangıç artık "değişti" sayılmaz.
+    const ratesChanged = ratesMateriallyChanged(newCentralRates, previousRates);
 
     if (ratesChanged) {
       console.log("[REFRESH] ✅ Merkez Bankası kurlarında DEĞIŞIM TESPIT EDİLDİ!");
-      
-      // Gerçek verileri geçmiş tablosuna kaydet
+
+      // Impr-3 / B-H3: her iki depoya AYNI olay için AYNI UTC ISO damgası.
+      // Damga bültenin kendi tarihine sabitlenir (redeploy'lar aynı bülteni
+      // tekrar yazmaya çalışırsa unique index sessizce atar).
+      const recordedAt = central.updatedAt || central.fetchedAt || new Date().toISOString();
+
       const historicalData = [];
       for (const [currency, data] of Object.entries(newCentralRates)) {
         if (data.buy && data.sell) {
@@ -2915,22 +4451,18 @@ async function refreshRatesCacheWithChangeDetection() {
         }
       }
       if (historicalData.length > 0) {
-        // Record to SQLite (legacy)
-        recordHistoricalRates(historicalData);
-        
-        // Also save to Supabase
-        const now = new Date().toISOString();
+        recordHistoricalRates(historicalData, recordedAt);
         for (const data of historicalData) {
           try {
-            await insertHistoricalRate(data.currency, data.buy_rate, data.sell_rate, now);
+            await insertHistoricalRate(data.currency, data.buy_rate, data.sell_rate, recordedAt);
           } catch (err) {
             console.error(`[SUPABASE] Kur kaydetme hatası (${data.currency}):`, err.message);
           }
         }
-        console.log(`[HISTORICAL] ${historicalData.length} kur kaydedildi (SQLite + Supabase).`);
+        console.log(`[HISTORICAL] ${historicalData.length} kur kaydedildi @ ${recordedAt} (SQLite + Supabase).`);
       }
 
-      // SSE ile tüm istemcilere broadcast et (ratesChangedAt burada da güncellenir)
+      previousRates = normalizeRatePairs(newCentralRates);
       broadcastRateChange(newCentralRates);
     } else {
       console.log("[REFRESH] Merkez Bankası kurlarında değişim yok.");
@@ -2955,6 +4487,12 @@ async function refreshRatesCacheWithChangeDetection() {
     };
 
     console.log(`[SCRAPER] ✅ Cache güncellendi — totalBanks=${cachedRates.totalBanks}, MB=${cachedRates.centralBankUpdatedAt}, changedAt=${cachedRates.ratesChangedAt}`);
+
+    // P3.2: her başarılı güncellemeden sonra kur alarmlarını kontrol et.
+    // Fire-and-forget — alarm job'ı kur akışını asla bloklamaz/bozmaz.
+    runRateAlertCheck(newCentralRates).catch((err) =>
+      console.warn("[REFRESH] rateAlert kontrolü hatası:", err.message)
+    );
   } catch (error) {
     ratesHealth.lastErrorAt = new Date().toISOString();
     ratesHealth.lastError = error.message;
@@ -2987,9 +4525,120 @@ let bootState = {
   finishedAt: null,
 };
 
+/** Tüm hydrate apply fonksiyonları — hem boot hem /api/admin/rehydrate kullanır. */
+const HYDRATE_APPLY_FNS = {
+  upsertInstitutionRow: applySupabaseInstitutionRow,
+  upsertAdjustmentRow: applySupabaseAdjustmentRow,
+  upsertBranchRow: applySupabaseBranchRow,
+  upsertBranchRequestRow: applySupabaseBranchRequestRow,
+  upsertAuditRow: applySupabaseAuditRow,
+  upsertMarginHistoryRow: applySupabaseMarginHistoryRow,
+  applyHistoricalRatesRows: applySupabaseHistoricalRatesRows,
+  upsertPlanRow: applySupabasePlanRow,
+  upsertPaymentRow: applySupabasePaymentRow,
+  replaceAllBranches: replaceBusinessBranchesFromSupabase,
+};
+
+async function runHydrateOnce() {
+  const result = await hydrateAdminDataFromSupabase(HYDRATE_APPLY_FNS);
+  purgeOrphanBranches();
+  return result;
+}
+
+/**
+ * B-M1: Supabase boot'ta erişilemezse pano süresiz boş kalıyordu. Hydrate en az
+ * BİR KEZ başarılı olana dek artan gecikmeyle (max ~5 dk) yeniden dener.
+ */
+let hydrateRetryActive = false;
+async function hydrateWithRetry() {
+  if (hydrateRetryActive) return;
+  hydrateRetryActive = true;
+  const delays = [5000, 15000, 30000, 60000, 120000, 300000];
+  let attempt = 0;
+  try {
+    while (true) {
+      try {
+        const r = await runHydrateOnce();
+        if (r.ok) {
+          bootState.hydrate = "ok";
+          console.log(
+            `[BOOT] Hydrate başarılı (deneme ${attempt + 1}) — institutions=${r.institutions}, ` +
+              `marginHistory=${r.marginHistory}, historicalRates=${r.historicalRates}, payments=${r.payments}.`
+          );
+          // B-H3: previousRates'i taze hydrate edilmiş SQLite'tan da tazele.
+          seedPreviousRatesFromDisk();
+          return r;
+        }
+        bootState.hydrate = "failed";
+        console.warn(`[BOOT] Hydrate ok=false (deneme ${attempt + 1}) — yeniden denenecek.`);
+      } catch (err) {
+        bootState.hydrate = "failed";
+        console.warn(`[BOOT] Hydrate hatası (deneme ${attempt + 1}): ${err.message}`);
+      }
+      const wait = delays[Math.min(attempt, delays.length - 1)];
+      attempt += 1;
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  } finally {
+    hydrateRetryActive = false;
+  }
+}
+
+/**
+ * S-C3: RLS self-check. Anon/publishable anahtarla institutions okunabiliyorsa
+ * RLS kilidi uygulanmamış demektir — CRITICAL logla ve (ALLOW_OPEN_RLS=1 yoksa)
+ * süreci sonlandır.
+ */
+async function supabaseRlsSelfCheck() {
+  const key = String(process.env.SUPABASE_KEY || "");
+  const looksNonService =
+    key.startsWith("sb_publishable_") || /anon|publishable/i.test(key);
+
+  if (looksNonService) {
+    console.error(
+      "[SECURITY][CRITICAL] SUPABASE_KEY publishable/anon görünüyor. Backend service_role " +
+        "anahtarı kullanmalı; aksi halde RLS bypass edilemez ve veri dünyaya açık olabilir."
+    );
+    if (process.env.ALLOW_INSECURE_SUPABASE_KEY !== "1") {
+      console.error("[SECURITY][CRITICAL] Başlatma reddedildi. (Geçici bypass: ALLOW_INSECURE_SUPABASE_KEY=1)");
+      process.exit(1);
+    }
+  }
+
+  const anonKey = process.env.SUPABASE_ANON_KEY || (looksNonService ? key : null);
+  if (!anonKey || !process.env.SUPABASE_URL) {
+    console.log("[SECURITY] RLS self-check atlandı (probe için anon anahtar yok).");
+    return;
+  }
+  try {
+    const { createClient } = require("@supabase/supabase-js");
+    const probe = createClient(process.env.SUPABASE_URL, anonKey);
+    const { data, error } = await probe
+      .from("institutions")
+      .select("institution_id")
+      .limit(1);
+    if (!error && Array.isArray(data) && data.length > 0) {
+      console.error(
+        "[SECURITY][CRITICAL] Anon/publishable anahtarla institutions OKUNABİLİYOR — " +
+          "RLS kilidi UYGULANMAMIŞ. backend/supabase_rls_lockdown.sql çalıştırın."
+      );
+      if (process.env.ALLOW_OPEN_RLS !== "1") {
+        console.error("[SECURITY][CRITICAL] Başlatma reddedildi. (Geçici bypass: ALLOW_OPEN_RLS=1)");
+        process.exit(1);
+      }
+    } else {
+      console.log("[SECURITY] ✅ Supabase RLS self-check OK (anon institutions okuması engelli).");
+    }
+  } catch (err) {
+    console.warn("[SECURITY] RLS self-check çalıştırılamadı:", err.message);
+  }
+}
+
 /** Supabase hydrate + seed — app.listen() sonrası arka planda çalışır. */
 async function bootstrapPersistence() {
   try {
+    await supabaseRlsSelfCheck();
+
     const supabaseState = await checkSupabaseHasInstitutions();
     const isFreshInstall = supabaseState.ok && !supabaseState.hasInstitutions;
     bootState.supabase = supabaseState.ok ? "ok" : "unreachable";
@@ -3009,19 +4658,15 @@ async function bootstrapPersistence() {
 
     let hydrateResult = { ok: false, institutions: 0, adjustments: 0, branches: 0 };
     try {
-      hydrateResult = await hydrateAdminDataFromSupabase({
-        upsertInstitutionRow: applySupabaseInstitutionRow,
-        upsertAdjustmentRow: applySupabaseAdjustmentRow,
-        upsertBranchRow: applySupabaseBranchRow,
-        upsertBranchRequestRow: applySupabaseBranchRequestRow,
-        upsertAuditRow: applySupabaseAuditRow,
-        replaceAllBranches: replaceBusinessBranchesFromSupabase,
-      });
-      purgeOrphanBranches();
+      hydrateResult = await runHydrateOnce();
       bootState.hydrate = hydrateResult.ok ? "ok" : "failed";
     } catch (err) {
       bootState.hydrate = "failed";
       console.warn("[SUPABASE-SYNC] Hydrate hatası:", err.message);
+    }
+    // B-M1: ilk hydrate başarısızsa arka planda backoff'lu yeniden dene.
+    if (!hydrateResult.ok && !isFreshInstall) {
+      hydrateWithRetry();
     }
 
     // Bootstrap (SQLite → Supabase) SADECE Supabase tamamen boşken (ilk kurulum).
@@ -3033,6 +4678,8 @@ async function bootstrapPersistence() {
           branches: listAllBranchesForSync(),
           adjustments: listAllAdjustmentsForSync(),
           branchRequests: listAllBranchRequestsForSync(),
+          plans: listPlans(),
+          payments: listAllPaymentsForSync(),
         });
       } catch (err) {
         console.warn("[SUPABASE-SYNC] Bootstrap hatası:", err.message);
@@ -3053,6 +4700,39 @@ async function bootstrapPersistence() {
   }
 }
 
+/** B-H3: previousRates'i SQLite historical_rates anlık görüntüsünden tohumla. */
+function seedPreviousRatesFromDisk() {
+  try {
+    const restored = getLatestHistoricalRatesSnapshot();
+    if (restored?.rates && Object.keys(restored.rates).length > 0) {
+      previousRates = restored.rates;
+      if (!cachedRates.ratesChangedAt) cachedRates.ratesChangedAt = restored.recordedAt || null;
+      return true;
+    }
+  } catch (err) {
+    console.warn("[BOOT] previousRates disk tohumu başarısız:", err.message);
+  }
+  return false;
+}
+
+/** B-H3: previousRates'i Supabase'in son kur satırlarından tohumla (birincil). */
+async function seedPreviousRatesFromSupabase() {
+  try {
+    const snap = await getLatestSupabaseRatesSnapshot();
+    if (snap?.rates && Object.keys(snap.rates).length > 0) {
+      previousRates = snap.rates;
+      if (snap.recordedAt) cachedRates.ratesChangedAt = snap.recordedAt;
+      console.log(
+        `[BOOT] previousRates Supabase'ten tohumlandı (${Object.keys(snap.rates).join(", ")} @ ${snap.recordedAt}).`
+      );
+      return true;
+    }
+  } catch (err) {
+    console.warn("[BOOT] previousRates Supabase tohumu başarısız:", err.message);
+  }
+  return false;
+}
+
 async function startServer() {
   logMailConfigOnBoot();
 
@@ -3061,22 +4741,8 @@ async function startServer() {
   initDb({ skipBusinessSeed: true });
   bootState.schemaReady = true;
 
-  // ⚠️ Y-05: Değişim tespiti için son bilinen kurları DİSKTEN yükle.
-  // Önceden previousRates yalnızca bellekteydi; her restart'ta null olduğu için
-  // ilk döngü "değişim var" sayılıyor ve ratesChangedAt o ana çekiliyordu —
-  // kur hiç değişmemiş olsa bile müşteri panosunda "Son Güncelleme" tazeleniyordu.
-  try {
-    const restored = getLatestHistoricalRatesSnapshot();
-    if (restored?.rates && Object.keys(restored.rates).length > 0) {
-      previousRates = restored.rates;
-      cachedRates.ratesChangedAt = restored.recordedAt || null;
-      console.log(
-        `[BOOT] Son kur anlık görüntüsü diskten geri yüklendi (${Object.keys(restored.rates).join(", ")} @ ${restored.recordedAt}).`
-      );
-    }
-  } catch (err) {
-    console.warn("[BOOT] Kur anlık görüntüsü geri yüklenemedi:", err.message);
-  }
+  // Y-05 / B-H3: Değişim tespiti için son bilinen kurları DİSKTEN yükle (fallback).
+  seedPreviousRatesFromDisk();
 
   // ✅ Y-02: ÖNCE dinlemeye başla — health check ve public uçlar hemen ayakta.
   app.listen(PORT, () => {
@@ -3090,6 +4756,10 @@ async function startServer() {
   // Ağır işler arka planda; istekleri bloklamıyor.
   bootstrapPersistence();
 
+  // B-H3: ilk refresh'ten ÖNCE previousRates'i Supabase'ten tohumla — SQLite
+  // Render'da boş olduğu için soğuk başlangıç sahte "kur değişti" sanılıyordu.
+  await seedPreviousRatesFromSupabase();
+
   await refreshRatesCacheWithChangeDetection();
   bootState.ratesPrimed = Boolean(cachedRates.centralBankRates);
   console.log(`[BOOT] İlk kur yüklemesi: totalBanks=${cachedRates.totalBanks}`);
@@ -3101,6 +4771,34 @@ async function startServer() {
   }, REFRESH_INTERVAL_MS);
 
   console.log(`[SCHEDULER] ✅ KKTC Merkez Bankası bülten takibi başlatıldı (${REFRESH_INTERVAL_MS / 1000}s aralık)`);
+
+  /** P1.5: abonelik-bitiş hatırlatmaları — günde bir, boot'tan ~30 sn sonra ilk koşu. */
+  const REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  setTimeout(() => {
+    runSubscriptionReminders().catch((err) =>
+      console.error("[SCHEDULER] subscriptionReminders ilk koşu hatası:", err.message)
+    );
+  }, 30_000);
+  setInterval(() => {
+    runSubscriptionReminders().catch((err) =>
+      console.error("[SCHEDULER] subscriptionReminders hatası:", err.message)
+    );
+  }, REMINDER_INTERVAL_MS);
+  console.log("[SCHEDULER] ✅ Abonelik hatırlatma job'ı başlatıldı (24s aralık)");
 }
+
+/**
+ * Impr-1: Yakalanmamış hata / reddedilmiş promise'ler için üst seviye handler.
+ * `safe()` dışında kalan bir dual-write yolu ileride bunu sızdırırsa süreç
+ * sessizce ölmesin / asılı kalmasın.
+ */
+process.on("unhandledRejection", (reason) => {
+  console.error("[PROCESS] unhandledRejection:", reason instanceof Error ? reason.stack : reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[PROCESS] uncaughtException:", err?.stack || err);
+  // Bilinmeyen bir durumda çalışmaya devam etmek riskli — temiz çık, Render yeniden başlatır.
+  process.exit(1);
+});
 
 startServer();

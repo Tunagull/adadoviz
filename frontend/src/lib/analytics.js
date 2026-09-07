@@ -65,10 +65,64 @@ export async function trackAnalyticsUpdate(payload = {}) {
   }
 }
 
-export function trackBusinessClick(businessName) {
+export function trackBusinessClick(businessName, businessId) {
   const name = String(businessName || "").trim();
-  if (!name) return;
-  trackAnalyticsUpdate({ business: name });
+  const id = businessId != null ? String(businessId).trim() : "";
+  if (!name && !id) return;
+  // S7: id birincil eşleşme anahtarı; isim geriye dönük uyum için hâlâ gönderiliyor.
+  trackAnalyticsUpdate({ business: name || undefined, business_id: id || undefined });
+}
+
+/**
+ * P2.5 — işletme analitik olayı (B3): view | call | whatsapp | directions |
+ * search_impression. Çerez onayı yoksa sessizce atlanır; oturum kimliği varsa
+ * eklenir. Fire-and-forget (`keepalive` ile sayfa geçişinde de teslim edilir).
+ */
+export function trackEvent(event, { institutionId, currency, city } = {}) {
+  if (!hasAnalyticsConsent()) return;
+  const type = String(event || "").trim();
+  if (!type) return;
+  const body = {
+    event: type,
+    institution_id: institutionId != null ? Number(institutionId) : undefined,
+    session_id: getAnalyticsSessionId() || undefined,
+    currency: currency ? String(currency).toUpperCase() : undefined,
+    city: city ? String(city) : undefined,
+  };
+  try {
+    fetch(apiUrl("/api/analytics/event"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* analitik hiçbir zaman akışı bozmasın */
+  }
+}
+
+/**
+ * P3.4 — anasayfa büro araması sonuç bulamadı (S6). Çağıran taraf debounce
+ * eder; burada yalnızca fire-and-forget. Kimlik yok, onay şartı yok (yalnızca
+ * sorgu metni + şehir — kişisel veri değil).
+ */
+export function reportSearchMiss(query, city) {
+  const q = String(query || "").trim();
+  if (q.length < 2) return;
+  try {
+    fetch(apiUrl("/api/search-miss"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: q.slice(0, 120),
+        city: city ? String(city).slice(0, 60) : undefined,
+        session_id: getAnalyticsSessionId() || undefined,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* yut */
+  }
 }
 
 export function trackCurrencyView(currency) {

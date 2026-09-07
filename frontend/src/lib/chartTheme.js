@@ -26,12 +26,24 @@ export function chartSkin(isDark) {
   };
 }
 
-/** En fazla 4 işletme serisi — parlaklık basamağı, ton değil. */
+/**
+ * En fazla 4 işletme serisi.
+ *
+ * ⚠️ A-C4 / D2: Eskiden 4 seri 4 birbirine yakın griyle çiziliyordu; komşu
+ * griler 2px çizgide ayırt edilemiyor ve bazıları arka planla <3:1 kontrasta
+ * düşüyordu (WCAG 1.4.11). Seri kimliği artık "semantik" kabul edilip her
+ * çizgiye ayrı bir HUE veriliyor (yeşil/kırmızı trend için ayrılmış olduğundan
+ * kullanılmıyor). Her renk hem beyaz hem mat-siyah zeminde ≥3:1.
+ * İkincil ipucu olarak `compareDash` her seriye ayrı bir kesik deseni verir.
+ */
 export function comparePalette(isDark) {
   return isDark
-    ? ["#ffffff", "#9d9da8", "#6f6f7b", "#4f4f57"]
-    : ["#08080a", "#41414a", "#6f6f7b", "#97979f"];
+    ? ["#60a5fa", "#fbbf24", "#22d3ee", "#c084fc"]
+    : ["#1d4ed8", "#b45309", "#0e7490", "#7e22ce"];
 }
+
+/** Renk körlüğü / tek renkli baskı için seri başına kesik desen. */
+export const compareDash = ["0", "6 3", "1 4", "10 4 2 4"];
 
 export function hollowDot(color, fill, r = 5) {
   return {

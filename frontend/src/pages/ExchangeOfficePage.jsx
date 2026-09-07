@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, MapPin, Phone } from "lucide-react";
+import { ArrowLeft, MapPin, MessageCircle, Phone } from "lucide-react";
 import { BusinessDetailModal } from "../components/BusinessDetailModal";
 import { HeaderActions } from "../components/HeaderActions";
 import { BrandLogo } from "../components/BrandLogo";
 import { useLanguage } from "../context/LanguageContext";
 import { apiUrl, mediaUrl } from "../lib/api";
+import { whatsappHref } from "../lib/contact";
+import { trackEvent } from "../lib/analytics";
 import { buildExchangeOfficeGraphJsonLd } from "../lib/localBusinessSchema";
 import { cityDisplayName, exchangeOfficePath, extractCitySlug, slugify } from "../lib/slug";
 
@@ -18,7 +20,10 @@ export function ExchangeOfficePage() {
   const navigate = useNavigate();
   const { t, lang } = useLanguage();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  // M2: hata kod olarak saklanır, render'da çevrilir — `t` fetch-effect
+  // bağımlılığı olmaktan çıkar (dil değişimi tüm ofis yükünü refetch etmesin).
+  const [errorCode, setErrorCode] = useState("");
+  const [serverError, setServerError] = useState("");
   const [payload, setPayload] = useState(null);
   /**
    * Ana sayfadan kart tıklanınca modal açılır (state.openDetail).
@@ -50,22 +55,27 @@ export function ExchangeOfficePage() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      setError("");
+      setErrorCode("");
+      setServerError("");
       try {
         const res = await fetch(apiUrl(`/api/doviz-burosu/${encodeURIComponent(slug)}`));
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(data?.error || t("exchangeOfficeNotFound") || "Döviz bürosu bulunamadı.");
+          if (cancelled) return;
+          setPayload(null);
+          if (data?.error) setServerError(String(data.error));
+          else setErrorCode("exchangeOfficeNotFound");
+          return;
         }
         if (cancelled) return;
         if (data.slug && data.slug !== slug) {
           navigate(exchangeOfficePath(data.slug), { replace: true });
         }
         setPayload(data);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
           setPayload(null);
-          setError(err.message || "Döviz bürosu bulunamadı.");
+          setErrorCode("exchangeOfficeNotFound");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -74,7 +84,7 @@ export function ExchangeOfficePage() {
     return () => {
       cancelled = true;
     };
-  }, [slug, navigate, t]);
+  }, [slug, navigate]);
 
   const business = payload?.business || null;
   /*
@@ -94,6 +104,20 @@ export function ExchangeOfficePage() {
       "";
     return cityDisplayName(citySlug, lang);
   }, [branches, payload?.matchedBranchId, lang]);
+
+  // P2.5 — büro sayfası görüntülenme olayı: kurum başına bir kez.
+  const viewTrackedRef = useRef(null);
+  useEffect(() => {
+    const id = business?.id;
+    if (!id || viewTrackedRef.current === id) return;
+    viewTrackedRef.current = id;
+    trackEvent("view", { institutionId: id, city: primaryCity || undefined });
+  }, [business?.id, primaryCity]);
+
+  const trackOfficeAction = (event) => {
+    if (!business?.id) return;
+    trackEvent(event, { institutionId: business.id, city: primaryCity || undefined });
+  };
 
   const pageTitle = useMemo(() => {
     if (!displayName) return lang === "en" ? "Exchange Office | AdaDöviz" : "Döviz Bürosu | AdaDöviz";
@@ -163,12 +187,19 @@ export function ExchangeOfficePage() {
           <p className="text-sm text-ink-500 dark:text-ink-400">
             {t("loadingShort") || "Yükleniyor..."}
           </p>
-        ) : error ? (
-          <div className="rounded-2xl border border-danger-200 bg-white p-6 dark:border-danger-900/50 dark:bg-ink-900">
+        ) : errorCode || serverError ? (
+          <div role="alert" className="rounded-2xl border border-danger-200 bg-white p-6 dark:border-danger-900/50 dark:bg-ink-900">
             <h1 className="text-lg font-semibold text-ink-900 dark:text-white">
               {lang === "en" ? "Exchange office not found" : "Döviz bürosu bulunamadı"}
             </h1>
-            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">{error}</p>
+            <p className="mt-2 text-sm text-ink-600 dark:text-ink-300">
+              {serverError ||
+                (errorCode && t(errorCode) !== errorCode
+                  ? t(errorCode)
+                  : lang === "en"
+                    ? "This exchange office could not be found."
+                    : "Bu döviz bürosu bulunamadı.")}
+            </p>
             <Link to="/" className="mt-4 inline-block text-sm font-semibold text-brand-600 hover:underline">
               {lang === "en" ? "Back to live rates" : "Canlı kurlara dön"}
             </Link>
@@ -207,6 +238,7 @@ export function ExchangeOfficePage() {
                       // U-01: telefon düz metindi; mobilde tıklanabilir olmalı.
                       <a
                         href={`tel:${String(branch.phone).replace(/[^\d+]/g, "")}`}
+                        onClick={() => trackOfficeAction("call")}
                         className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-brand-700 hover:underline dark:text-brand-300"
                       >
                         <Phone size={14} aria-hidden="true" />
@@ -226,10 +258,23 @@ export function ExchangeOfficePage() {
                           href={`https://www.google.com/maps/search/?api=1&query=${branch.lat},${branch.lng}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={() => trackOfficeAction("directions")}
                           className="btn-ghost btn-sm min-h-[2.25rem]"
                         >
                           <MapPin size={14} aria-hidden="true" />
                           {lang === "en" ? "Directions" : "Yol tarifi"}
+                        </a>
+                      ) : null}
+                      {whatsappHref(branch.whatsapp || branch.phone) ? (
+                        <a
+                          href={whatsappHref(branch.whatsapp || branch.phone)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => trackOfficeAction("whatsapp")}
+                          className="btn-ghost btn-sm min-h-[2.25rem] text-success-600 dark:text-success-400"
+                        >
+                          <MessageCircle size={14} aria-hidden="true" />
+                          WhatsApp
                         </a>
                       ) : null}
                     </div>
@@ -266,7 +311,7 @@ export function ExchangeOfficePage() {
         )}
       </div>
 
-      {business && !loading && !error && detailOpen ? (
+      {business && !loading && !errorCode && !serverError && detailOpen ? (
         <BusinessDetailModal
           business={business}
           initialBranchId={payload?.matchedBranchId ?? null}

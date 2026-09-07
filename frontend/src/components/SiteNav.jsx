@@ -1,5 +1,5 @@
-import { BarChart3, LineChart, Mail, Tag } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { BarChart3, LineChart, Mail, MapPinned, Tag, Trophy } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useLanguage } from "../context/LanguageContext";
 import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
 
@@ -9,11 +9,12 @@ import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
  */
 export function SiteNav({ compact = false, className = "" }) {
   const { t } = useLanguage();
-  const navigate = useNavigate();
   const nav = useHomeSectionNav();
 
   const items = [
     { key: "rates", label: t("navRates"), icon: LineChart, to: "/" },
+    { key: "bestRate", label: t("navBestRate"), icon: Trophy, to: "/en-iyi-kur" },
+    { key: "map", label: t("navMap"), icon: MapPinned, to: "/harita" },
     { key: "compare", label: t("navCompare"), icon: BarChart3, to: "/kiyasla" },
     { key: "pricing", label: t("navPricing"), icon: Tag, to: "/paketler" },
     { key: "contact", label: t("navContact"), icon: Mail, to: "/iletisim" },
@@ -22,6 +23,8 @@ export function SiteNav({ compact = false, className = "" }) {
   const isActive = (item) => {
     if (item.key === "contact") return nav.isContactActive;
     if (item.key === "rates") return nav.isRatesActive;
+    if (item.key === "bestRate") return nav.isBestRateActive;
+    if (item.key === "map") return nav.isMapActive;
     if (item.key === "compare") return nav.isCompareActive;
     if (item.key === "pricing") return nav.isPricingActive;
     return false;
@@ -30,17 +33,26 @@ export function SiteNav({ compact = false, className = "" }) {
   return (
     <nav
       aria-label={
-        t("navRates") + " / " + t("navCompare") + " / " + t("navPricing") + " / " + t("navContact")
+        t("navRates") +
+        " / " +
+        t("navBestRate") +
+        " / " +
+        t("navMap") +
+        " / " +
+        t("navCompare") +
+        " / " +
+        t("navPricing") +
+        " / " +
+        t("navContact")
       }
       className={`hidden items-center gap-1 md:flex ${className}`}
     >
       {items.map((item) => {
         const active = isActive(item);
         return (
-          <button
+          <Link
             key={item.key}
-            type="button"
-            onClick={() => navigate(item.to)}
+            to={item.to}
             aria-current={active ? "page" : undefined}
             /*
               ⚠️ DÜZELTME: Bir önceki sürüm hover'da kendi uydurduğum bir
@@ -68,9 +80,9 @@ export function SiteNav({ compact = false, className = "" }) {
                 : "text-ink-600 hover:text-ink-950 dark:text-ink-300 dark:hover:text-white"
             }`}
           >
-            <item.icon className={compact ? "size-3.5" : "size-4"} />
+            <item.icon className={compact ? "size-3.5" : "size-4"} aria-hidden="true" />
             {item.label}
-          </button>
+          </Link>
         );
       })}
     </nav>

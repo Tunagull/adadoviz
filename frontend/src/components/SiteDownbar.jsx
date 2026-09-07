@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { BarChart3, LineChart, Mail } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useLanguage } from "../context/LanguageContext";
-import { useOfficeSearch } from "../context/OfficeSearchContext";
+import { useOfficeSearch } from "../context/officeSearchStore";
 import { GooeySearchBar } from "./ui/animated-search-bar";
 import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
 
@@ -12,7 +12,6 @@ import { useHomeSectionNav } from "../hooks/useHomeSectionNav";
  */
 export function SiteDownbar() {
   const { t } = useLanguage();
-  const navigate = useNavigate();
   const location = useLocation();
   const officeSearch = useOfficeSearch();
   const nav = useHomeSectionNav();
@@ -51,16 +50,15 @@ export function SiteDownbar() {
         {items.slice(0, 2).map((item) => {
           const active = isActive(item);
           return (
-            <button
+            <Link
               key={item.key}
-              type="button"
-              onClick={() => navigate(item.to)}
+              to={item.to}
               aria-current={active ? "page" : undefined}
               className="site-downbar__item"
             >
               <item.icon className="size-4" aria-hidden="true" />
               {item.label}
-            </button>
+            </Link>
           );
         })}
 
@@ -81,27 +79,25 @@ export function SiteDownbar() {
             />
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={() => navigate(items[2].to)}
+          <Link
+            to={items[2].to}
             aria-current={isActive(items[2]) ? "page" : undefined}
             className="site-downbar__item"
           >
             <Mail className="size-4" aria-hidden="true" />
             {t("navContact")}
-          </button>
+          </Link>
         )}
 
         {hasOffices ? (
-          <button
-            type="button"
-            onClick={() => navigate(items[2].to)}
+          <Link
+            to={items[2].to}
             aria-current={isActive(items[2]) ? "page" : undefined}
             className="site-downbar__item"
           >
             <Mail className="size-4" aria-hidden="true" />
             {t("navContact")}
-          </button>
+          </Link>
         ) : null}
       </div>
     </nav>

@@ -1,0 +1,40 @@
+{
+  "name": "AdaDöviz — KKTC Döviz Kurları",
+  "short_name": "AdaDöviz",
+  "description": "KKTC güncel döviz kurları ve döviz bürosu karşılaştırması. Dolar TL, euro, sterlin.",
+  "lang": "tr",
+  "dir": "ltr",
+  "start_url": "/?utm_source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#08080a",
+  "theme_color": "#08080a",
+  "categories": ["finance", "business", "utilities"],
+  "icons": [
+    {
+      "src": "/adadoviz-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/adadoviz-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Bugünkü en iyi kur",
+      "short_name": "En iyi kur",
+      "url": "/en-iyi-kur?utm_source=pwa"
+    },
+    {
+      "name": "Döviz büroları haritası",
+      "short_name": "Harita",
+      "url": "/harita?utm_source=pwa"
+    }
+  ]
+}

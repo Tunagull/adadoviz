@@ -7,6 +7,7 @@ import { OfficeSearchProvider } from "./context/OfficeSearchContext";
 import { V0FinancialDashboard } from "./components/V0FinancialDashboard";
 import { CinematicFooter } from "./components/ui/motion-footer";
 import { CookieConsent } from "./components/CookieConsent";
+import { PwaInstallPrompt } from "./components/PwaInstallPrompt";
 import { SiteDownbar } from "./components/SiteDownbar";
 import { SeoHead } from "./components/SeoHead";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -32,6 +33,12 @@ const ExchangeOfficePage = lazy(() =>
 const ComparePage = lazy(() =>
   import("./pages/ComparePage").then((m) => ({ default: m.ComparePage }))
 );
+const BestRatePage = lazy(() =>
+  import("./pages/BestRatePage").then((m) => ({ default: m.BestRatePage }))
+);
+const MapPage = lazy(() =>
+  import("./pages/MapPage").then((m) => ({ default: m.MapPage }))
+);
 const ContactPage = lazy(() =>
   import("./pages/ContactPage").then((m) => ({ default: m.ContactPage }))
 );
@@ -41,8 +48,17 @@ const PricingPage = lazy(() =>
 const PartnershipPage = lazy(() =>
   import("./pages/PartnershipPage").then((m) => ({ default: m.PartnershipPage }))
 );
+const SignupPage = lazy(() =>
+  import("./pages/SignupPage").then((m) => ({ default: m.SignupPage }))
+);
 const ResetPasswordPage = lazy(() =>
   import("./pages/ResetPassword").then((m) => ({ default: m.ResetPasswordPage }))
+);
+const RateAlertManagePage = lazy(() =>
+  import("./pages/RateAlertManagePage").then((m) => ({ default: m.RateAlertManagePage }))
+);
+const ContentPage = lazy(() =>
+  import("./pages/ContentPage").then((m) => ({ default: m.ContentPage }))
 );
 
 /** Rotalar arası geçişte kısa bekleme durumu. */
@@ -74,7 +90,7 @@ function AppShell() {
   const adminRoute = isAdminRoute(location.pathname);
 
   return (
-    <main className="flex min-h-screen flex-col bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
+    <div className="flex min-h-screen flex-col bg-ink-50 text-ink-900 dark:bg-ink-950 dark:text-ink-100">
       {/* Klavye kullanıcıları için içeriğe atlama bağlantısı (A-01). */}
       <a
         href="#main-content"
@@ -95,7 +111,7 @@ function AppShell() {
         panonun sabit arka plan katmanları (ortam ışıkları, ızgara) footer'ın
         üstüne çıkıyor ve perdeyi boyuyor.
       */}
-      <div
+      <main
         id="main-content"
         className={`flex-1 ${
           adminRoute
@@ -103,31 +119,44 @@ function AppShell() {
             : "max-md:pb-24 rounded-b-[2rem] border-b border-ink-200 bg-ink-50 shadow-[0_28px_60px_-28px_rgba(8,8,10,0.35)] dark:border-white/20 dark:bg-ink-950 dark:shadow-[0_2px_0_-1px_rgba(255,255,255,0.10),0_24px_50px_-20px_rgba(0,0,0,0.95)]"
         }`}
       >
-        <ErrorBoundary onNavigateHome={() => navigate("/")} homeLabel="Ana sayfa">
+        <ErrorBoundary
+          resetKey={location.pathname}
+          onNavigateHome={() => navigate("/")}
+          homeLabel="Ana sayfa"
+        >
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<V0FinancialDashboard />} />
               <Route path="/kurlar" element={<Navigate to="/" replace />} />
               <Route path="/kiyasla" element={<ComparePage />} />
+              <Route path="/en-iyi-kur" element={<BestRatePage />} />
+              <Route path="/harita" element={<MapPage />} />
               <Route path="/paketler" element={<PricingPage />} />
               <Route path="/iletisim" element={<ContactPage />} />
               <Route path="/partnerlik" element={<PartnershipPage />} />
+              <Route path="/kayit" element={<SignupPage />} />
+              <Route path="/signup" element={<Navigate to="/kayit" replace />} />
               <Route path="/doviz-burosu/:slug" element={<ExchangeOfficePage />} />
               <Route path="/admin" element={<InstitutionAdminPage />} />
               <Route path="/super-admin" element={<SuperAdminDashboard />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/alarm/:token" element={<RateAlertManagePage />} />
+              <Route path="/rehber/:slug" element={<ContentPage type="rehber" />} />
+              <Route path="/kur/:slug" element={<ContentPage type="kur" />} />
+              <Route path="/sehir/:slug" element={<ContentPage type="sehir" />} />
               <Route path="/dashboard" element={<Navigate to="/" replace />} />
               <Route path="/partnership" element={<Navigate to="/partnerlik" replace />} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Suspense>
         </ErrorBoundary>
-      </div>
+      </main>
 
       {!adminRoute ? <CinematicFooter /> : null}
       {!adminRoute ? <SiteDownbar /> : null}
       {!adminRoute ? <CookieConsent /> : null}
-    </main>
+      {!adminRoute ? <PwaInstallPrompt /> : null}
+    </div>
   );
 }
 

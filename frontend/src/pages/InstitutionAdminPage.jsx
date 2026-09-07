@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell } from "lucide-react";
+import { ArrowLeft, Building2, Key, LogOut, Save, X, Camera, Edit2, Clock, Phone, MapPin, ChevronDown, Plus, Bell, LifeBuoy, CheckCircle2, Circle, CreditCard } from "lucide-react";
 import Cropper from "react-easy-crop";
 import { MapContainer, Marker, TileLayer, useMapEvents } from "react-leaflet";
 import L from "leaflet";
@@ -11,6 +11,7 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
 import { ActivityLogPanel } from "../components/ActivityLogPanel";
+import { BusinessAnalyticsPanel } from "../components/BusinessAnalyticsPanel";
 import {
   fetchAdminRates,
   saveAdminRates,
@@ -24,10 +25,13 @@ import {
   fetchBusinessSubscription,
   fetchBusinessNotifications,
   markBusinessNotificationsRead,
+  submitSupportTicket,
+  fetchSupportTickets,
 } from "../lib/auth";
 import { fetchKktcRates } from "../lib/kktcRates";
 import { HeaderActions } from "../components/HeaderActions";
 import { Sheet } from "../components/Sheet";
+import { RenewSubscriptionModal } from "../components/RenewSubscriptionModal";
 import { DualRangeSlider } from "../components/DualRangeSlider";
 import { SearchableSelect } from "../components/SearchableSelect";
 import { FloatingInput, FloatingTextarea } from "../components/ui/floating-label";
@@ -50,6 +54,32 @@ L.Icon.Default.mergeOptions({
 });
 
 const KKTC_MAP_CENTER = [35.2281, 33.5136];
+
+const ONBOARDING_DISMISS_KEY = "adadoviz:onboarding-dismissed";
+
+/**
+ * P1.8 — onboarding checklist (B13). Panel verisinden ilerleme durumu üretir.
+ */
+function computeOnboardingState({ logoUrl, hasWorkingHours, branches, marginConfig }) {
+  const list = Array.isArray(branches) ? branches : [];
+  const hasContact = list.some(
+    (b) => String(b?.phone || "").trim() && String(b?.address || "").trim()
+  );
+  const hasMargins = ["EUR", "USD", "GBP"].some((c) => {
+    const m = marginConfig?.[c];
+    if (!m) return false;
+    return [m.buy?.value, m.sell?.value].some((v) => Number(v) > 0);
+  });
+  const items = [
+    { key: "logo", labelKey: "onboardingLogo", done: Boolean(logoUrl) },
+    { key: "hours", labelKey: "onboardingHours", done: Boolean(hasWorkingHours) },
+    { key: "branch", labelKey: "onboardingBranch", done: list.length > 0 },
+    { key: "contact", labelKey: "onboardingContact", done: hasContact },
+    { key: "margins", labelKey: "onboardingMargins", done: hasMargins },
+  ];
+  const doneCount = items.filter((i) => i.done).length;
+  return { items, doneCount, total: items.length, complete: doneCount === items.length };
+}
 
 function BranchMapClickHandler({ onPick, disabled }) {
   useMapEvents({
@@ -159,12 +189,39 @@ function formatBranchRemainingLabel(branch, t) {
   return `${days} ${t("daysUnit")}`;
 }
 
-function applyGranularMargin(kur, marginType, marginValue) {
+/**
+ * Marjı MB kuruna uygular — önizleme (yayınlanan kuru backend hesaplar).
+ *
+ * ⚠️ KÂR YÖNÜ (2026-09 düzeltmesi, backend `rateMath.applyMarginToValue` ile aynı):
+ *   ALIŞ  → MB kurunun ALTINDA fiyat (kâr = MB − ilan; alış düştükçe kâr artar)
+ *   SATIŞ → MB kurunun ÜSTÜNDE fiyat (kâr = ilan − MB)
+ * `side` verilmezse geriye dönük uyum için toplama (satış davranışı).
+ */
+function applyGranularMargin(kur, marginType, marginValue, side = "sell") {
   const base = Number(kur);
   const m = Math.max(0, Number(marginValue) || 0);
   if (!Number.isFinite(base) || !Number.isFinite(m)) return null;
-  if (marginType === "percent") return base + (base * m) / 100;
-  return base + m;
+  const delta = marginType === "percent" ? (base * m) / 100 : m;
+  const result = side === "buy" ? base - delta : base + delta;
+  return result < 0 ? 0 : result;
+}
+
+/** Marj yapısının derin kopyası — string değerler korunur (yükleme ile aynı biçim). */
+function cloneMarginConfig(cfg) {
+  const out = {};
+  for (const c of ["EUR", "USD", "GBP"]) {
+    out[c] = {
+      buy: {
+        type: cfg?.[c]?.buy?.type || "fixed",
+        value: String(cfg?.[c]?.buy?.value ?? "0"),
+      },
+      sell: {
+        type: cfg?.[c]?.sell?.type || "fixed",
+        value: String(cfg?.[c]?.sell?.value ?? "0"),
+      },
+    };
+  }
+  return out;
 }
 
 function sanitizeNonNegative(value) {
@@ -188,6 +245,13 @@ export function InstitutionAdminPage() {
     USD: { buy: { type: "fixed", value: "0" }, sell: { type: "fixed", value: "0" } },
     GBP: { buy: { type: "fixed", value: "0" }, sell: { type: "fixed", value: "0" } },
   });
+
+  // Son kaydedilmiş marj anlık görüntüsü — "son kayıtlıya dön" + "değişti mi" için.
+  const [savedMarginConfig, setSavedMarginConfig] = useState(null);
+  // Hızlı (toplu) marj girişi bar durumu.
+  const [bulkScope, setBulkScope] = useState("all"); // buy | sell | all
+  const [bulkType, setBulkType] = useState("percent"); // fixed | percent
+  const [bulkValue, setBulkValue] = useState("");
 
   const [centralBankRates, setCentralBankRates] = useState({
     EUR: { buy: null, sell: null },
@@ -272,6 +336,24 @@ export function InstitutionAdminPage() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [notifLoading, setNotifLoading] = useState(false);
   const notifPanelRef = useRef(null);
+  // P1.8 — onboarding checklist
+  const [hasWorkingHours, setHasWorkingHours] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_DISMISS_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  // P3.6 — self-servis yenileme / dekont
+  const [showRenewModal, setShowRenewModal] = useState(false);
+  // P1.7 — panel-içi destek / sorun bildirimi
+  const [showSupportModal, setShowSupportModal] = useState(false);
+  const [supportSubject, setSupportSubject] = useState("");
+  const [supportMessage, setSupportMessage] = useState("");
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [supportFeedback, setSupportFeedback] = useState(null); // {type:'ok'|'err', msg}
+  const [supportTickets, setSupportTickets] = useState([]);
   const [infoLoading, setInfoLoading] = useState(false);
   const [infoError, setInfoError] = useState("");
   const [infoSuccess, setInfoSuccess] = useState("");
@@ -335,6 +417,7 @@ export function InstitutionAdminPage() {
         if (profile.branch_count != null) setBranchCount(Number(profile.branch_count) || 0);
         if (profile.working_hours && typeof profile.working_hours === "object") {
           setBusinessHours((prev) => ({ ...prev, ...profile.working_hours }));
+          setHasWorkingHours(Object.keys(profile.working_hours).length > 0);
         }
       } catch (err) {
         console.warn("[PROFILE] Yüklenemedi:", err.message);
@@ -391,6 +474,7 @@ export function InstitutionAdminPage() {
         }
         setCentralBankRates(cbRates);
         setMarginConfig(newMarginConfig);
+        setSavedMarginConfig(cloneMarginConfig(newMarginConfig));
         devLog("[ADMIN-LOAD] Marjlar başarıyla yüklendi:", newMarginConfig);
 
         // KKTC Merkez Bankası kurlarını çek
@@ -448,6 +532,40 @@ export function InstitutionAdminPage() {
         },
       },
     }));
+  };
+
+  const marginDirty = useMemo(() => {
+    if (!savedMarginConfig) return false;
+    return (
+      JSON.stringify(cloneMarginConfig(marginConfig)) !==
+      JSON.stringify(savedMarginConfig)
+    );
+  }, [marginConfig, savedMarginConfig]);
+
+  /** Toplu marj: seçilen tarafa (alış/satış/hepsi) tek tip + tek değer uygula. */
+  const applyBulkMargin = () => {
+    const val = sanitizeNonNegative(bulkValue);
+    if (val === "") return;
+    setSuccess("");
+    setMarginConfig((prev) => {
+      const next = cloneMarginConfig(prev);
+      for (const c of ["EUR", "USD", "GBP"]) {
+        if (bulkScope === "all" || bulkScope === "buy") {
+          next[c].buy = { type: bulkType, value: val };
+        }
+        if (bulkScope === "all" || bulkScope === "sell") {
+          next[c].sell = { type: bulkType, value: val };
+        }
+      }
+      return next;
+    });
+  };
+
+  /** Kaydedilmemiş marj düzenlemelerini son kayıtlı duruma geri al. */
+  const revertMargins = () => {
+    if (!savedMarginConfig) return;
+    setSuccess("");
+    setMarginConfig(cloneMarginConfig(savedMarginConfig));
   };
 
   const kalanAbonelikSuresi = useMemo(() => {
@@ -552,6 +670,47 @@ export function InstitutionAdminPage() {
     setShowNotifPanel(next);
     if (next) {
       await loadNotifications();
+    }
+  };
+
+  const loadSupportTickets = async () => {
+    if (!auth?.token) return;
+    try {
+      const rows = await fetchSupportTickets(auth.token);
+      setSupportTickets(Array.isArray(rows) ? rows : []);
+    } catch (err) {
+      console.warn("[SUPPORT] Talepler yüklenemedi:", err.message);
+    }
+  };
+
+  const openSupportModal = () => {
+    setSupportFeedback(null);
+    setSupportSubject("");
+    setSupportMessage("");
+    setShowSupportModal(true);
+    loadSupportTickets();
+  };
+
+  const handleSupportSubmit = async () => {
+    if (!auth?.token) return;
+    const subject = supportSubject.trim();
+    const message = supportMessage.trim();
+    if (!subject || !message) {
+      setSupportFeedback({ type: "err", msg: t("supportError") });
+      return;
+    }
+    setSupportSubmitting(true);
+    setSupportFeedback(null);
+    try {
+      await submitSupportTicket(auth.token, { subject, message });
+      setSupportFeedback({ type: "ok", msg: t("supportSent") });
+      setSupportSubject("");
+      setSupportMessage("");
+      await loadSupportTickets();
+    } catch (err) {
+      setSupportFeedback({ type: "err", msg: err.message || t("supportError") });
+    } finally {
+      setSupportSubmitting(false);
     }
   };
 
@@ -829,6 +988,7 @@ export function InstitutionAdminPage() {
       if (!auth?.token) throw new Error("Token bulunamadı");
       const response = await saveAdminRates(auth.token, payload);
       devLog("[ADMIN] Kaydetme başarılı:", response);
+      setSavedMarginConfig(cloneMarginConfig(marginConfig));
       
       // API'den dönen güncellenmiş veriyi state'e kaydet
       if (Array.isArray(response.currencies)) {
@@ -1472,6 +1632,23 @@ export function InstitutionAdminPage() {
   const expired = isExpired;
   const nearExpiry = days != null && days <= 30;
 
+  const onboarding = computeOnboardingState({
+    logoUrl: profileLogoUrl,
+    hasWorkingHours,
+    branches: subscriptionBranches,
+    marginConfig,
+  });
+  const showOnboarding = !onboardingDismissed && !onboarding.complete;
+
+  const dismissOnboarding = () => {
+    setOnboardingDismissed(true);
+    try {
+      localStorage.setItem(ONBOARDING_DISMISS_KEY, "1");
+    } catch {
+      /* yok say */
+    }
+  };
+
   return (
     <div className="min-h-screen bg-ink-50 text-ink-800 dark:bg-ink-950 dark:text-white">
       {/* U-08: yönetim sayfaları kendi sekme başlığını verir; robots.txt zaten bu yolları dışlıyor, noindex ile pekiştiriliyor. */}
@@ -1623,6 +1800,52 @@ export function InstitutionAdminPage() {
         </div>
       </div>
 
+      {showOnboarding ? (
+        <div className="surface-card mb-4 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-ink-900 dark:text-white">
+                {t("onboardingTitle")}{" "}
+                <span className="font-mono text-xs font-normal text-ink-500 tabular-nums dark:text-ink-400">
+                  {onboarding.doneCount}/{onboarding.total}
+                </span>
+              </p>
+              <p className="mt-0.5 text-xs text-ink-500 dark:text-ink-400">
+                {t("onboardingSubtitle")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={dismissOnboarding}
+              className="shrink-0 rounded-lg p-1 text-ink-400 transition hover:bg-ink-100 hover:text-ink-600 dark:hover:bg-ink-800 dark:hover:text-ink-200"
+              aria-label={t("onboardingDismiss")}
+              title={t("onboardingDismiss")}
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <ul className="mt-3 space-y-1.5">
+            {onboarding.items.map((item) => (
+              <li
+                key={item.key}
+                className={`flex items-center gap-2 text-sm ${
+                  item.done
+                    ? "text-ink-400 line-through dark:text-ink-500"
+                    : "text-ink-700 dark:text-ink-200"
+                }`}
+              >
+                {item.done ? (
+                  <CheckCircle2 className="size-4 shrink-0 text-success-600 dark:text-success-400" />
+                ) : (
+                  <Circle className="size-4 shrink-0 text-ink-300 dark:text-ink-600" />
+                )}
+                {t(item.labelKey)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="flex gap-3 flex-wrap items-start">
         <button
           type="button"
@@ -1650,6 +1873,28 @@ export function InstitutionAdminPage() {
         >
           <Edit2 className="size-4" />
           İşletme Bilgilerini Güncelle
+        </button>
+
+        <button
+          type="button"
+          onClick={openSupportModal}
+          className="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-700 transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400"
+        >
+          <LifeBuoy className="size-4" />
+          {t("supportButton")}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowRenewModal(true)}
+          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-base ease-out-strong ${
+            expired || nearExpiry
+              ? "border-brand-500 bg-brand-500/10 text-brand-800 hover:bg-brand-500/20 dark:border-brand-400 dark:text-brand-200"
+              : "border-ink-200 bg-white text-ink-700 hover:border-brand-400 hover:text-brand-600 dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200 dark:hover:border-brand-400 dark:hover:text-brand-400"
+          }`}
+        >
+          <CreditCard className="size-4" />
+          {t("renewButton")}
         </button>
 
         <div className="relative" ref={subscriptionPanelRef}>
@@ -1889,6 +2134,84 @@ export function InstitutionAdminPage() {
         </div>
       ) : null}
 
+      {/* Hızlı (toplu) marj girişi — tezgah arkası mobil kullanım (B2). */}
+      {!ratesLocked ? (
+        <div className="rounded-card border border-ink-200 bg-white p-4 dark:border-white/10 dark:bg-ink-900/60">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-ink-900 dark:text-white">
+              {t("quickMarginTitle")}
+            </h3>
+            <button
+              type="button"
+              onClick={revertMargins}
+              disabled={!marginDirty}
+              className="text-xs font-medium text-brand-600 transition-colors hover:text-brand-700 disabled:opacity-40 dark:text-brand-400"
+            >
+              {t("quickMarginRevert")}
+            </button>
+          </div>
+          <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">{t("quickMarginHint")}</p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex rounded-control border border-ink-200 p-0.5 dark:border-white/15">
+              {["buy", "sell", "all"].map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setBulkScope(s)}
+                  className={`min-h-[2.75rem] flex-1 rounded-[0.55rem] px-3 text-sm font-medium transition-colors ${
+                    bulkScope === s
+                      ? "bg-ink-900 text-white dark:bg-white dark:text-ink-950"
+                      : "text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white"
+                  }`}
+                >
+                  {t(
+                    s === "buy"
+                      ? "quickMarginBuy"
+                      : s === "sell"
+                        ? "quickMarginSell"
+                        : "quickMarginAll"
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-control border border-ink-200 p-0.5 dark:border-white/15">
+              {["fixed", "percent"].map((tp) => (
+                <button
+                  key={tp}
+                  type="button"
+                  onClick={() => setBulkType(tp)}
+                  className={`min-h-[2.75rem] flex-1 rounded-[0.55rem] px-4 text-sm font-medium transition-colors ${
+                    bulkType === tp
+                      ? "bg-ink-900 text-white dark:bg-white dark:text-ink-950"
+                      : "text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white"
+                  }`}
+                >
+                  {tp === "fixed" ? "TL" : "%"}
+                </button>
+              ))}
+            </div>
+            <FloatingInput
+              label={t("quickMarginValue")}
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={bulkValue}
+              onChange={(e) => setBulkValue(e.target.value)}
+              className="sm:w-40"
+            />
+            <button
+              type="button"
+              onClick={applyBulkMargin}
+              disabled={bulkValue === ""}
+              className="btn min-h-[2.75rem] justify-center disabled:opacity-40 sm:w-auto"
+            >
+              {t("quickMarginApply")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Granüler 6-Kalem Tablo */}
       <form onSubmit={handleSave} className="space-y-6">
         {/* ALIŞ KURLAR */}
@@ -1898,7 +2221,7 @@ export function InstitutionAdminPage() {
             {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'buy').map((item) => {
             const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
             const kur = centralBankRates?.[item?.currency]?.[item?.type] || null;
-            const final = applyGranularMargin(kur, cfg?.type, cfg?.value);
+            const final = applyGranularMargin(kur, cfg?.type, cfg?.value, item?.type);
             const itemLabel = marginLabels[item.labelKey] || item.labelKey;
 
             return (
@@ -1945,6 +2268,7 @@ export function InstitutionAdminPage() {
                     type="number"
                     min="0"
                     step="0.01"
+                    inputMode="decimal"
                     value={cfg.value}
                     disabled={ratesLocked}
                     onChange={(e) =>
@@ -1958,7 +2282,8 @@ export function InstitutionAdminPage() {
                   <p className="text-sm font-bold">
                     <span className="text-brand-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-brand-700 dark:text-brand-300 text-base">{formatNum(final)}</span>
                     {(() => {
-                      const kar = final && kur ? final - kur : 0;
+                      // ALIŞ kârı = MB kuru − ilan edilen alış (büro referansın altında alır).
+                      const kar = final && kur ? kur - final : 0;
                       return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
                     })()}
                   </p>
@@ -1976,7 +2301,7 @@ export function InstitutionAdminPage() {
             {Array.isArray(MARGIN_ITEMS) ? MARGIN_ITEMS.filter(i => i.type === 'sell').map((item) => {
               const cfg = marginConfig?.[item?.currency]?.[item?.type] || { type: "fixed", value: "0" };
               const kur = centralBankRates?.[item?.currency]?.[item?.type] || null;
-              const final = applyGranularMargin(kur, cfg?.type, cfg?.value);
+              const final = applyGranularMargin(kur, cfg?.type, cfg?.value, item?.type);
               const itemLabel = marginLabels[item.labelKey] || item.labelKey;
 
               return (
@@ -2023,6 +2348,7 @@ export function InstitutionAdminPage() {
                       type="number"
                       min="0"
                       step="0.01"
+                      inputMode="decimal"
                       value={cfg.value}
                       disabled={ratesLocked}
                       onChange={(e) =>
@@ -2036,6 +2362,7 @@ export function InstitutionAdminPage() {
                     <p className="text-sm font-bold">
                       <span className="text-danger-900 dark:text-white">{t("finalRate")}:</span> <span className="font-mono text-danger-700 dark:text-danger-400 text-base">{formatNum(final)}</span>
                       {(() => {
+                        // SATIŞ kârı = ilan edilen satış − MB kuru (büro referansın üstünde satar).
                         const kar = final && kur ? final - kur : 0;
                         return kar > 0 ? <span className="ml-2 text-xs font-semibold text-success-400">/ +{formatNum(kar)} {t("profitTl")}</span> : '';
                       })()}
@@ -2059,6 +2386,11 @@ export function InstitutionAdminPage() {
           </button>
         </div>
       </form>
+
+      {/* P2.5 — işletme analitik paneli (B3): görüntülenme, arama, yol tarifi, WhatsApp. */}
+      <div className="mt-8">
+        <BusinessAnalyticsPanel token={auth?.token} />
+      </div>
 
       {/*
         İşlem geçmişi: işletmenin kendi profilinde, kurlarında ve şubelerinde
@@ -2832,6 +3164,101 @@ export function InstitutionAdminPage() {
         ) : null}
       </Sheet>
 
+      <Sheet
+        open={showSupportModal}
+        onOpenChange={(next) => { if (!next) setShowSupportModal(false); }}
+        title={t("supportTitle")}
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowSupportModal(false)}
+              className="btn-ghost flex-1"
+            >
+              {t("cancel")}
+            </button>
+            <button
+              type="button"
+              onClick={handleSupportSubmit}
+              disabled={supportSubmitting}
+              className="btn-primary flex-1"
+            >
+              {supportSubmitting ? t("supportSubmitting") : t("supportSubmit")}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <FloatingInput
+            label={t("supportSubjectLabel")}
+            value={supportSubject}
+            onChange={(e) => setSupportSubject(e.target.value)}
+            maxLength={200}
+            placeholder={t("supportSubjectPlaceholder")}
+          />
+          <FloatingTextarea
+            label={t("supportMessageLabel")}
+            value={supportMessage}
+            onChange={(e) => setSupportMessage(e.target.value)}
+            rows={5}
+            maxLength={5000}
+            placeholder={t("supportMessagePlaceholder")}
+          />
+          {supportFeedback ? (
+            <p
+              className={`text-xs ${
+                supportFeedback.type === "ok"
+                  ? "text-success-700 dark:text-success-300"
+                  : "text-danger-700 dark:text-danger-300"
+              }`}
+            >
+              {supportFeedback.msg}
+            </p>
+          ) : null}
+        </div>
+
+        {supportTickets.length > 0 ? (
+          <div className="mt-5 border-t border-ink-200 pt-4 dark:border-ink-800">
+            <p className="mb-2 text-xs font-semibold text-ink-700 dark:text-ink-300">
+              {t("supportMyTickets")}
+            </p>
+            <ul className="space-y-2">
+              {supportTickets.map((tk) => (
+                <li
+                  key={tk.id}
+                  className="rounded-lg border border-ink-200 px-3 py-2 text-xs dark:border-ink-800"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-ink-900 dark:text-ink-100">{tk.subject}</span>
+                    <span
+                      className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                        tk.status === "closed"
+                          ? "bg-ink-500/10 text-ink-600 dark:text-ink-300"
+                          : tk.status === "answered"
+                            ? "bg-success-500/10 text-success-700 dark:text-success-300"
+                            : "bg-warning-500/10 text-warning-700 dark:text-warning-300"
+                      }`}
+                    >
+                      {tk.status === "closed"
+                        ? t("supportStatusClosed")
+                        : tk.status === "answered"
+                          ? t("supportStatusAnswered")
+                          : t("supportStatusOpen")}
+                    </span>
+                  </div>
+                  {tk.admin_reply ? (
+                    <p className="mt-1 text-ink-600 dark:text-ink-300">
+                      <span className="font-semibold">{t("supportAdminReplyLabel")}: </span>
+                      {tk.admin_reply}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </Sheet>
+
       {showPasswordModal && (
         <div
           className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
@@ -2941,6 +3368,15 @@ export function InstitutionAdminPage() {
           </div>
         </div>
       )}
+
+      {showRenewModal ? (
+        <RenewSubscriptionModal
+          key={`renew-${showRenewModal}`}
+          open={showRenewModal}
+          onOpenChange={(next) => { if (!next) setShowRenewModal(false); }}
+          token={auth?.token}
+        />
+      ) : null}
     </div>
   </div>
   );

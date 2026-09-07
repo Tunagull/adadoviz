@@ -147,15 +147,15 @@ export function PricingPage() {
 
           <div
             className="mx-auto mt-8 inline-flex rounded-full border border-ink-300 bg-ink-100 p-1 dark:border-white/10 dark:bg-ink-900/80"
-            role="tablist"
+            role="radiogroup"
             aria-label={t("pricingCycleLabel")}
           >
             <button
               type="button"
-              role="tab"
-              aria-selected={cycle === "monthly"}
+              role="radio"
+              aria-checked={cycle === "monthly"}
               onClick={() => setCycle("monthly")}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+              className={`inline-flex min-h-[2.75rem] items-center rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
                 cycle === "monthly"
                   ? "surface-neon"
                   : "text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white"
@@ -165,10 +165,10 @@ export function PricingPage() {
             </button>
             <button
               type="button"
-              role="tab"
-              aria-selected={cycle === "annual"}
+              role="radio"
+              aria-checked={cycle === "annual"}
               onClick={() => setCycle("annual")}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+              className={`inline-flex min-h-[2.75rem] items-center rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
                 cycle === "annual"
                   ? "surface-neon"
                   : "text-ink-600 hover:text-ink-900 dark:text-ink-300 dark:hover:text-white"

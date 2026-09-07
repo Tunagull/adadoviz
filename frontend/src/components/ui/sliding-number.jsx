@@ -7,15 +7,16 @@ import {
   useSpring,
   useTransform,
 } from "framer-motion";
-import useMeasure from "react-use-measure";
 
 /**
  * Rakamları makara gibi kaydıran sayı göstergesi.
  *
  * Her basamak 0–9 arası on kopyayı üst üste tutuyor; aktif rakam bir yay
  * (spring) ile hedefe kayıyor, en kısa yol seçiliyor (9→0 yukarı değil aşağı).
- * Kayma yüksekliği ÖLÇÜMDEN geliyor (react-use-measure) — sabit bir piksel
- * değeri font/zoom değişince şaşardı.
+ * Kayma yüksekliği `1em` biriminden geliyor (animated-counter.jsx ile aynı
+ * yaklaşım): her basamak kabı `height: 1em`, kopyalar `absolute inset-0`, kayma
+ * `translateY(%)` ile. İyileştirme: eskiden basamak kopyası başına bir
+ * `ResizeObserver` (react-use-measure) vardı — HeaderClock için ~60 gözlemci.
  *
  * `motion` yerine `m` + tembel `domAnimation`: başlık paketine framer-motion'ın
  * tam sürümünü sokmuyoruz (O-01 satıcı ayrımıyla aynı mantık).
@@ -42,8 +43,11 @@ function Digit({ value, place }) {
   }, [animatedValue, valueRoundedToPlace]);
 
   return (
-    <div className="relative inline-block w-[1ch] overflow-x-visible overflow-y-clip leading-none tabular-nums">
-      <div className="invisible">0</div>
+    <div
+      className="relative inline-block w-[1ch] overflow-x-visible overflow-y-clip leading-none tabular-nums"
+      style={{ height: "1em" }}
+    >
+      <span className="invisible">0</span>
       {Array.from({ length: 10 }, (_, i) => (
         <Num key={i} mv={animatedValue} number={i} />
       ))}
@@ -52,35 +56,17 @@ function Digit({ value, place }) {
 }
 
 function Num({ mv, number }) {
-  const [ref, bounds] = useMeasure();
-
   const y = useTransform(mv, (latest) => {
-    if (!bounds.height) return 0;
-    const placeValue = latest % 10;
-    const offset = (10 + number - placeValue) % 10;
-    let memo = offset * bounds.height;
-
-    if (offset > 5) {
-      memo -= 10 * bounds.height;
-    }
-
-    return memo;
+    const placeValue = ((latest % 10) + 10) % 10;
+    let offset = (10 + number - placeValue) % 10;
+    if (offset > 5) offset -= 10; // en kısa yol
+    return `${offset * 100}%`;
   });
-
-  // Yükseklik ölçülene kadar animasyonlu rakamı çizme.
-  if (!bounds.height) {
-    return (
-      <span ref={ref} className="invisible absolute">
-        {number}
-      </span>
-    );
-  }
 
   return (
     <m.span
       style={{ y }}
       className="absolute inset-0 flex items-center justify-center"
-      ref={ref}
     >
       {number}
     </m.span>

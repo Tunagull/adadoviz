@@ -85,7 +85,7 @@ export function ThemeToggle({ className = "", compact = false }) {
             />
           ) : (
             <Moon
-              className={`${icon} text-ink-400 transition-colors duration-base ease-out group-hover:text-ink-950`}
+              className={`${icon} text-ink-500 dark:text-ink-400 transition-colors duration-base ease-out group-hover:text-ink-950`}
               strokeWidth={1.75}
               aria-hidden="true"
             />

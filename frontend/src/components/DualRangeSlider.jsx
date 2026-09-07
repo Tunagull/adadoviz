@@ -1,16 +1,27 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useState } from "react";
 
 /**
- * DualRangeSlider: Tek track üzerinde iki thumb (min/max)
+ * DualRangeSlider — tek track üzerinde iki thumb (min/max).
+ *
+ * ⚠️ A-C1: Eskiden thumb'lar `<div onMouseDown>` idi — klavye yok, dokunma yok,
+ * ARIA yok (WCAG 2.1.1, 4.1.2, 2.5.7). Artık iki üst üste bindirilmiş native
+ * `<input type="range">`: klavye (ok/Home/End/PageUp-Down), dokunma ve ekran
+ * okuyucu (`aria-valuetext` = "HH:MM") tarayıcıdan bedava gelir.
+ *
  * Props:
- *   - min: minimum value (0)
- *   - max: maximum value (1440)
- *   - step: adım (15)
- *   - minValue: mevcut minimum (dakika)
- *   - maxValue: mevcut maximum (dakika)
- *   - onRangeChange: (min, max) callback
- *   - disabled: boolean
+ *   - min (0), max (1440), step (15) — dakika
+ *   - minValue / maxValue — mevcut aralık (dakika)
+ *   - onRangeChange: (min, max)
+ *   - disabled
+ *   - minLabel / maxLabel — erişilebilir ad
  */
+function toClock(minutes) {
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
 export function DualRangeSlider({
   min = 0,
   max = 1440,
@@ -19,124 +30,68 @@ export function DualRangeSlider({
   maxValue = 1020,
   onRangeChange = () => {},
   disabled = false,
+  minLabel = "Açılış saati",
+  maxLabel = "Kapanış saati",
 }) {
   const [localMin, setLocalMin] = useState(minValue);
   const [localMax, setLocalMax] = useState(maxValue);
-  const [draggingMin, setDraggingMin] = useState(false);
-  const [draggingMax, setDraggingMax] = useState(false);
-  const trackRef = useRef(null);
 
-  // Min/Max sync
-  useEffect(() => {
-    setLocalMin(minValue);
-  }, [minValue]);
+  useEffect(() => setLocalMin(minValue), [minValue]);
+  useEffect(() => setLocalMax(maxValue), [maxValue]);
 
-  useEffect(() => {
-    setLocalMax(maxValue);
-  }, [maxValue]);
-
-  const handleMinChange = (newMin) => {
-    let value = Math.round(newMin / step) * step;
-    value = Math.max(min, Math.min(value, localMax - step));
+  const commitMin = (raw) => {
+    const value = Math.max(min, Math.min(Number(raw), localMax - step));
     setLocalMin(value);
     onRangeChange(value, localMax);
   };
 
-  const handleMaxChange = (newMax) => {
-    let value = Math.round(newMax / step) * step;
-    value = Math.max(localMin + step, Math.min(value, max));
+  const commitMax = (raw) => {
+    const value = Math.min(max, Math.max(Number(raw), localMin + step));
     setLocalMax(value);
     onRangeChange(localMin, value);
   };
 
-  const handleMinMouseDown = () => {
-    if (!disabled) setDraggingMin(true);
-  };
-
-  const handleMaxMouseDown = () => {
-    if (!disabled) setDraggingMax(true);
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!trackRef.current) return;
-
-      const rect = trackRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const percentage = Math.max(0, Math.min(1, x / rect.width));
-      const value = percentage * (max - min) + min;
-
-      if (draggingMin) {
-        handleMinChange(value);
-      } else if (draggingMax) {
-        handleMaxChange(value);
-      }
-    };
-
-    const handleMouseUp = () => {
-      setDraggingMin(false);
-      setDraggingMax(false);
-    };
-
-    if (draggingMin || draggingMax) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-      return () => {
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
-      };
-    }
-  }, [draggingMin, draggingMax, localMin, localMax, min, max, step]);
-
-  // Yüzde hesapla
-  const minPercent = ((localMin - min) / (max - min)) * 100;
-  const maxPercent = ((localMax - min) / (max - min)) * 100;
+  const span = max - min || 1;
+  const minPercent = ((localMin - min) / span) * 100;
+  const maxPercent = ((localMax - min) / span) * 100;
 
   return (
     <div className="w-full space-y-3">
-      {/* Track Container */}
-      <div
-        ref={trackRef}
-        className="relative h-2 bg-ink-300 rounded-full cursor-pointer dark:bg-ink-700"
-      >
-        {/* Aktif Alan (Cyan Highlight) */}
+      <div className="dual-range" data-disabled={disabled ? "" : undefined}>
+        <div className="dual-range__track" />
         <div
-          className="absolute h-2 bg-brand-500 dark:bg-brand-500 rounded-full"
-          style={{
-            left: `${minPercent}%`,
-            right: `${100 - maxPercent}%`,
-          }}
+          className="dual-range__fill"
+          style={{ left: `${minPercent}%`, right: `${100 - maxPercent}%` }}
         />
-
-        {/* Min Thumb */}
-        <div
-          onMouseDown={handleMinMouseDown}
-          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-brand-500 dark:bg-ink-800 dark:border-brand-400 rounded-full cursor-grab active:cursor-grabbing shadow-lg transition ${
-            disabled ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-          style={{
-            left: `${minPercent}%`,
-            zIndex: draggingMin ? 10 : 5,
-          }}
+        <input
+          type="range"
+          className="dual-range__input"
+          min={min}
+          max={max}
+          step={step}
+          value={localMin}
+          disabled={disabled}
+          aria-label={minLabel}
+          aria-valuetext={toClock(localMin)}
+          onChange={(e) => commitMin(e.target.value)}
         />
-
-        {/* Max Thumb */}
-        <div
-          onMouseDown={handleMaxMouseDown}
-          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-white border-2 border-brand-500 dark:bg-ink-800 dark:border-brand-400 rounded-full cursor-grab active:cursor-grabbing shadow-lg transition ${
-            disabled ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-          style={{
-            left: `${maxPercent}%`,
-            zIndex: draggingMax ? 10 : 5,
-          }}
+        <input
+          type="range"
+          className="dual-range__input"
+          min={min}
+          max={max}
+          step={step}
+          value={localMax}
+          disabled={disabled}
+          aria-label={maxLabel}
+          aria-valuetext={toClock(localMax)}
+          onChange={(e) => commitMax(e.target.value)}
         />
       </div>
 
-      {/* Değerleri Display Edebilmek İçin (İsteğe Bağlı) */}
-      <div className="flex justify-between text-xs text-ink-500 dark:text-ink-400 px-1 pointer-events-none">
-        <span>00:00</span>
-        <span>24:00</span>
+      <div className="flex justify-between px-1 text-xs text-ink-500 dark:text-ink-400">
+        <span>{toClock(localMin)}</span>
+        <span>{toClock(localMax)}</span>
       </div>
     </div>
   );

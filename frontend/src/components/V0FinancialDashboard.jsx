@@ -5,8 +5,6 @@ import { useNavigate } from "react-router-dom";
 import { V0BankCard } from "./V0BankCard";
 import { Sheet } from "./Sheet";
 import { BusinessLoginModal } from "./BusinessLoginModal";
-import { SearchableSelect } from "./SearchableSelect";
-import { FloatingDisplay, FloatingInput, FloatingTextarea } from "./ui/floating-label";
 import { BuySellToggle } from "./BuySellToggle";
 import { GooeyPillField, GooeySearchBar, GooeyToggle } from "./ui/animated-search-bar";
 import { SlidingTabs } from "./ui/sliding-tabs";
@@ -26,9 +24,9 @@ import { SiteNav } from "./SiteNav";
 import { cityOptionsFromBranches } from "../lib/cities";
 import { useAuth } from "../context/AuthContext";
 import { useLanguage } from "../context/LanguageContext";
-import { useRegisterOfficeSearch } from "../context/OfficeSearchContext";
-import { trackBusinessClick } from "../lib/analytics";
-import { apiUrl, cachedRatesUrl, ratesStreamUrl } from "../lib/api";
+import { useRegisterOfficeSearch } from "../context/officeSearchStore";
+import { trackBusinessClick, reportSearchMiss } from "../lib/analytics";
+import { apiUrl, fetchRatesWithRetry, ratesStreamUrl } from "../lib/api";
 import { buildBranchSlug, buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
 import { shouldPlayRateIntro } from "../lib/rateIntro";
 
@@ -48,7 +46,13 @@ const devLog = (...args) => {
  *     kurları ANINDA görür (stale-while-revalidate).
  *  2) 503 / ağ hatasında üstel bekleyişle yeniden dene (soğuk başlatmayı bekle).
  */
-const RATES_CACHE_KEY = "adadoviz:rates-cache:v1";
+/*
+  İyileştirme: eşlenmiş banka şekli değişince (ölü mevduat/kredi alanları
+  kaldırıldı) sürüm anahtarı yükseltilir — eski şekilli önbellek render edilmez.
+*/
+const RATES_CACHE_KEY = "adadoviz:rates-cache:v2";
+/** M1: kimliği kararlı boş dizi — şubesiz kartların memo'su kırılmasın. */
+const EMPTY_BRANCHES = [];
 /** Bayat kur gösterimi için üst sınır — bundan eskisini hiç gösterme. */
 const RATES_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -75,8 +79,6 @@ function writeRatesCache(payload) {
     /* kota dolu / özel mod — sorun değil */
   }
 }
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 
 const SEO_SITE_URL = "https://adadoviz.tunahangul.com";
@@ -325,17 +327,6 @@ function getRate(bank, currency, type) {
   return rate ? toNumberForCompare(rate[type]) : 0;
 }
 
-function getDepositRate(bank) {
-  const directRate = parseRateNumber(bank?.depositRate);
-  const listRate = parseRateNumber(bank?.interestRates?.[0]?.rate);
-  return directRate ?? listRate ?? 0;
-}
-
-function getLoanRate(bank, loanType) {
-  return parseRateNumber(bank?.loans?.[loanType]) ?? 0;
-}
-
-
 export function V0FinancialDashboard() {
   const navigate = useNavigate();
   const { isAuthenticated, isSuperAdmin, logout } = useAuth();
@@ -360,28 +351,47 @@ export function V0FinancialDashboard() {
     };
   }, []);
 
+  const logoutTimerRef = useRef(null);
+
+  /*
+    M3: Eskiden `localStorage.clear()` + `window.location.href = "/"` vardı —
+    çerez onayı, SWR kur önbelleği, intro bayrağı hepsi siliniyor ve tam sayfa
+    yeniden yükleniyordu (soğuk-başlangıç yolu tekrar). Artık yalnızca auth
+    anahtarları temizlenir (logout() → clearAuth()) ve SPA içinde gezinilir.
+  */
   const handleLogout = () => {
-    // ✅ FIXED MODAL POPUP GÖSTER
     setShowLogoutPopup(true);
-    
-    // ✅ 1 SANIYE SONRA LOGOUT VE TAM YENILEME
-    setTimeout(() => {
-      const themePref = localStorage.getItem("finsight-theme");
-      const langPref = localStorage.getItem("finsight-lang");
-      logout();
-      localStorage.clear();
-      try {
-        sessionStorage.removeItem("finsight_business_auth");
-        sessionStorage.removeItem("finsight_auth_remember");
-      } catch {
-        /* ignore */
-      }
-      if (themePref) localStorage.setItem("finsight-theme", themePref);
-      if (langPref) localStorage.setItem("finsight-lang", langPref);
-      window.location.href = "/";  // ✅ React Router'dan önce tam yenileme
-    }, 1000);
+    logout();
+    navigate("/");
+    if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+    logoutTimerRef.current = setTimeout(() => setShowLogoutPopup(false), 600);
   };
-  const [mode] = useState("exchange");
+
+  useEffect(() => {
+    return () => {
+      if (logoutTimerRef.current) clearTimeout(logoutTimerRef.current);
+    };
+  }, []);
+
+  /** M1: kararlı referans — her kart yeniden render olmasın. */
+  const handleBankSelect = useCallback(
+    (biz) => {
+      const name = String(biz?.name || "")
+        .replace(/\s*\([Tt]est\)\s*/g, "")
+        .trim();
+      trackBusinessClick(name || biz?.name, biz?.institutionId);
+      const nearest = biz?.nearestBranch;
+      const slug = nearest?.id
+        ? buildBranchSlug(nearest, name || biz?.name)
+        : biz?.slug ||
+          buildBusinessSlug({
+            institutionId: biz?.institutionId,
+            name: name || biz?.name,
+          });
+      navigate(exchangeOfficePath(slug), { state: { openDetail: true } });
+    },
+    [navigate]
+  );
   /*
     Kur kartlarındaki roller sayaç YALNIZCA kullanıcı kurları ilk kez
     gördüğünde oynar (bu tarayıcıda bir kez). Karar mount'ta bir kez alınır;
@@ -403,6 +413,14 @@ export function V0FinancialDashboard() {
     veri gelince sessizce güncellenir.
   */
   const [banks, setBanks] = useState(() => readRatesCache()?.banks || []);
+  /*
+    A-C2: kur listesi durumu ekran okuyucuya ve göze açıkça bildirilsin.
+    "loading" ilk çekiliş · "waking" 503 (soğuk backend uyanıyor) · "error"
+    tüm denemeler tükendi · "ready" veri geldi.
+  */
+  const [ratesState, setRatesState] = useState(() =>
+    readRatesCache()?.banks?.length ? "ready" : "loading"
+  );
   const [lastUpdated, setLastUpdated] = useState(
     () => readRatesCache()?.serverChangedAt || null
   );
@@ -495,12 +513,6 @@ export function V0FinancialDashboard() {
   // Alış: döviz tutarı → TL; Satış: TL tutarı → döviz
   const [exchangeAmount, setExchangeAmount] = useState("0");
   const [exchangeOperation, setExchangeOperation] = useState("buy");
-  const [depositAmount, setDepositAmount] = useState("100000");
-  const [depositDays, setDepositDays] = useState("32");
-  const [depositType, setDepositType] = useState("monthly");
-  const [loanType, setLoanType] = useState("tasit");
-  const [loanAmount, setLoanAmount] = useState("300000");
-  const [loanMonths, setLoanMonths] = useState("24");
 
   useEffect(() => {
     let mounted = true;
@@ -517,30 +529,17 @@ export function V0FinancialDashboard() {
          * Nihai kurun tek kaynağı artık backend'dir.
          */
         /*
-          Soğuk backend toleransı: 503 (kur önbelleği daha primli değil) veya
-          ağ hatasında üstel bekleyişle yeniden dene. Toplam ~55 sn — Render
-          ücretsiz katman uyanışının tipik üst sınırı.
+          Soğuk backend toleransı (F-H3): retry döngüsü lib/api.js'e taşındı,
+          ComparePage ile paylaşılıyor.
         */
-        const RETRY_DELAYS_MS = [2000, 3000, 5000, 8000, 12000, 12000, 12000];
-        let data = null;
-        for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-          if (!mounted) return;
-          try {
-            const ratesRes = await fetch(cachedRatesUrl());
-            if (ratesRes.ok) {
-              data = await ratesRes.json();
-              break;
-            }
-            if (ratesRes.status !== 503 || attempt === RETRY_DELAYS_MS.length) {
-              throw new Error(`Kurlar API error: ${ratesRes.status}`);
-            }
-          } catch (err) {
-            if (attempt === RETRY_DELAYS_MS.length) throw err;
-          }
-          devLog(`[DASHBOARD] Kurlar hazır değil, ${RETRY_DELAYS_MS[attempt]}ms sonra tekrar (deneme ${attempt + 1})`);
-          await sleep(RETRY_DELAYS_MS[attempt]);
-        }
-        if (!data) throw new Error("Kurlar alınamadı (zaman aşımı).");
+        const data = await fetchRatesWithRetry({
+          isCancelled: () => !mounted,
+          onRetry: ({ attempt, delayMs }) => {
+            if (mounted) setRatesState((s) => (s === "ready" ? s : "waking"));
+            devLog(`[DASHBOARD] Kurlar hazır değil, ${delayMs}ms sonra tekrar (deneme ${attempt})`);
+          },
+        });
+        if (!data) return;
 
         const incomingBanks = Array.isArray(data?.banks) ? data.banks : [];
         const websiteByName = new Map(
@@ -575,20 +574,6 @@ export function V0FinancialDashboard() {
               apiBank?.workingHours ||
               apiBank?.working_hours ||
               null,
-            depositRate: parseRateNumber(apiBank?.depositRate),
-            loans: {
-              tasit: parseRateNumber(apiBank?.loans?.tasit),
-              konut: parseRateNumber(apiBank?.loans?.konut),
-              ihtiyac: parseRateNumber(apiBank?.loans?.ihtiyac),
-            },
-            interestRates: Array.isArray(apiBank?.interestRates) && apiBank.interestRates.length > 0
-              ? apiBank.interestRates
-              : [
-                  {
-                    type: "Mevduat Faizi",
-                    rate: parseRateNumber(apiBank?.depositRate) ?? 45,
-                  },
-                ],
             subscription_type: apiBank?.subscription_type || null,
             subscription_end_date: apiBank?.subscription_end_date || null,
             days_remaining:
@@ -631,6 +616,7 @@ export function V0FinancialDashboard() {
 
         if (mounted) {
           setBanks(mappedBanks);
+          setRatesState(mappedBanks.length > 0 ? "ready" : "error");
 
           // Son güncelleme: yalnızca kur/marj içeriği veya sunucu damgası değişince
           const fingerprint = JSON.stringify(
@@ -664,6 +650,7 @@ export function V0FinancialDashboard() {
         }
       } catch (error) {
         console.error("[DASHBOARD] Kur verisi alınamadı:", error);
+        if (mounted) setRatesState((s) => (s === "ready" ? s : "error"));
         /*
           State'e DOKUNMA. Elde önbellekten gelen kurlar varsa dolu ekran
           korunur (hata yüzünden boşaltmak "yavaş"ı "bozuk"a çeviriyordu);
@@ -675,9 +662,16 @@ export function V0FinancialDashboard() {
 
     refetchBanksRef.current = fetchBanks;
     fetchBanks();
-    const intervalId = setInterval(fetchBanks, 300000); // 5 dakika = 300000ms
-    
-    devLog("[DASHBOARD] Otomatik yenileme başlatıldı - 5 dakika aralığıyla");
+    /*
+      M8: SSE zaten canlı güncelleme veriyor. Bu interval yalnızca SSE fallback'i —
+      15 dk'ya uzatıldı ve yalnızca sekme görünürken çalışır (arka planda uyuyan
+      soğuk-başlangıç backend'ine gereksiz istek atmasın).
+    */
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === "visible") fetchBanks();
+    }, 900000); // 15 dakika
+
+    devLog("[DASHBOARD] SSE fallback yenilemesi başlatıldı - 15 dakika aralığıyla (yalnızca görünürken)");
 
     return () => {
       mounted = false;
@@ -854,11 +848,10 @@ export function V0FinancialDashboard() {
       });
       result.sort((a, b) => a.nearestDistanceKm - b.nearestDistanceKm);
     } else if (sortBy !== "none") {
-      result = result.map((bank) => ({
-        ...bank,
-        nearestBranch: null,
-        nearestDistanceKm: null,
-      }));
+      // M1: eskiden burada `{...bank}` ile yeni nesneler üretiliyordu (memo'yu
+      // kırıyordu). nearestBranch yalnızca "en yakın" sıralamasında anlamlı —
+      // burada sadece sırala, nesne kimliğini koru.
+      result = [...result];
       result.sort((a, b) => {
         const [currency, type, direction] = sortBy.split("-");
         const currencyUpper = currency.toUpperCase();
@@ -873,11 +866,7 @@ export function V0FinancialDashboard() {
         return direction === "high" ? rateB - rateA : rateA - rateB;
       });
     } else {
-      result = result.map((bank) => ({
-        ...bank,
-        nearestBranch: null,
-        nearestDistanceKm: null,
-      }));
+      result = [...result];
       result.sort((a, b) => a.name.localeCompare(b.name, "tr"));
     }
 
@@ -894,7 +883,7 @@ export function V0FinancialDashboard() {
    * Sonuç V0BankCard'a `bestRates` olarak geçer ve ilgili hücre işaretlenir.
    */
   const bestRates = useMemo(() => {
-    if (mode !== "exchange" || filteredAndSortedBanks.length < 2) return null;
+    if (filteredAndSortedBanks.length < 2) return null;
     const result = {};
     for (const currency of ["EUR", "USD", "GBP"]) {
       let bestBuy = null;
@@ -926,7 +915,7 @@ export function V0FinancialDashboard() {
       }
     }
     return Object.keys(result).length > 0 ? result : null;
-  }, [filteredAndSortedBanks, mode]);
+  }, [filteredAndSortedBanks]);
 
   const selectedCalculatorBank = banks.find((b) => b.name === calculatorBank) ?? null;
   const selectedExchangePair =
@@ -947,39 +936,6 @@ export function V0FinancialDashboard() {
         : exchangeAmountNum / selectedExchangeSellRate
       : null;
 
-  const depositPrincipal = Number.parseFloat(depositAmount);
-  const depositTermDays = Number.parseFloat(depositDays);
-  const selectedDepositRateBase = selectedCalculatorBank ? getDepositRate(selectedCalculatorBank) : null;
-  const selectedDepositRate =
-    Number.isFinite(selectedDepositRateBase)
-      ? depositType === "daily"
-        ? Math.max(selectedDepositRateBase - 3.5, 0)
-        : depositType === "yearly"
-          ? Math.max(selectedDepositRateBase - 1.5, 0)
-          : selectedDepositRateBase
-      : null;
-  const depositProfit =
-    Number.isFinite(depositPrincipal) &&
-    depositPrincipal > 0 &&
-    Number.isFinite(depositTermDays) &&
-    depositTermDays > 0 &&
-    Number.isFinite(selectedDepositRate)
-      ? depositPrincipal * (selectedDepositRate / 100) * (depositTermDays / 365)
-      : null;
-  const depositTotal = Number.isFinite(depositProfit) ? depositPrincipal + depositProfit : null;
-
-  const principal = Number.parseFloat(loanAmount);
-  const months = Number.parseFloat(loanMonths);
-  const monthlyRate = selectedCalculatorBank ? getLoanRate(selectedCalculatorBank, loanType) : null;
-  const i = Number.isFinite(monthlyRate) ? monthlyRate / 100 : null;
-  const loanInstallment =
-    Number.isFinite(principal) && principal > 0 && Number.isFinite(months) && months > 0 && Number.isFinite(i)
-      ? i === 0
-        ? principal / months
-        : principal * ((i * (1 + i) ** months) / ((1 + i) ** months - 1))
-      : null;
-  const loanTotal = Number.isFinite(loanInstallment) ? loanInstallment * months : null;
-  const activeLoanRate = Number.isFinite(monthlyRate) ? monthlyRate : null;
   // A-06: üst bar çipleri 26px yükseklikteydi; parmakla isabet ettirilemiyordu.
   // Transition burada YOK: tek kullanıcısı (İşletme Girişi) kendi
   // `transition-colors`'ını taşıyor — ikisi aynı satırda olsa çakışırdı.
@@ -1069,6 +1025,24 @@ export function V0FinancialDashboard() {
   }, []);
 
   useRegisterOfficeSearch(officeSearchItems, searchQuery, onOfficeQuery, onOfficePick);
+
+  /*
+   * P3.4 (S6) — arama sonuç bulamadığında "eşleşmeyen arama" logla. Katalog
+   * yüklüyken, sorgu ≥ 2 karakterken ve filtrelenmiş sonuç boşken; 1.2 sn
+   * debounce + oturum içi aynı (sorgu+şehir) tekrar gönderilmez.
+   */
+  const reportedMissesRef = useRef(new Set());
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2 || banks.length === 0 || filteredAndSortedBanks.length > 0) return undefined;
+    const key = `${q.toLowerCase()}|${cityFilter || ""}`;
+    if (reportedMissesRef.current.has(key)) return undefined;
+    const timer = setTimeout(() => {
+      reportedMissesRef.current.add(key);
+      reportSearchMiss(q, cityFilter || undefined);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [searchQuery, cityFilter, banks.length, filteredAndSortedBanks.length]);
 
   const officeSearchBar = (
     <GooeySearchBar
@@ -1297,16 +1271,11 @@ export function V0FinancialDashboard() {
       <section className="surface-card overflow-visible p-4 sm:p-6">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-tight text-ink-900 dark:text-white">
-            {mode === "exchange"
-              ? t("currencyConverter")
-              : mode === "interest"
-                ? t("depositCalculator")
-                : t("loanCalculator")}
+            {t("currencyConverter")}
           </h2>
         </div>
 
-        {mode === "exchange" ? (
-          <div className="currency-converter-row grid grid-cols-1 items-center gap-3 sm:grid-cols-2 xl:grid-cols-12">
+        <div className="currency-converter-row grid grid-cols-1 items-center gap-3 sm:grid-cols-2 xl:grid-cols-12">
             <div className="min-w-0 xl:col-span-2">
               <GooeySearchBar
                 mode="select"
@@ -1427,155 +1396,6 @@ export function V0FinancialDashboard() {
               );
             })()}
           </div>
-        ) : mode === "interest" ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <div className="flex min-w-0 flex-col gap-1">
-              <SearchableSelect
-                label={t("selectBank")}
-                value={calculatorBank}
-                onChange={setCalculatorBank}
-                placeholder={t("selectBankPlaceholder")}
-                options={[...banks]
-                  .sort((a, b) => a.name.localeCompare(b.name, "tr"))
-                  .map((bank) => ({ value: bank.name, label: bank.name }))}
-              />
-            </div>
-            <FloatingInput
-              className="min-w-0"
-              label={t("calcPrincipalTl")}
-              type="number"
-              min="0"
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-            />
-            <div className="flex min-w-0 flex-col gap-1">
-              <SearchableSelect
-                label={t("calcTermType")}
-                value={depositType}
-                onChange={setDepositType}
-                options={[
-                  { value: "daily", label: t("periodDaily") },
-                  { value: "monthly", label: t("periodMonthly") },
-                  { value: "yearly", label: t("periodYearly") },
-                ]}
-              />
-            </div>
-            <FloatingInput
-              className="min-w-0"
-              label={t("calcTermDays")}
-              type="number"
-              min="1"
-              value={depositDays}
-              onChange={(e) => setDepositDays(e.target.value)}
-            />
-            <FloatingDisplay
-              className="min-w-0"
-              label={t("calcNetReturn")}
-              muted={!Number.isFinite(depositProfit)}
-              valueClassName={Number.isFinite(depositProfit) ? "font-semibold" : ""}
-            >
-              {Number.isFinite(depositProfit)
-                ? `${depositProfit.toLocaleString(localeCode, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })} TL`
-                : "Net getiri hesaplanamadı"}
-            </FloatingDisplay>
-            <FloatingDisplay
-              className="min-w-0"
-              label={t("calcMaturityTotal")}
-              muted={!Number.isFinite(depositTotal)}
-              valueClassName={Number.isFinite(depositTotal) ? "font-semibold" : ""}
-            >
-              {Number.isFinite(depositTotal)
-                ? `${depositTotal.toLocaleString(localeCode, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })} TL`
-                : "Vade sonu bekleniyor"}
-            </FloatingDisplay>
-            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-300">
-              {Number.isFinite(selectedDepositRate)
-                ? `Kullanılan Faiz Oranı: %${selectedDepositRate.toFixed(2)} (${depositType === "daily" ? "Günlük" : depositType === "monthly" ? "Aylık" : "Yıllık"} baz)`
-                : "Faiz oranı döviz bürosu verisine göre belirlenecektir."}
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <div className="flex min-w-0 flex-col gap-1">
-              <SearchableSelect
-                label={t("selectBank")}
-                value={calculatorBank}
-                onChange={setCalculatorBank}
-                placeholder={t("selectBankPlaceholder")}
-                options={[...banks]
-                  .sort((a, b) => a.name.localeCompare(b.name, "tr"))
-                  .map((bank) => ({ value: bank.name, label: bank.name }))}
-              />
-            </div>
-            <div className="flex min-w-0 flex-col gap-1">
-              <SearchableSelect
-                label={t("calcLoanType")}
-                value={loanType}
-                onChange={setLoanType}
-                options={[
-                  { value: "tasit", label: "Taşıt" },
-                  { value: "konut", label: "Konut" },
-                  { value: "ihtiyac", label: "İhtiyaç" },
-                ]}
-              />
-            </div>
-            <FloatingInput
-              className="min-w-0"
-              label={t("calcLoanAmountTl")}
-              type="number"
-              min="0"
-              value={loanAmount}
-              onChange={(e) => setLoanAmount(e.target.value)}
-            />
-            <FloatingInput
-              className="min-w-0"
-              label={t("calcTermMonths")}
-              type="number"
-              min="1"
-              value={loanMonths}
-              onChange={(e) => setLoanMonths(e.target.value)}
-            />
-            <FloatingDisplay
-              className="min-w-0"
-              label={t("calcMonthlyPayment")}
-              muted={!Number.isFinite(loanInstallment)}
-              valueClassName={Number.isFinite(loanInstallment) ? "font-semibold" : ""}
-            >
-              {Number.isFinite(loanInstallment)
-                ? `${loanInstallment.toLocaleString(localeCode, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })} TL`
-                : "Taksit hesaplanamadı"}
-            </FloatingDisplay>
-            <FloatingDisplay
-              className="min-w-0"
-              label={t("calcTotalRepayment")}
-              muted={!Number.isFinite(loanTotal)}
-              valueClassName={Number.isFinite(loanTotal) ? "font-semibold" : ""}
-            >
-              {Number.isFinite(loanTotal)
-                ? `${loanTotal.toLocaleString(localeCode, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })} TL`
-                : "Toplam ödeme bekleniyor"}
-            </FloatingDisplay>
-            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-6 rounded-lg border border-brand-500/30 bg-brand-500/10 px-3 py-2 text-xs text-brand-700 dark:text-brand-300">
-              {Number.isFinite(activeLoanRate) && selectedCalculatorBank
-                ? `💡 Uygulanan Aylık Faiz: %${activeLoanRate.toFixed(2)} (${selectedCalculatorBank.name} ${
-                    loanType === "tasit" ? "Taşıt Kredisi" : loanType === "konut" ? "Konut Kredisi" : "İhtiyaç Kredisi"
-                  })`
-                : "💡 Uygulanan faiz, seçilen döviz bürosu ve kredi türüne göre belirlenir."}
-            </div>
-          </div>
-        )}
       </section>
 
       {/* D-14: üçüncü bölüm de artık aynı başlık dilini kullanıyor. */}
@@ -1691,8 +1511,35 @@ export function V0FinancialDashboard() {
       ) : null}
 
       {banks.length === 0 ? (
-        <div className="rounded-2xl border border-ink-200 bg-white/80 p-6 py-10 text-center text-ink-600 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-ink-900/60 dark:text-ink-300">
-          {t("banksLoading")}
+        <div
+          role="status"
+          aria-live="polite"
+          aria-busy={ratesState === "loading" || ratesState === "waking"}
+          className="rounded-2xl border border-ink-200 bg-white/80 p-6 py-10 text-center text-ink-600 shadow-xl backdrop-blur-lg dark:border-white/10 dark:bg-ink-900/60 dark:text-ink-300"
+        >
+          {ratesState === "error" ? (
+            <>
+              <p className="font-medium text-ink-900 dark:text-white">{t("banksErrorTitle")}</p>
+              <p className="mt-1 text-sm">{t("banksErrorBody")}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setRatesState("loading");
+                  refetchBanksRef.current?.();
+                }}
+                className="btn-primary mt-4"
+              >
+                {t("retry")}
+              </button>
+            </>
+          ) : ratesState === "waking" ? (
+            <>
+              <p className="font-medium text-ink-900 dark:text-white">{t("banksWakingTitle")}</p>
+              <p className="mt-1 text-sm">{t("banksWakingBody")}</p>
+            </>
+          ) : (
+            t("banksLoading")
+          )}
         </div>
       ) : filteredAndSortedBanks.length > 0 ? (
         <div id="office-grid" className="grid scroll-mt-28 grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-8 lg:grid-cols-3 md:gap-10">
@@ -1700,30 +1547,15 @@ export function V0FinancialDashboard() {
             <V0BankCard
               key={bank.institutionId || bank.id}
               bank={bank}
-              mode={mode}
               bestRates={bestRates}
               introRates={introRates}
               branches={
                 branchesByInstitution[bank.institutionId] ||
                 branchesByInstitution[normalizeText(bank.name)] ||
-                []
+                EMPTY_BRANCHES
               }
               showNearestBranch={sortBy === "nearest" && Boolean(userLocation)}
-              onSelect={(biz) => {
-                const name = String(biz?.name || "")
-                  .replace(/\s*\([Tt]est\)\s*/g, "")
-                  .trim();
-                trackBusinessClick(name || biz?.name);
-                const nearest = biz?.nearestBranch;
-                const slug = nearest?.id
-                  ? buildBranchSlug(nearest, name || biz?.name)
-                  : biz?.slug ||
-                    buildBusinessSlug({
-                      institutionId: biz?.institutionId,
-                      name: name || biz?.name,
-                    });
-                navigate(exchangeOfficePath(slug), { state: { openDetail: true } });
-              }}
+              onSelect={handleBankSelect}
             />
           ))}
         </div>
@@ -1750,15 +1582,15 @@ export function V0FinancialDashboard() {
         {/* ✅ FIXED MODAL - ÇIKIS */}
         {showLogoutPopup && (
           <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/75 p-4 backdrop-blur-md">
-            <div className="flex w-full max-w-sm flex-col items-center rounded-2xl border border-ink-700 bg-[#1a1f2e] p-6 shadow-2xl transition-all sm:p-8">
+            <div className="surface-card flex w-full max-w-sm flex-col items-center p-6 shadow-2xl transition-all sm:p-8">
               <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-danger-500/20 animate-spin">
                 <svg className="h-8 w-8 text-danger-500" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               </div>
-              <h3 className="text-center text-lg font-bold text-white sm:text-xl">{t("logoutInProgress")}</h3>
-              <p className="mt-2 text-center text-sm text-ink-300">{t("logoutRedirecting")}</p>
+              <h3 className="text-center text-lg font-bold text-ink-900 dark:text-white sm:text-xl">{t("logoutInProgress")}</h3>
+              <p className="mt-2 text-center text-sm text-ink-600 dark:text-ink-300">{t("logoutRedirecting")}</p>
             </div>
           </div>
         )}

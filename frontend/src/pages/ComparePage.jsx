@@ -14,10 +14,10 @@ import { SiteNav } from "../components/SiteNav";
 import { HeaderActions } from "../components/HeaderActions";
 import { FloatingSelect } from "../components/ui/floating-label";
 import { ChartContainer, ChartHoverCard, ChartLegend, ChartLegendContent, ChartSwatch, ChartTooltip } from "../components/ui/chart";
-import { chartSkin, comparePalette, hollowDot } from "../lib/chartTheme";
+import { chartSkin, comparePalette, compareDash, hollowDot } from "../lib/chartTheme";
 import { useLanguage } from "../context/LanguageContext";
 import { useTheme } from "../context/ThemeContext";
-import { apiUrl } from "../lib/api";
+import { apiUrl, fetchRatesWithRetry } from "../lib/api";
 import { cityOptionsFromBranches } from "../lib/cities";
 
 const CURRENCIES = ["USD", "EUR", "GBP"];
@@ -116,7 +116,9 @@ export function ComparePage() {
   const [citiesByBusiness, setCitiesByBusiness] = useState({});
   const [branchGroups, setBranchGroups] = useState({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  // M2: hata bir KOD olarak saklanır, render sırasında çevrilir — böylece
+  // `t` fetch-effect bağımlılığı olmaktan çıkar (dil değişimi refetch tetiklemez).
+  const [errorCode, setErrorCode] = useState(null);
 
   const currency = CURRENCIES.includes(searchParams.get("birim"))
     ? searchParams.get("birim")
@@ -170,13 +172,13 @@ export function ComparePage() {
     pushState(kept, currency, nextCity);
   };
 
-  // İşletme listesi (bir kez)
+  // İşletme listesi (bir kez). F-H3: soğuk-başlangıç toleranslı, edge-önbellekli
+  // proxy üzerinden — dashboard ile aynı retry döngüsü.
   useEffect(() => {
     let alive = true;
-    fetch(apiUrl("/api/kurlar"))
-      .then((res) => res.json())
+    fetchRatesWithRetry({ isCancelled: () => !alive })
       .then((data) => {
-        if (!alive) return;
+        if (!alive || !data) return;
         const list = (data?.banks || [])
           .filter((b) => b.institutionId)
           .map((b) => ({
@@ -185,11 +187,11 @@ export function ComparePage() {
           }));
         setBusinesses(list);
       })
-      .catch(() => alive && setError(t("compareError")));
+      .catch(() => alive && setErrorCode("compareError"));
     return () => {
       alive = false;
     };
-  }, [t]);
+  }, []);
 
   // Şube listesi: şehir filtresinin seçenekleri ve işletme-şehir eşlemesi
   useEffect(() => {
@@ -211,7 +213,10 @@ export function ComparePage() {
         setBranchGroups(groups);
         setCitiesByBusiness(map);
       })
-      .catch(() => {});
+      .catch((err) => {
+        // M6: sessizce yutma — şehir filtresi kaybolursa en azından log'da görünsün.
+        console.warn("[ComparePage] /api/branches alınamadı:", err);
+      });
     return () => {
       alive = false;
     };
@@ -222,9 +227,10 @@ export function ComparePage() {
     // Boş seçimde de Promise.all kullanılır: setState efekt gövdesinde senkron
     // değil, promise callback'inde çalışsın diye (react-hooks/set-state-in-effect).
     let alive = true;
+    const ids = selectedKey ? selectedKey.split(",") : [];
 
     Promise.all(
-      selected.map((id) =>
+      ids.map((id) =>
         fetch(apiUrl(`/api/business-rate-history?institution_id=${encodeURIComponent(id)}&currency=${currency}&period=${HISTORY_PERIOD}`))
           .then((res) => (res.ok ? res.json() : { rates: [] }))
           .then((data) => [id, bucketByDay(data?.rates, "final_buy", "final_sell")])
@@ -233,20 +239,21 @@ export function ComparePage() {
     )
       .then((entries) => {
         if (!alive) return;
-        setError(null);
+        setErrorCode(null);
         setSeriesByBusiness(Object.fromEntries(entries));
         setLoading(false);
       })
       .catch(() => {
         if (!alive) return;
-        setError(t("compareError"));
+        setErrorCode("compareError");
         setLoading(false);
       });
 
     return () => {
       alive = false;
     };
-  }, [selectedKey, selected, currency, t]);
+    // `selected` yerine `selectedKey` (kararlı string) — M2.
+  }, [selectedKey, currency]);
 
   const cityOptions = useMemo(
     () => cityOptionsFromBranches(branchGroups, lang),
@@ -346,8 +353,9 @@ export function ComparePage() {
                 <button
                   key={code}
                   type="button"
+                  aria-pressed={currency === code}
                   onClick={() => pushState(selected, code, cityFilter)}
-                  className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`inline-flex min-h-[2.75rem] items-center rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
                     currency === code
                       ? "surface-neon"
                       : "text-ink-600 hover:bg-ink-100 dark:text-ink-300 dark:hover:bg-white/5"
@@ -387,14 +395,15 @@ export function ComparePage() {
                   key={business.institutionId}
                   type="button"
                   disabled={disabled}
+                  aria-pressed={active}
                   onClick={() => toggle(business.institutionId)}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  className={`inline-flex min-h-[2.75rem] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
                       ? "border-ink-950/40 bg-ink-950/[0.06] text-ink-900 dark:border-white/50 dark:bg-white/10 dark:text-white"
                       : "border-ink-300 text-ink-600 hover:bg-ink-100 dark:border-white/10 dark:text-ink-300 dark:hover:bg-white/5"
                   } ${disabled ? "cursor-not-allowed opacity-40" : ""}`}
                 >
-                  {active ? <Check className="size-3" /> : null}
+                  {active ? <Check className="size-3" aria-hidden="true" /> : null}
                   {business.name}
                 </button>
               );
@@ -402,8 +411,10 @@ export function ComparePage() {
           </div>
         </section>
 
-        {error ? (
-          <div className="surface-card p-6 text-center text-sm text-danger-600 dark:text-danger-400">{error}</div>
+        {errorCode ? (
+          <div role="alert" className="surface-card p-6 text-center text-sm text-danger-600 dark:text-danger-400">
+            {t(errorCode)}
+          </div>
         ) : selected.length === 0 ? (
           <div className="surface-card p-12 text-center text-sm text-ink-500 dark:text-ink-400">
             {t("compareEmpty")}
@@ -414,7 +425,24 @@ export function ComparePage() {
               <h2 className="mb-4 text-sm font-semibold">
                 {currency} {t("compareChartTitle")}
               </h2>
-              <div className="h-[340px] w-full">
+              <div
+                className="h-[340px] w-full"
+                role="img"
+                aria-label={
+                  loading
+                    ? t("compareLoading")
+                    : `${currency} ${t("compareChartTitle")}. ${summary
+                        .map(
+                          (s) =>
+                            `${s.name}: ${t("buyShort")} ${s.buy != null ? s.buy.toFixed(2) : "—"}, ${t("sellShort")} ${s.sell != null ? s.sell.toFixed(2) : "—"}${
+                              s.change != null
+                                ? ` (${s.change >= 0 ? "+" : ""}${s.change.toFixed(2)})`
+                                : ""
+                            }`
+                        )
+                        .join("; ")}`
+                }
+              >
                 {loading ? (
                   <div className="flex h-full items-center justify-center text-sm text-ink-500 dark:text-ink-400">
                     {t("compareLoading")}
@@ -460,6 +488,7 @@ export function ComparePage() {
                       <ChartLegend content={<ChartLegendContent className="flex-wrap gap-x-4 gap-y-1.5" />} />
                       {selected.flatMap((id, index) => {
                         const color = palette[index % palette.length];
+                        const dash = compareDash[index % compareDash.length];
                         const name = businesses.find((b) => b.institutionId === id)?.name || id;
                         const buyDot = hollowDot(color, skin.dotFill, 4);
                         return [
@@ -470,6 +499,7 @@ export function ComparePage() {
                             name={name + " - " + t("buyShort")}
                             stroke={color}
                             strokeWidth={2}
+                            strokeDasharray={dash === "0" ? undefined : dash}
                             dot={false}
                             activeDot={buyDot}
                             connectNulls
@@ -525,9 +555,23 @@ export function ComparePage() {
                                 : "text-danger-600 dark:text-danger-400"
                           }`}
                         >
-                          {row.change === null
-                            ? "—"
-                            : (row.change >= 0 ? "+" : "") + formatRate(row.change, locale)}
+                          {row.change === null ? (
+                            "—"
+                          ) : (
+                            <>
+                              <span aria-hidden="true">
+                                {row.change > 0 ? "▲ " : row.change < 0 ? "▼ " : "▬ "}
+                              </span>
+                              <span className="sr-only">
+                                {row.change > 0
+                                  ? t("trendUp")
+                                  : row.change < 0
+                                    ? t("trendDown")
+                                    : t("trendFlat")}{" "}
+                              </span>
+                              {(row.change >= 0 ? "+" : "") + formatRate(row.change, locale)}
+                            </>
+                          )}
                         </td>
                       </tr>
                     ))}

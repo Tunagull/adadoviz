@@ -213,13 +213,24 @@ canvas {
  * prefers-reduced-motion altında da güvenle kalır.
  */
 .dark .neon-text,
-.dark h1,
-.dark h2 {
+.dark h1 {
   color: #fff;
   text-shadow:
     0 0 1px rgba(255, 255, 255, 0.55),
     0 0 12px rgba(255, 255, 255, 0.3),
     0 0 34px rgba(255, 255, 255, 0.18);
+}
+
+/*
+  D6: h2 çoğunlukla display değil (bölüm başlığı, ~text-lg). Geniş 34px saçılma
+  küçük punto kenarlarını bulanıklaştırıyordu — h2'de yalnızca dar hale.
+  Gerçekten display olması gereken h2 `.neon-text` sınıfını taşıyabilir.
+*/
+.dark h2 {
+  color: #fff;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.5),
+    0 0 10px rgba(255, 255, 255, 0.2);
 }
 
 /** Gövde metni / küçük punto için kısılmış hâle (geniş saçılma yok). */
@@ -903,8 +914,17 @@ button.float-field__control {
   background: var(--ggr-selected-bg);
 }
 
-/* Vurgulanan satır — kaynaktaki gibi tam renk ters çevirme. */
+/*
+  D9: fare üzerinde gezinen satır artık tam renk ters çevirmiyor (uzun listede
+  her satırın siyah/beyaza atlaması gürültülüydü) — hafif vurgu. Klavye ile
+  seçilen satır (.is-active--kbd) tam ters çevirmeyi korur: görünürlük kritik.
+*/
 .gooey-search__result.is-active {
+  background: var(--ggr-selected-bg);
+  color: var(--ggr-text);
+}
+
+.gooey-search__result.is-active--kbd {
   background: var(--ggr-invert-bg);
   color: var(--ggr-invert-text);
 }
@@ -934,9 +954,9 @@ button.float-field__control {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.6875rem;
+  font-size: 0.75rem; /* D3 */
   font-weight: 600;
-  opacity: 0.6;
+  opacity: 0.78; /* A-H2: 0.6 → 0.78 */
 }
 
 .gooey-search__result-check {
@@ -1165,11 +1185,11 @@ button.float-field__control {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.625rem;
+  font-size: 0.75rem; /* D3: kalıcı metin 12px tabanı */
   font-weight: 700;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.62;
+  /* D4: text-transform:uppercase kaldırıldı (D-09 düzeltmesine geri dönüş) */
+  opacity: 0.78; /* A-H2: 0.62 → 0.78 (light mode kontrast) */
 }
 
 .gooey-field__input {
@@ -1594,11 +1614,11 @@ button.float-field__control {
 }
 
 .date-field-trigger__label {
-  font-size: 0.625rem;
+  font-size: 0.75rem; /* D3 */
   font-weight: 700;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.62;
+  /* D4: uppercase kaldırıldı */
+  opacity: 0.78; /* A-H2 */
   white-space: nowrap;
 }
 
@@ -1784,15 +1804,20 @@ button.float-field__control {
   }
 }
 
-@keyframes footer-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    box-shadow: 0 0 0 0 rgb(16 185 129 / 0.5);
+/*
+  M3 (uiux): eskiden `box-shadow` anime ediliyordu → her karede repaint.
+  Artık pseudo-element halka `transform: scale` + `opacity` ile büyür (yalnızca
+  compositor).
+*/
+@keyframes footer-pulse-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.6);
+    opacity: 0.5;
   }
-  50% {
-    opacity: 0.75;
-    box-shadow: 0 0 0 6px rgb(16 185 129 / 0);
+  70%,
+  100% {
+    transform: translate(-50%, -50%) scale(2.4);
+    opacity: 0;
   }
 }
 
@@ -1805,7 +1830,21 @@ button.float-field__control {
 }
 
 .footer-live-dot {
-  animation: footer-pulse 2.4s ease-in-out infinite;
+  position: relative;
+}
+
+.footer-live-dot::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: rgb(16 185 129 / 0.5);
+  transform: translate(-50%, -50%) scale(0.6);
+  animation: footer-pulse-ring 2.4s ease-out infinite;
+  pointer-events: none;
 }
 
 /*
@@ -1817,8 +1856,12 @@ button.float-field__control {
 @media (prefers-reduced-motion: reduce) {
   .footer-breathe,
   .footer-marquee-track,
-  .footer-live-dot {
+  .footer-live-dot,
+  .footer-live-dot::after {
     animation: none;
+  }
+  .footer-live-dot::after {
+    display: none;
   }
 }
 
@@ -1976,7 +2019,7 @@ button.float-field__control {
   --orb-node-bg: #ffffff;
   --orb-ink: #08080a;
   --orb-ink-soft: rgb(8 8 10 / 0.66);
-  --orb-ink-faint: rgb(8 8 10 / 0.45);
+  --orb-ink-faint: rgb(8 8 10 / 0.66); /* A-H2 */
   --orb-line: rgb(8 8 10 / 0.1);
   --orb-track: rgb(8 8 10 / 0.09);
   --orb-cta-bg: #08080a;
@@ -2002,7 +2045,7 @@ button.float-field__control {
   --orb-node-bg: #0a0a0c;
   --orb-ink: #ffffff;
   --orb-ink-soft: rgb(255 255 255 / 0.68);
-  --orb-ink-faint: rgb(255 255 255 / 0.45);
+  --orb-ink-faint: rgb(255 255 255 / 0.7); /* A-H2 */
   --orb-line: rgb(255 255 255 / 0.1);
   --orb-track: rgb(255 255 255 / 0.12);
   --orb-cta-bg: #ffffff;
@@ -2015,16 +2058,17 @@ button.float-field__control {
   margin: 0 auto 0.5rem;
   max-width: 28rem;
   text-align: center;
-  font-size: 0.6875rem;
+  font-size: 0.75rem; /* D3 */
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  /* D4: uppercase kaldırıldı */
   color: var(--orb-ink-faint);
 }
 
 .orbital-contact__stage {
   /* Düğüm çapı ve merkez, yarıçapla birlikte ölçekleniyor. */
-  --orb-node: clamp(2.5rem, calc(var(--orbital-ry, 160px) * 0.23), 3.5rem);
+  /* A-M4/R1: dokunma hedefi tabanı 2.75rem (44px). */
+  --orb-node: clamp(2.75rem, calc(var(--orbital-ry, 160px) * 0.23), 3.5rem);
   --orb-core: clamp(3.5rem, calc(var(--orbital-ry, 160px) * 0.32), 5.5rem);
 
   position: relative;
@@ -2259,10 +2303,10 @@ button.float-field__control {
   border-radius: 999px;
   border: 1px solid var(--orbital-accent, currentColor);
   padding: 0.2rem 0.6rem;
-  font-size: 0.625rem;
+  font-size: 0.75rem; /* D3 */
   font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  /* D4: uppercase kaldırıldı */
   color: var(--orb-ink);
 }
 
@@ -2407,10 +2451,10 @@ button.float-field__control {
   align-items: center;
   gap: 0.35rem;
   margin-bottom: 0.5rem;
-  font-size: 0.6875rem;
+  font-size: 0.75rem; /* D3 */
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  /* D4: uppercase kaldırıldı */
   color: var(--orb-ink-faint);
 }
 
@@ -2508,4 +2552,110 @@ button.float-field__control {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * DualRangeSlider (A-C1): iki üst üste bindirilmiş native range input.
+ * ------------------------------------------------------------------ */
+.dual-range {
+  position: relative;
+  height: 2.75rem; /* 44px dokunma alanı */
+  display: flex;
+  align-items: center;
+}
+
+.dual-range__track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: theme("colors.ink.300");
+}
+
+.dark .dual-range__track {
+  background: theme("colors.ink.700");
+}
+
+.dual-range__fill {
+  position: absolute;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: theme("colors.brand.500");
+  pointer-events: none;
+}
+
+.dual-range__input {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2.75rem;
+}
+
+.dual-range__input:focus-visible {
+  outline: none;
+}
+
+.dual-range__input::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 0.5rem;
+}
+
+.dual-range__input::-moz-range-track {
+  background: transparent;
+  height: 0.5rem;
+}
+
+.dual-range__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid theme("colors.brand.500");
+  box-shadow: 0 2px 8px rgb(8 8 10 / 0.25);
+  cursor: grab;
+  margin-top: -0.5rem; /* (track 0.5rem - thumb 1.5rem) / 2 */
+}
+
+.dual-range__input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid theme("colors.brand.500");
+  box-shadow: 0 2px 8px rgb(8 8 10 / 0.25);
+  cursor: grab;
+}
+
+.dark .dual-range__input::-webkit-slider-thumb,
+.dark .dual-range__input::-moz-range-thumb {
+  background: theme("colors.ink.800");
+  border-color: theme("colors.brand.400");
+}
+
+.dual-range__input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid theme("colors.brand.500");
+  outline-offset: 2px;
+}
+
+.dual-range__input:focus-visible::-moz-range-thumb {
+  outline: 2px solid theme("colors.brand.500");
+  outline-offset: 2px;
+}
+
+.dual-range[data-disabled] {
+  opacity: 0.5;
+}
+
+.dual-range[data-disabled] .dual-range__input {
+  cursor: not-allowed;
 }

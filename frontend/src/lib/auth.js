@@ -325,6 +325,157 @@ export async function markBusinessNotificationsRead(token, ids) {
   return data;
 }
 
+export async function fetchAdminNotifications(token) {
+  const response = await fetch(apiUrl("/api/admin/notifications"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Bildirimler alınamadı.");
+  }
+  return data;
+}
+
+export async function markAdminNotificationsRead(token, ids) {
+  const response = await fetch(apiUrl("/api/admin/notifications/mark-read"), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify(ids ? { ids } : {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Bildirimler işaretlenemedi.");
+  }
+  return data;
+}
+
+// P1.7 — panel-içi destek / sorun bildirimi
+export async function submitSupportTicket(token, payload) {
+  const response = await fetch(apiUrl("/api/support-tickets"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Destek talebi gönderilemedi.");
+  }
+  return data?.ticket || null;
+}
+
+export async function fetchSupportTickets(token) {
+  const response = await fetch(apiUrl("/api/support-tickets"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talepler alınamadı.");
+  }
+  return data?.tickets || [];
+}
+
+export async function fetchAdminSignupRequests(token, status) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await fetch(apiUrl(`/api/admin/signup-requests${qs}`), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Başvurular alınamadı.");
+  }
+  return { requests: data?.requests || [], pending: Number(data?.pending) || 0 };
+}
+
+export async function approveSignupRequest(token, id, payload) {
+  const response = await fetch(apiUrl(`/api/admin/signup-requests/${id}/approve`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Başvuru onaylanamadı.");
+  }
+  return data;
+}
+
+export async function rejectSignupRequest(token, id, reason) {
+  const response = await fetch(apiUrl(`/api/admin/signup-requests/${id}/reject`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify({ reason: reason || "" }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Başvuru reddedilemedi.");
+  }
+  return data;
+}
+
+export async function fetchAdminMarketHealth(token, staleDays = 7) {
+  const response = await fetch(
+    apiUrl(`/api/admin/market-health?staleDays=${Number(staleDays) || 7}`),
+    { headers: authHeaders(token) }
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Pazar sağlığı alınamadı.");
+  }
+  return data;
+}
+
+export async function fetchBusinessAnalytics(token, days = 7) {
+  const d = Number(days) === 30 ? 30 : 7;
+  const response = await fetch(apiUrl(`/api/business/analytics?days=${d}`), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Analitik alınamadı.");
+  }
+  return data;
+}
+
+export async function fetchAdminSupportTickets(token, status) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await fetch(apiUrl(`/api/admin/support-tickets${qs}`), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talepler alınamadı.");
+  }
+  return { tickets: data?.tickets || [], open: data?.open || 0 };
+}
+
+export async function updateAdminSupportTicket(token, id, payload) {
+  const response = await fetch(apiUrl(`/api/admin/support-tickets/${id}`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders(token) },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Talep güncellenemedi.");
+  }
+  return data?.ticket || null;
+}
+
+// P1.9 — operatör durum sayfası
+export async function fetchAdminOpsOverview(token) {
+  const response = await fetch(apiUrl("/api/admin/ops-overview"), {
+    headers: authHeaders(token),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data?.error || "Durum özeti alınamadı.");
+  }
+  return data;
+}
+
 export async function fetchAdminBusinesses(token) {
   const response = await fetch(apiUrl("/api/admin/businesses"), {
     headers: authHeaders(token),
@@ -567,6 +718,50 @@ export const deleteAdminPayment = (token, id) =>
 export const backfillAdminPayments = (token) =>
   sendJson("/api/admin/payments/backfill", token, "POST");
 
+/** Super Admin: indirim kodları (P3.3). */
+export const fetchAdminDiscountCodes = (token) =>
+  getJson("/api/admin/discount-codes", token);
+export const createAdminDiscountCode = (token, payload) =>
+  sendJson("/api/admin/discount-codes", token, "POST", payload);
+export const toggleAdminDiscountCode = (token, code, aktif) =>
+  sendJson(`/api/admin/discount-codes/${encodeURIComponent(code)}`, token, "PATCH", { aktif });
+export const deleteAdminDiscountCode = (token, code) =>
+  sendJson(`/api/admin/discount-codes/${encodeURIComponent(code)}`, token, "DELETE");
+export const previewAdminDiscountCode = (token, code, amount) =>
+  getJson(
+    `/api/admin/discount-codes/${encodeURIComponent(code)}/preview?amount=${encodeURIComponent(amount || 0)}`,
+    token
+  );
+
+/** İşletme: self-servis ödeme / dekont (P3.6). */
+export const fetchBankDetails = (token) => getJson("/api/business/bank-details", token);
+export const fetchMyPaymentProofs = (token) => getJson("/api/business/payment-proofs", token);
+export const submitPaymentProof = (token, payload) =>
+  sendJson("/api/business/payment-proofs", token, "POST", payload);
+
+/** Super Admin: ödeme dekontları (P3.6). */
+export const fetchAdminPaymentProofs = (token, status) =>
+  getJson(`/api/admin/payment-proofs${status ? `?status=${encodeURIComponent(status)}` : ""}`, token);
+export const fetchAdminPaymentProof = (token, id) =>
+  getJson(`/api/admin/payment-proofs/${id}`, token);
+export const approveAdminPaymentProof = (token, id) =>
+  sendJson(`/api/admin/payment-proofs/${id}/approve`, token, "POST");
+export const rejectAdminPaymentProof = (token, id, reason) =>
+  sendJson(`/api/admin/payment-proofs/${id}/reject`, token, "POST", { reason });
+
+/** Super Admin: lead CRM (P3.4). */
+export const fetchAdminLeads = (token, status) =>
+  getJson(`/api/admin/leads${status ? `?status=${encodeURIComponent(status)}` : ""}`, token);
+export const updateAdminLead = (token, source, id, payload) =>
+  sendJson(
+    `/api/admin/leads/${encodeURIComponent(source)}/${encodeURIComponent(id)}`,
+    token,
+    "PATCH",
+    payload
+  );
+export const fetchAdminDemand = (token, days = 30) =>
+  getJson(`/api/admin/demand?days=${days}`, token);
+
 /** Super Admin: vade takvimi, işletme bazlı analitik, partnerlik başvuruları. */
 export const fetchAdminExpiring = (token, days = 30) =>
   getJson(`/api/admin/expiring?days=${days}`, token);
@@ -578,3 +773,8 @@ export const fetchAdminPartnershipApplications = (token) =>
 /** İşletme: kendi aboneliği + ödeme geçmişi + performansı. */
 export const fetchBusinessSubscription = (token) =>
   getJson("/api/business/subscription", token);
+
+/** Super Admin: kur alarmı değer sinyali + manuel kontrol (P3.2). */
+export const fetchAdminRateAlerts = (token) => getJson("/api/admin/rate-alerts", token);
+export const runRateAlertCheck = (token) =>
+  sendJson("/api/admin/rate-alerts/run-check", token, "POST");
