@@ -2675,3 +2675,42 @@ button.float-field__control {
     font-size: 16px;
   }
 }
+
+/**
+ * ── SİYAH-BEYAZ HARİTA ──────────────────────────────────────────────────
+ * OSM döşemeleri renkli; site mat siyah/beyaz. Ayrı bir mono sağlayıcı
+ * (CARTO Positron / Stamen Toner) yeni bağımlılık + kullanım kotası +
+ * ek atıf demekti. Onun yerine yalnızca DÖŞEME KATMANI CSS ile gri
+ * tonlanıyor. İşaretçi / popup / kontrol katmanları filtresiz kalır.
+ *   · Aydınlık tema: sadece grayscale + hafif kontrast → açık gri harita
+ *   · Karanlık tema: invert + hue-rotate → koyu harita, etiketler okunur
+ */
+.map-mono .leaflet-tile-pane {
+  filter: grayscale(1) contrast(1.05) brightness(1.03);
+}
+
+.dark .map-mono .leaflet-tile-pane {
+  filter: grayscale(1) invert(1) brightness(0.92) contrast(0.9) hue-rotate(180deg);
+}
+
+/* Filtre döşeme kenarlarında ince çizgiler bırakabiliyor; hafif üst üste bindir. */
+.map-mono .leaflet-tile {
+  will-change: auto;
+}
+
+/* Zoom / attribution kontrolleri temayla uyumlu (Leaflet'in beyaz varsayılanı
+   karanlık temada parlıyordu). */
+.dark .map-mono .leaflet-bar a,
+.dark .map-mono .leaflet-control-attribution {
+  background: #0a0a0c;
+  color: theme("colors.ink.300");
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.dark .map-mono .leaflet-bar a:hover {
+  background: #16161a;
+}
+
+.dark .map-mono .leaflet-control-attribution a {
+  color: theme("colors.ink.200");
+}

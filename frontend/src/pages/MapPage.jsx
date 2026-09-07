@@ -361,8 +361,17 @@ export function MapPage() {
                 center={KKTC_CENTER}
                 zoom={KKTC_ZOOM}
                 scrollWheelZoom
+                className="map-mono"
                 style={{ height: "min(70vh, 640px)", width: "100%" }}
               >
+                {/*
+                  Tasarım siyah-beyaz; OSM'in renkli döşemeleri sisteme uymuyordu.
+                  Ayrı bir sağlayıcı (CARTO/Stamen) yeni bağımlılık + kullanım
+                  kotası demekti. Bunun yerine döşemeler CSS filtresiyle gri
+                  tonlanıyor (`.map-mono .leaflet-tile-pane`, bkz. index.css);
+                  karanlık temada `invert` ile koyu haritaya dönüyor. İşaretçiler
+                  ve popuplar filtresiz kalıyor.
+                */}
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
