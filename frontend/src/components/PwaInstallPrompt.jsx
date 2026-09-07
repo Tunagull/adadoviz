@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, X } from "lucide-react";
 import { useLanguage } from "../context/LanguageContext";
+import { useAuth } from "../context/AuthContext";
 
 const DISMISS_KEY = "adadoviz:pwa-dismissed";
 
@@ -14,6 +15,7 @@ const DISMISS_KEY = "adadoviz:pwa-dismissed";
  */
 export function PwaInstallPrompt() {
   const { t } = useLanguage();
+  const { loginModalOpen } = useAuth();
   const [promptEvent, setPromptEvent] = useState(null);
   const [visible, setVisible] = useState(false);
 
@@ -71,7 +73,8 @@ export function PwaInstallPrompt() {
     setVisible(false);
   };
 
-  if (!visible) return null;
+  // Giriş modalı açıkken şeridi gizle — ikisi de alta yaslanıyor, üst üste biniyordu.
+  if (!visible || loginModalOpen) return null;
 
   return (
     <div
