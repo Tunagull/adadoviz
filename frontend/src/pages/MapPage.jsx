@@ -1,37 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
-import L from "leaflet";
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
 import { LocateFixed, MapPin, Navigation, Phone } from "lucide-react";
 import { BrandLogo } from "../components/BrandLogo";
 import { SiteNav } from "../components/SiteNav";
 import { HeaderActions } from "../components/HeaderActions";
 import { MobileNav } from "../components/MobileNav";
+import { OfficeMap } from "../components/OfficeMap";
 import { FloatingSelect } from "../components/ui/floating-label";
 import { useLanguage } from "../context/LanguageContext";
+import { useTheme } from "../context/ThemeContext";
 import { apiUrl, fetchRatesWithRetry, mediaUrl } from "../lib/api";
 import { cityLabel } from "../lib/cities";
 import { whatsappHref, telHref } from "../lib/contact";
 import { buildBusinessSlug, exchangeOfficePath } from "../lib/slug";
 import { trackBusinessClick, trackEvent } from "../lib/analytics";
 
-import "leaflet/dist/leaflet.css";
-
-/* DealerManagement.jsx ile aynı düzeltme: Vite'te varsayılan Leaflet marker
-   ikon yolları kırılıyor; import edilen asset'lerle yeniden bağlanıyor. */
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl: markerIcon,
-  iconRetinaUrl: markerIcon2x,
-  shadowUrl: markerShadow,
-});
-
-const KKTC_CENTER = [35.1856, 33.3823];
-const KKTC_ZOOM = 9;
 /** SSE yok — sekme görünürken kurları 60 sn'de bir tazele (BestRatePage ile aynı). */
 const REFRESH_MS = 60_000;
 const CURRENCIES = ["USD", "EUR", "GBP"];
@@ -110,18 +94,9 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 
 const cleanName = (s) => String(s || "").replace(/\s*\([Tt]est\)\s*/g, " ").trim();
 
-/** Harita örneğini konum/şehir değişince yumuşakça yeniden ortalar. */
-function MapController({ focus }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!focus) return;
-    map.flyTo([focus.lat, focus.lng], focus.zoom ?? map.getZoom(), { duration: 0.6 });
-  }, [focus, map]);
-  return null;
-}
-
 export function MapPage() {
   const { t, lang } = useLanguage();
+  const { isDark } = useTheme();
   const locale = lang === "en" ? "en-US" : "tr-TR";
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -133,6 +108,7 @@ export function MapPage() {
   const [locating, setLocating] = useState(false);
   const [locError, setLocError] = useState("");
   const [focus, setFocus] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
 
   const cityParam = searchParams.get("sehir") || "";
   const openOnly = searchParams.get("acik") === "1";
@@ -280,6 +256,114 @@ export function MapPage() {
   const fmt = (v) =>
     v == null ? "—" : v.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
+  /** Yan liste ↔ harita senkronu: şubeyi seç + haritayı oraya uçur. */
+  const selectPoint = useCallback((p) => {
+    if (!p) {
+      setSelectedId(null);
+      return;
+    }
+    setSelectedId(p.id);
+    setFocus({ lat: Number(p.lat), lng: Number(p.lng), zoom: 14, popup: true, _t: Date.now() });
+  }, []);
+
+  const mapLabels = useMemo(
+    () => ({
+      zoomIn: t("mapZoomIn"),
+      zoomOut: t("mapZoomOut"),
+      youAreHere: t("mapYouAreHere"),
+      openNow: t("openNow"),
+    }),
+    [t]
+  );
+
+  /** Popup içeriği — i18n/navigate burada kalsın diye render-prop olarak geçilir. */
+  const renderPopup = useCallback(
+    (p) => (
+      <div className="min-w-[15rem] space-y-2">
+        <div className="flex items-center gap-2">
+          {p.logo_url ? (
+            <img
+              src={mediaUrl(p.logo_url)}
+              alt=""
+              className="h-7 w-7 shrink-0 rounded-full bg-white object-cover p-0.5 shadow-sm"
+            />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-ink-900 dark:text-white">{p.institutionName || p.name}</p>
+            <p className="truncate text-xs text-ink-500 dark:text-ink-400">{p.name}</p>
+          </div>
+        </div>
+
+        {p.open !== "unknown" ? (
+          <span
+            className={`inline-flex items-center rounded-control px-1.5 py-0.5 text-[11px] font-semibold ${
+              p.open === "open"
+                ? "bg-success-600 text-white"
+                : "bg-ink-200 text-ink-600 dark:bg-ink-700 dark:text-ink-200"
+            }`}
+          >
+            {p.open === "open" ? t("openNow") : t("mapClosed")}
+          </span>
+        ) : null}
+
+        <table className="w-full text-xs tabular-nums">
+          <tbody>
+            {CURRENCIES.map((c) => (
+              <tr key={c}>
+                <td className="py-0.5 pr-2 font-medium text-ink-500 dark:text-ink-400">{c}</td>
+                <td className="py-0.5 text-right text-ink-900 dark:text-white">{fmt(p.rates[c].buy)}</td>
+                <td className="py-0.5 pl-1 text-right text-ink-900 dark:text-white">{fmt(p.rates[c].sell)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-[10px] uppercase tracking-wide text-ink-400">
+          {t("buyShort")} / {t("sellShort")}
+        </p>
+
+        {p.address ? <p className="text-xs text-ink-500 dark:text-ink-400">{p.address}</p> : null}
+
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <a
+            className="btn btn-ghost h-8 gap-1 text-xs"
+            href={`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => pinEvent(p, "directions")}
+          >
+            <Navigation size={13} aria-hidden="true" />
+            {t("mapDirections")}
+          </a>
+          {whatsappHref(p.whatsapp || p.phone) ? (
+            <a
+              className="btn btn-ghost h-8 gap-1 text-xs text-success-600"
+              href={whatsappHref(p.whatsapp || p.phone)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => pinEvent(p, "whatsapp")}
+            >
+              WhatsApp
+            </a>
+          ) : telHref(p.phone) ? (
+            <a
+              className="btn btn-ghost h-8 gap-1 text-xs"
+              href={telHref(p.phone)}
+              onClick={() => pinEvent(p, "call")}
+            >
+              <Phone size={13} aria-hidden="true" />
+              {t("phoneLabel")}
+            </a>
+          ) : null}
+          <button type="button" onClick={() => goToOffice(p)} className="btn btn-primary h-8 text-xs">
+            {t("mapDetail")}
+          </button>
+        </div>
+      </div>
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, lang, locale]
+  );
+
   return (
     <div className="min-h-screen">
       <Helmet>
@@ -355,135 +439,20 @@ export function MapPage() {
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-[1fr_22rem]">
-            {/* Harita */}
+            {/* Harita — MapLibre GL + OpenFreeMap vektör döşemeleri (bkz. lib/mapStyle.js) */}
             <div className="surface-card overflow-hidden p-0">
-              <MapContainer
-                center={KKTC_CENTER}
-                zoom={KKTC_ZOOM}
-                scrollWheelZoom
-                className="map-mono"
-                style={{ height: "min(70vh, 640px)", width: "100%" }}
-              >
-                {/*
-                  Tasarım siyah-beyaz; OSM'in renkli döşemeleri sisteme uymuyordu.
-                  Ayrı bir sağlayıcı (CARTO/Stamen) yeni bağımlılık + kullanım
-                  kotası demekti. Bunun yerine döşemeler CSS filtresiyle gri
-                  tonlanıyor (`.map-mono .leaflet-tile-pane`, bkz. index.css);
-                  karanlık temada `invert` ile koyu haritaya dönüyor. İşaretçiler
-                  ve popuplar filtresiz kalıyor.
-                */}
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              <div className="h-[min(70vh,640px)] w-full">
+                <OfficeMap
+                  points={visible}
+                  selectedId={selectedId}
+                  userLoc={userLoc}
+                  focus={focus}
+                  isDark={isDark}
+                  onSelectPoint={selectPoint}
+                  popupRenderer={renderPopup}
+                  labels={mapLabels}
                 />
-                <MapController focus={focus} />
-                {userLoc ? (
-                  <Marker
-                    position={[userLoc.lat, userLoc.lng]}
-                    icon={L.divIcon({
-                      className: "",
-                      html: '<div style="width:14px;height:14px;border-radius:9999px;background:#2563eb;border:3px solid #fff;box-shadow:0 0 0 2px rgba(37,99,235,.4)"></div>',
-                      iconSize: [14, 14],
-                      iconAnchor: [7, 7],
-                    })}
-                  >
-                    <Popup>{t("mapYouAreHere")}</Popup>
-                  </Marker>
-                ) : null}
-
-                {visible.map((p) => (
-                  <Marker key={p.id} position={[p.lat, p.lng]}>
-                    <Popup>
-                      <div className="min-w-[15rem] space-y-2">
-                        <div className="flex items-center gap-2">
-                          {p.logo_url ? (
-                            <img
-                              src={mediaUrl(p.logo_url)}
-                              alt=""
-                              className="h-7 w-7 shrink-0 rounded-full bg-white object-cover p-0.5 shadow-sm"
-                            />
-                          ) : null}
-                          <div className="min-w-0">
-                            <p className="truncate font-semibold text-ink-900">{p.institutionName || p.name}</p>
-                            <p className="truncate text-xs text-ink-500">{p.name}</p>
-                          </div>
-                        </div>
-
-                        {p.open !== "unknown" ? (
-                          <span
-                            className={`inline-flex items-center rounded-control px-1.5 py-0.5 text-[11px] font-semibold ${
-                              p.open === "open"
-                                ? "bg-success-600 text-white"
-                                : "bg-ink-200 text-ink-600"
-                            }`}
-                          >
-                            {p.open === "open" ? t("openNow") : t("mapClosed")}
-                          </span>
-                        ) : null}
-
-                        <table className="w-full text-xs tabular-nums">
-                          <tbody>
-                            {CURRENCIES.map((c) => (
-                              <tr key={c}>
-                                <td className="py-0.5 pr-2 font-medium text-ink-500">{c}</td>
-                                <td className="py-0.5 text-right">{fmt(p.rates[c].buy)}</td>
-                                <td className="py-0.5 pl-1 text-right">{fmt(p.rates[c].sell)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        <p className="text-[10px] uppercase tracking-wide text-ink-400">
-                          {t("buyShort")} / {t("sellShort")}
-                        </p>
-
-                        {p.address ? (
-                          <p className="text-xs text-ink-500">{p.address}</p>
-                        ) : null}
-
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          <a
-                            className="btn btn-ghost h-8 gap-1 text-xs"
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => pinEvent(p, "directions")}
-                          >
-                            <Navigation size={13} aria-hidden="true" />
-                            {t("mapDirections")}
-                          </a>
-                          {whatsappHref(p.whatsapp || p.phone) ? (
-                            <a
-                              className="btn btn-ghost h-8 gap-1 text-xs text-success-600"
-                              href={whatsappHref(p.whatsapp || p.phone)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={() => pinEvent(p, "whatsapp")}
-                            >
-                              WhatsApp
-                            </a>
-                          ) : telHref(p.phone) ? (
-                            <a
-                              className="btn btn-ghost h-8 gap-1 text-xs"
-                              href={telHref(p.phone)}
-                              onClick={() => pinEvent(p, "call")}
-                            >
-                              <Phone size={13} aria-hidden="true" />
-                              {t("phoneLabel")}
-                            </a>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => goToOffice(p)}
-                            className="btn btn-primary h-8 text-xs"
-                          >
-                            {t("mapDetail")}
-                          </button>
-                        </div>
-                      </div>
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
+              </div>
             </div>
 
             {/* Yan liste — konum bilinirse mesafeye göre sıralı */}
@@ -498,8 +467,11 @@ export function MapPage() {
                     <li key={p.id}>
                       <button
                         type="button"
-                        onClick={() => setFocus({ lat: p.lat, lng: p.lng, zoom: 15 })}
-                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-ink-50 dark:hover:bg-white/5"
+                        aria-current={p.id === selectedId ? "true" : undefined}
+                        onClick={() => selectPoint(p)}
+                        className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-ink-50 dark:hover:bg-white/5 ${
+                          p.id === selectedId ? "bg-ink-100 dark:bg-white/10" : ""
+                        }`}
                       >
                         <MapPin size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-400" />
                         <span className="min-w-0 flex-1">

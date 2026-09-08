@@ -2677,40 +2677,255 @@ button.float-field__control {
 }
 
 /**
- * ── SİYAH-BEYAZ HARİTA ──────────────────────────────────────────────────
- * OSM döşemeleri renkli; site mat siyah/beyaz. Ayrı bir mono sağlayıcı
- * (CARTO Positron / Stamen Toner) yeni bağımlılık + kullanım kotası +
- * ek atıf demekti. Onun yerine yalnızca DÖŞEME KATMANI CSS ile gri
- * tonlanıyor. İşaretçi / popup / kontrol katmanları filtresiz kalır.
- *   · Aydınlık tema: sadece grayscale + hafif kontrast → açık gri harita
- *   · Karanlık tema: invert + hue-rotate → koyu harita, etiketler okunur
+ * ── ADADÖVİZ HARİTASI (MapLibre GL) ─────────────────────────────────────
+ *
+ * Harita artık gerçek VEKTÖR stillemesi kullanıyor (bkz. src/lib/mapStyle.js).
+ * Eski `.map-mono` CSS-filter hilesi (grayscale/invert) kaldırıldı. Burada
+ * yalnızca MapLibre'nin DOM katmanı — kontroller, popup, işaretçi — site
+ * token'larına bağlanıyor. Renk değişkenleri iki temada tanımlı; işaretçiler
+ * bunları okur, tema değişince ayrıca JS gerekmez.
+ *
+ * NOT: `.leaflet-*` kuralları hâlâ gerekli — DealerManagement.jsx yönetim
+ * panelinde konum seçici için react-leaflet kullanmaya devam ediyor.
  */
-.map-mono .leaflet-tile-pane {
-  filter: grayscale(1) contrast(1.05) brightness(1.03);
+:root {
+  --ada-marker-bg: theme("colors.ink.900");
+  --ada-marker-border: #ffffff;
+  --ada-marker-fg: #ffffff;
+  --ada-marker-active-bg: theme("colors.ink.950");
+  --ada-marker-active-fg: #ffffff;
+  --ada-marker-ring: rgba(8, 8, 10, 0.22);
+  --ada-map-ctrl-bg: rgba(255, 255, 255, 0.92);
+  --ada-map-ctrl-fg: theme("colors.ink.700");
+  --ada-map-ctrl-border: theme("colors.ink.200");
+  --ada-popup-bg: #ffffff;
+  --ada-popup-border: theme("colors.ink.200");
 }
 
-.dark .map-mono .leaflet-tile-pane {
-  filter: grayscale(1) invert(1) brightness(0.92) contrast(0.9) hue-rotate(180deg);
+.dark {
+  --ada-marker-bg: #f4f4f5;
+  --ada-marker-border: theme("colors.ink.950");
+  --ada-marker-fg: theme("colors.ink.950");
+  --ada-marker-active-bg: #ffffff;
+  --ada-marker-active-fg: theme("colors.ink.950");
+  --ada-marker-ring: rgba(255, 255, 255, 0.38);
+  --ada-map-ctrl-bg: rgba(14, 14, 17, 0.92);
+  --ada-map-ctrl-fg: theme("colors.ink.300");
+  --ada-map-ctrl-border: rgba(255, 255, 255, 0.12);
+  --ada-popup-bg: theme("colors.ink.900");
+  --ada-popup-border: rgba(255, 255, 255, 0.12);
 }
 
-/* Filtre döşeme kenarlarında ince çizgiler bırakabiliyor; hafif üst üste bindir. */
-.map-mono .leaflet-tile {
-  will-change: auto;
+.ada-map {
+  background: theme("colors.ink.50");
+}
+.dark .ada-map {
+  background: #0e0e11;
+}
+.ada-map .maplibregl-canvas:focus-visible {
+  outline: 2px solid var(--ada-marker-ring);
+  outline-offset: -2px;
 }
 
-/* Zoom / attribution kontrolleri temayla uyumlu (Leaflet'in beyaz varsayılanı
-   karanlık temada parlıyordu). */
-.dark .map-mono .leaflet-bar a,
-.dark .map-mono .leaflet-control-attribution {
-  background: #0a0a0c;
-  color: theme("colors.ink.300");
-  border-color: rgba(255, 255, 255, 0.12);
+/* ---- Kontroller (zoom) — site butonlarıyla uyumlu -------------------- */
+.ada-map .maplibregl-ctrl-group {
+  background: var(--ada-map-ctrl-bg);
+  border: 1px solid var(--ada-map-ctrl-border);
+  border-radius: theme("borderRadius.control");
+  box-shadow: theme("boxShadow.card");
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+.ada-map .maplibregl-ctrl-group button {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+.ada-map .maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--ada-map-ctrl-border);
+}
+.ada-map .maplibregl-ctrl-group button:hover {
+  background: color-mix(in srgb, var(--ada-map-ctrl-fg) 10%, transparent);
+}
+.ada-map .maplibregl-ctrl-group button:focus-visible {
+  outline: 2px solid var(--ada-marker-ring);
+  outline-offset: -2px;
+}
+/*
+ * Zoom +/- ikonları: MapLibre'nin gömülü koyu SVG'sini TAMAMEN değiştir.
+ * (Eski sürüm `background-image: none` + pseudo-element çizgiler kullanıyordu;
+ * MapLibre'nin varsayılan SVG'si `!important` olmadan ezilmediği için AÇIK
+ * temada iki "+" üst üste biniyordu — "taşma/saçmalık".)
+ * Artık ikon span'i tek renkli bir maske: renk `--ada-map-ctrl-fg`'den gelir,
+ * tema değişince otomatik uyum sağlar. Tek kaynak, konumlandırma hatası yok.
+ */
+.ada-map .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: none !important;
+  background-color: var(--ada-map-ctrl-fg) !important;
+  -webkit-mask: center / 15px 15px no-repeat var(--ada-ctrl-icon, none);
+  mask: center / 15px 15px no-repeat var(--ada-ctrl-icon, none);
+}
+.ada-map .maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon {
+  --ada-ctrl-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M12 5.5v13M5.5 12h13'/%3E%3C/svg%3E");
+}
+.ada-map .maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon {
+  --ada-ctrl-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M5.5 12h13'/%3E%3C/svg%3E");
 }
 
-.dark .map-mono .leaflet-bar a:hover {
-  background: #16161a;
+/* ---- Atıf ----------------------------------------------------------- */
+.ada-map .maplibregl-ctrl-attrib {
+  background: var(--ada-map-ctrl-bg);
+  color: var(--ada-map-ctrl-fg);
+  font-size: 10px;
+  border-radius: 6px 0 0 0;
+}
+.ada-map .maplibregl-ctrl-attrib a {
+  color: var(--ada-map-ctrl-fg);
+  text-decoration: underline;
+}
+.ada-map .maplibregl-ctrl-attrib-button {
+  background-color: var(--ada-map-ctrl-fg);
 }
 
-.dark .map-mono .leaflet-control-attribution a {
-  color: theme("colors.ink.200");
+/* ---- Döviz bürosu işaretçisi -------------------------------------- */
+.ada-marker {
+  --size: 18px;
+  width: var(--size);
+  height: var(--size);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.ada-marker__pin {
+  width: var(--size);
+  height: var(--size);
+  border-radius: 999px;
+  background: var(--ada-marker-bg);
+  border: 2px solid var(--ada-marker-border);
+  color: var(--ada-marker-fg);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 1px 3px rgba(8, 8, 10, 0.28);
+}
+.ada-marker__pin svg {
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.ada-marker__open {
+  display: none;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: theme("colors.success.500");
+  border: 1.5px solid var(--ada-marker-bg);
+}
+.ada-marker.is-open .ada-marker__open {
+  display: block;
+}
+.ada-marker:hover {
+  transform: scale(1.12);
+  z-index: 2;
+}
+.ada-marker:focus-visible {
+  outline: none;
+}
+.ada-marker:focus-visible .ada-marker__pin {
+  box-shadow: 0 0 0 3px var(--ada-marker-ring);
+}
+.ada-marker.is-active {
+  --size: 32px;
+}
+.ada-marker.is-active .ada-marker__pin {
+  background: var(--ada-marker-active-bg);
+  border-color: var(--ada-marker-active-bg);
+  color: var(--ada-marker-active-fg);
+  box-shadow:
+    0 0 0 4px var(--ada-marker-ring),
+    0 6px 18px -6px rgba(8, 8, 10, 0.5);
+}
+.ada-marker.is-active .ada-marker__pin svg {
+  opacity: 1;
+  width: 16px;
+  height: 16px;
+}
+.ada-marker.is-active .ada-marker__open {
+  width: 9px;
+  height: 9px;
+  border-color: var(--ada-marker-active-bg);
+}
+
+/* ---- "Buradasınız" noktası --------------------------------------- */
+.ada-user-dot {
+  position: relative;
+  width: 16px;
+  height: 16px;
+}
+.ada-user-dot__core {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.5);
+}
+.ada-user-dot__pulse {
+  position: absolute;
+  inset: -6px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.28);
+  animation: ada-user-pulse 2s ease-out infinite;
+}
+@keyframes ada-user-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ada-user-dot__pulse {
+    animation: none;
+  }
+}
+
+/* ---- Popup — surface-card görünümü ------------------------------- */
+.ada-popup .maplibregl-popup-content {
+  background: var(--ada-popup-bg);
+  color: theme("colors.ink.900");
+  border: 1px solid var(--ada-popup-border);
+  border-radius: theme("borderRadius.card");
+  box-shadow: theme("boxShadow.card");
+  padding: 12px;
+}
+.dark .ada-popup .maplibregl-popup-content {
+  color: #fff;
+}
+.ada-popup .maplibregl-popup-close-button {
+  width: 24px;
+  height: 24px;
+  font-size: 16px;
+  color: theme("colors.ink.400");
+  border-radius: 6px;
+}
+.ada-popup .maplibregl-popup-close-button:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  color: theme("colors.ink.700");
+}
+.ada-popup .maplibregl-popup-tip {
+  border-top-color: var(--ada-popup-bg);
+  border-bottom-color: var(--ada-popup-bg);
 }

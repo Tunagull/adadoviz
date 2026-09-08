@@ -10,6 +10,16 @@ export default defineConfig({
   },
 
   /**
+   * MapLibre GL, tile ayrıştırmasını bir web worker'a devrediyor. Vite'in dep
+   * optimizer'ı bu worker girişini (`maplibre-gl-worker.mjs`) bozup dev'de
+   * haritanın döşeme çekmemesine yol açıyor. Hariç tutulunca Vite paketi
+   * olduğu gibi (ESM) sunuyor ve worker düzgün çözülüyor. Prod build etkilenmez.
+   */
+  optimizeDeps: {
+    exclude: ["maplibre-gl"],
+  },
+
+  /**
    * ⚠️ OPTİMİZASYON (O-01): Ana paket 993 kB / 297 kB gzip'e çıkmıştı ve Vite
    * açıkça uyarıyordu ("Some chunks are larger than 500 kB"). Satıcı
    * kütüphaneleri tek bir dosyada toplanıyordu; bu hem ilk yüklemeyi tek büyük
@@ -58,6 +68,13 @@ export default defineConfig({
               test: /[\\/]node_modules[\\/](react-day-picker|date-fns)[\\/]/,
               priority: 80,
             },
+            /*
+             * MapLibre GL'i ELLE gruplama! Ayrı `maplibre-gl-worker.mjs`
+             * asset'ini `new URL(..., import.meta.url)` ile üretiyor; manuel
+             * chunk'a alınca bundler o worker dosyasını EMIT ETMİYOR → prod'da
+             * döşemeler sessizce yüklenmiyor (worker 404 → index.html). Rolldown
+             * kendi böler; /harita zaten lazy route, yine ayrı chunk'a düşer.
+             */
             {
               name: "vendor-map",
               test: /[\\/]node_modules[\\/](leaflet|react-leaflet)[\\/]/,
